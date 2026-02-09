@@ -538,14 +538,6 @@ export default function DagbanGraph({ data }: Props) {
           }}
           linkCanvasObject={linkCanvasObject}
           linkColor={() => 'rgba(255,255,255,0.2)'}
-          d3VelocityDecay={0.3}
-          d3AlphaDecay={0.02}
-          d3AlphaMin={0.001}
-          d3VelocityDecay={0.1}
-          linkDistance={200}
-          nodeRelSize={6}
-          warmupTicks={100}
-          cooldownTicks={1000}
         />
       ) : css2DRendererInstance ? (
         <FG3D
