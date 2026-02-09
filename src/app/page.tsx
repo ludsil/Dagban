@@ -39,6 +39,14 @@ export default function Home() {
     });
   }, [graph, setGraph]);
 
+  // Handle card creation
+  const handleCardCreate = useCallback((card: Card) => {
+    setGraph({
+      ...graph,
+      cards: [...graph.cards, card],
+    });
+  }, [graph, setGraph]);
+
   return (
     <div className="w-screen h-screen">
       <DagbanGraph
@@ -46,6 +54,7 @@ export default function Home() {
         onEdgeProgressChange={handleEdgeProgressChange}
         onCardChange={handleCardChange}
         onCategoryChange={handleCategoryChange}
+        onCardCreate={handleCardCreate}
       />
     </div>
   );

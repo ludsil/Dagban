@@ -715,13 +715,6 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     ctx.fillStyle = node.color;
     ctx.fill();
 
-    // Border for active cards
-    if (node.status === 'active') {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
     // Add text label ABOVE ball for labels/full mode
     if (displayMode === 'labels' || displayMode === 'full') {
       const label = node.title;
@@ -982,9 +975,9 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
     onNodeClick: handleNodeClick,
     nodeColor: (node: GraphNodeData) => node.color,
-    linkDirectionalArrowLength: 6,
+    linkDirectionalArrowLength: 4,
     linkDirectionalArrowRelPos: 1,
-    linkDirectionalArrowColor: () => 'rgba(255, 255, 255, 0.8)',
+    linkDirectionalArrowColor: () => 'rgba(255, 255, 255, 0.7)',
   };
 
   return (
