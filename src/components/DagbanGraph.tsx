@@ -177,7 +177,7 @@ export default function DagbanGraph({ data }: Props) {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (graphRef.current) {
-        graphRef.current.zoomToFit(400, 50);
+        graphRef.current.zoomToFit(400, 120); // More padding to zoom out more
       }
     }, 500);
     return () => clearTimeout(timer);
@@ -186,68 +186,62 @@ export default function DagbanGraph({ data }: Props) {
   // Node radius
   const NODE_RADIUS = 8;
 
-  // Custom node rendering for 2D
+  // Custom node rendering for 2D - balls + text label (like html-nodes example)
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
 
-    if (displayMode === 'balls') {
-      // Balls mode: just draw the colored ball
-      ctx.beginPath();
-      ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-      ctx.fillStyle = node.color;
-      ctx.fill();
+    // Always draw the colored ball
+    ctx.beginPath();
+    ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+    ctx.fillStyle = node.color;
+    ctx.fill();
 
-      // Border for active cards
-      if (node.status === 'active') {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    } else {
-      // Labels/Full mode: text REPLACES the ball
+    // Border for active cards
+    if (node.status === 'active') {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Add text label below ball for labels/full mode
+    if (displayMode === 'labels' || displayMode === 'full') {
       const label = node.title;
       const fontSize = 12;
-      ctx.font = `${fontSize}px Arial`;
-      ctx.textBaseline = 'middle';
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
 
       const textWidth = ctx.measureText(label).width;
       const padding = 4;
-      const bgHeight = fontSize + padding * 2;
-      const picSize = displayMode === 'full' ? 16 : 0;
-      const picPadding = displayMode === 'full' ? 4 : 0;
-      const totalWidth = textWidth + padding * 2 + picSize + picPadding;
+      const bgHeight = fontSize + 2;
+      const picSize = displayMode === 'full' ? 14 : 0;
+      const picGap = displayMode === 'full' ? 4 : 0;
+      const totalWidth = textWidth + padding * 2 + picSize + picGap;
+      const labelY = y + NODE_RADIUS + 4;
 
-      // Draw background (centered on node position)
+      // Draw background - matches html-nodes example exactly
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       ctx.beginPath();
       ctx.roundRect(
         x - totalWidth / 2,
-        y - bgHeight / 2,
+        labelY - 1,
         totalWidth,
-        bgHeight,
+        bgHeight + 2,
         4
       );
       ctx.fill();
 
-      // Border for active cards
-      if (node.status === 'active') {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-
-      // Draw text (left-aligned within the box)
-      ctx.textAlign = 'left';
+      // Draw text
       ctx.fillStyle = node.color;
-      ctx.fillText(label, x - totalWidth / 2 + padding, y);
+      ctx.fillText(label, x - totalWidth / 2 + padding, labelY);
 
       // Draw profile pic on the RIGHT side of text (full mode only)
       if (displayMode === 'full') {
-        const picX = x - totalWidth / 2 + padding + textWidth + picPadding + picSize / 2;
-        const picY = y;
+        const picX = x - totalWidth / 2 + padding + textWidth + picGap + picSize / 2;
+        const picY = labelY + bgHeight / 2;
 
-        // Placeholder circle for profile pic
+        // Placeholder circle
         ctx.beginPath();
         ctx.arc(picX, picY, picSize / 2, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
@@ -256,13 +250,13 @@ export default function DagbanGraph({ data }: Props) {
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Simple person icon inside
+        // Person icon
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.beginPath();
-        ctx.arc(picX, picY - 2, 2.5, 0, 2 * Math.PI);
+        ctx.arc(picX, picY - 1.5, 2, 0, 2 * Math.PI);
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(picX, picY + 4, 4, Math.PI, 0, false);
+        ctx.arc(picX, picY + 3, 3, Math.PI, 0, false);
         ctx.fill();
       }
     }
@@ -456,7 +450,7 @@ export default function DagbanGraph({ data }: Props) {
       console.log('Clicked node:', node);
     },
     nodeColor: (node: GraphNodeData) => node.color,
-    linkDirectionalArrowLength: 6,
+    linkDirectionalArrowLength: 3,  // Smaller arrows
     linkDirectionalArrowRelPos: 1,
   };
 
@@ -477,36 +471,33 @@ export default function DagbanGraph({ data }: Props) {
             const x = node.x ?? 0;
             const y = node.y ?? 0;
             ctx.fillStyle = color;
-
-            if (displayMode === 'balls') {
-              ctx.beginPath();
-              ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-              ctx.fill();
-            } else {
-              // Match the text label area for click detection
-              const fontSize = 12;
-              ctx.font = `${fontSize}px Arial`;
-              const textWidth = ctx.measureText(node.title).width;
-              const padding = 4;
-              const bgHeight = fontSize + padding * 2;
-              const picSize = displayMode === 'full' ? 16 : 0;
-              const picPadding = displayMode === 'full' ? 4 : 0;
-              const totalWidth = textWidth + padding * 2 + picSize + picPadding;
-
-              ctx.beginPath();
-              ctx.roundRect(x - totalWidth / 2, y - bgHeight / 2, totalWidth, bgHeight, 4);
-              ctx.fill();
-            }
+            // Always include ball area for clicking
+            ctx.beginPath();
+            ctx.arc(x, y, NODE_RADIUS + 4, 0, 2 * Math.PI);
+            ctx.fill();
           }}
           linkCanvasObject={linkCanvasObject}
           linkColor={() => 'rgba(255,255,255,0.2)'}
+          d3VelocityDecay={0.3}
+          d3AlphaDecay={0.02}
+          // @ts-expect-error - d3Force is valid but not typed
+          d3Force={(forceName: string, force: unknown) => {
+            if (forceName === 'charge' && force) {
+              // @ts-expect-error - force methods
+              force.strength(-150); // More repulsion = more sparse
+            }
+            if (forceName === 'link' && force) {
+              // @ts-expect-error - force methods
+              force.distance(80); // Longer links
+            }
+          }}
         />
       ) : css2DRendererInstance ? (
         <FG3D
           {...commonProps}
           extraRenderers={[css2DRendererInstance]}
           nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
-          nodeThreeObjectExtend={false}
+          nodeThreeObjectExtend={true}
           linkThreeObject={linkThreeObject}
           linkPositionUpdate={linkPositionUpdate}
           linkOpacity={0.6}
