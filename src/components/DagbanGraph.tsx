@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge } from '@/lib/types';
+import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category } from '@/lib/types';
 
 // Dynamic import to avoid SSR issues with force-graph
 const ForceGraph2D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph2D), {
@@ -13,6 +13,8 @@ const ForceGraph2D = dynamic(() => import('react-force-graph').then(mod => mod.F
 interface Props {
   data: GraphData;
   onEdgeProgressChange?: (edgeId: string, progress: number) => void;
+  onCardChange?: (cardId: string, updates: Partial<Card>) => void;
+  onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
 }
 
 // Custom node type extending the force-graph node structure
@@ -31,6 +33,8 @@ interface GraphLinkData {
 
 export default function DagbanGraph({ data }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graphRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   // Convert dagban data to force-graph format
@@ -68,6 +72,17 @@ export default function DagbanGraph({ data }: Props) {
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
+
+  // Zoom to fit all nodes on initial load after layout stabilizes
+  useEffect(() => {
+    // Wait for the force simulation to stabilize before zooming to fit
+    const timer = setTimeout(() => {
+      if (graphRef.current) {
+        graphRef.current.zoomToFit(400, 50); // 400ms transition, 50px padding
+      }
+    }, 500); // Wait 500ms for initial layout to settle
+    return () => clearTimeout(timer);
+  }, [data]); // Re-run when data changes
 
   // Custom node rendering - post-it card style
   const nodeCanvasObject = useCallback((node: { x?: number; y?: number } & GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -163,6 +178,7 @@ export default function DagbanGraph({ data }: Props) {
   return (
     <div ref={containerRef} className="w-full h-full bg-gray-900">
       <FG
+        ref={graphRef}
         width={dimensions.width}
         height={dimensions.height}
         graphData={graphData}
