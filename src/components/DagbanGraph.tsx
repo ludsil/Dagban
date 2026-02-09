@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category } from '@/lib/types';
 
-// Dynamic imports to avoid SSR issues with force-graph
-const ForceGraph2D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph2D), {
+// Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading graph...</div>
 });
 
-const ForceGraph3D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph3D), {
+const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading graph...</div>
 });

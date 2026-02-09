@@ -12,7 +12,8 @@
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-force-graph": "^1.48.2",
+    "react-force-graph-2d": "^1.29.1",
+    "react-force-graph-3d": "^1.29.1",
     "three": "^0.182.0"
   },
   "devDependencies": {
