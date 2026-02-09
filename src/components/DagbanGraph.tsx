@@ -506,6 +506,15 @@ export default function DagbanGraph({ data }: Props) {
       ) : (
         <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading 3D graph...</div>
       )}
+
+      {/* Navigation instructions */}
+      <div className="nav-info">
+        {viewMode === '3D' ? (
+          <>Left-click: rotate, Mouse-wheel: zoom, Right-click: pan</>
+        ) : (
+          <>Click + drag: pan, Mouse-wheel: zoom</>
+        )}
+      </div>
     </div>
   );
 }
