@@ -45,6 +45,57 @@ interface GraphLinkData {
 type ViewMode = '2D' | '3D';
 type DisplayMode = 'balls' | 'labels' | 'full';
 
+// Header Component with logo and project switcher
+function Header({
+  onLogoClick,
+}: {
+  onLogoClick: () => void;
+}) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [currentProject] = useState('Default Project');
+
+  return (
+    <div className="header-panel">
+      <button
+        className="header-logo"
+        onClick={onLogoClick}
+        title="Settings"
+      >
+        <div className="header-logo-ball" />
+      </button>
+      <div className="header-project-switcher">
+        <button
+          className="header-project-btn"
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+        >
+          <span className="header-project-name">{currentProject}</span>
+          <svg
+            className={`header-chevron ${dropdownOpen ? 'open' : ''}`}
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {dropdownOpen && (
+          <div className="header-dropdown">
+            <button
+              className="header-dropdown-item active"
+              onClick={() => setDropdownOpen(false)}
+            >
+              Default Project
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Settings Panel Component
 function SettingsPanel({
   viewMode,
@@ -125,6 +176,7 @@ export default function DagbanGraph({ data }: Props) {
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
+  const [showSettings, setShowSettings] = useState(true);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
 
@@ -175,11 +227,12 @@ export default function DagbanGraph({ data }: Props) {
 
   // Zoom to fit all nodes on initial load after layout stabilizes
   useEffect(() => {
+    // Wait longer for simulation to settle before zooming
     const timer = setTimeout(() => {
       if (graphRef.current) {
-        graphRef.current.zoomToFit(400, 120); // More padding to zoom out more
+        graphRef.current.zoomToFit(400, 80); // Zoom out with padding
       }
-    }, 500);
+    }, 1500); // Increased delay for simulation to settle
     return () => clearTimeout(timer);
   }, [data, viewMode]);
 
@@ -456,12 +509,15 @@ export default function DagbanGraph({ data }: Props) {
 
   return (
     <div ref={containerRef} className="w-full h-full bg-black relative">
-      <SettingsPanel
-        viewMode={viewMode}
-        displayMode={displayMode}
-        onViewModeChange={setViewMode}
-        onDisplayModeChange={setDisplayMode}
-      />
+      <Header onLogoClick={() => setShowSettings(!showSettings)} />
+      {showSettings && (
+        <SettingsPanel
+          viewMode={viewMode}
+          displayMode={displayMode}
+          onViewModeChange={setViewMode}
+          onDisplayModeChange={setDisplayMode}
+        />
+      )}
 
       {viewMode === '2D' ? (
         <FG2D
@@ -480,15 +536,14 @@ export default function DagbanGraph({ data }: Props) {
           linkColor={() => 'rgba(255,255,255,0.2)'}
           d3VelocityDecay={0.3}
           d3AlphaDecay={0.02}
-          // @ts-expect-error - d3Force is valid but not typed
           d3Force={(forceName: string, force: unknown) => {
             if (forceName === 'charge' && force) {
               // @ts-expect-error - force methods
-              force.strength(-150); // More repulsion = more sparse
+              force.strength(-60); // Less repulsion
             }
             if (forceName === 'link' && force) {
               // @ts-expect-error - force methods
-              force.distance(80); // Longer links
+              force.distance(40); // Shorter links
             }
           }}
         />
