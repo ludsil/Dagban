@@ -27,6 +27,8 @@ interface Props {
   onEdgeProgressChange?: (edgeId: string, progress: number) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
+  onCategoryAdd?: (category: Category) => void;
+  onCategoryDelete?: (categoryId: string) => void;
 }
 
 // Custom node type extending the force-graph node structure
@@ -60,7 +62,7 @@ function CardDetailPanel({
   // Local state for editing
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
-  const [categoryId, setCategoryId] = useState(card.category_id || '');
+  const [categoryId, setCategoryId] = useState(card.categoryId || '');
   const [assignee, setAssignee] = useState(card.assignee || '');
 
   // Handle click outside to close
@@ -97,7 +99,7 @@ function CardDetailPanel({
       onCardChange(card.id, {
         title,
         description: description || undefined,
-        category_id: categoryId || undefined,
+        categoryId: categoryId || undefined,
         assignee: assignee || undefined,
       });
     }
@@ -667,6 +669,19 @@ export default function DagbanGraph({ data, onCardChange }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG3D = ForceGraph3D as any;
 
+  // Handle node click - calculate screen position and show panel
+  const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
+    // Get screen coordinates from the mouse event
+    const screenX = event.clientX;
+    const screenY = event.clientY;
+
+    setSelectedNode({
+      node,
+      screenX,
+      screenY,
+    });
+  }, []);
+
   // Common props for both 2D and 3D graphs
   const commonProps = {
     ref: graphRef,
@@ -675,9 +690,7 @@ export default function DagbanGraph({ data, onCardChange }: Props) {
     graphData: graphData,
     backgroundColor: "#000000",
     nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
-    onNodeClick: (node: GraphNodeData) => {
-      console.log('Clicked node:', node);
-    },
+    onNodeClick: handleNodeClick,
     nodeColor: (node: GraphNodeData) => node.color,
     linkDirectionalArrowLength: 3,  // Smaller arrows
     linkDirectionalArrowRelPos: 1,
@@ -726,6 +739,14 @@ export default function DagbanGraph({ data, onCardChange }: Props) {
         <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading 3D graph...</div>
       )}
 
+      {selectedNode && (
+        <CardDetailPanel
+          selectedNode={selectedNode}
+          categories={data.categories}
+          onClose={() => setSelectedNode(null)}
+          onCardChange={onCardChange}
+        />
+      )}
     </div>
   );
 }
