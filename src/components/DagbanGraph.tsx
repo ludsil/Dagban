@@ -229,7 +229,9 @@ export default function DagbanGraph({ data }: Props) {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (graphRef.current) {
-        graphRef.current.zoomToFit(400, 50);
+        // 2D: large padding so it barely zooms, 3D: normal zoom
+        const padding = viewMode === '2D' ? 200 : 50;
+        graphRef.current.zoomToFit(400, padding);
       }
     }, 1000);
     return () => clearTimeout(timer);
