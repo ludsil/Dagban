@@ -258,42 +258,42 @@ export default function DagbanGraph({ data }: Props) {
       ctx.stroke();
     }
 
-    // Add text label below ball for labels/full mode
+    // Add text label ABOVE ball for labels/full mode
     if (displayMode === 'labels' || displayMode === 'full') {
       const label = node.title;
       const fontSize = 12;
       ctx.font = `${fontSize}px sans-serif`;
-      ctx.textBaseline = 'top';
+      ctx.textBaseline = 'bottom';
       ctx.textAlign = 'left';
 
       const textWidth = ctx.measureText(label).width;
       const padding = 4;
-      const bgHeight = fontSize + 2;
+      const bgHeight = fontSize + 4;
       const picSize = displayMode === 'full' ? 14 : 0;
       const picGap = displayMode === 'full' ? 4 : 0;
       const totalWidth = textWidth + padding * 2 + picSize + picGap;
-      const labelY = y + NODE_RADIUS + 4;
+      const labelY = y - NODE_RADIUS - 6; // Position above the ball
 
-      // Draw background - matches html-nodes example exactly
+      // Draw background
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       ctx.beginPath();
       ctx.roundRect(
         x - totalWidth / 2,
-        labelY - 1,
+        labelY - bgHeight,
         totalWidth,
-        bgHeight + 2,
+        bgHeight,
         4
       );
       ctx.fill();
 
       // Draw text
       ctx.fillStyle = node.color;
-      ctx.fillText(label, x - totalWidth / 2 + padding, labelY);
+      ctx.fillText(label, x - totalWidth / 2 + padding, labelY - 2);
 
       // Draw profile pic on the RIGHT side of text (full mode only)
       if (displayMode === 'full') {
         const picX = x - totalWidth / 2 + padding + textWidth + picGap + picSize / 2;
-        const picY = labelY + bgHeight / 2;
+        const picY = labelY - bgHeight / 2; // Center in the label box above
 
         // Placeholder circle
         ctx.beginPath();
