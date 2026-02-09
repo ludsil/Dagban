@@ -1,11 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category } from '@/lib/types';
 
-// Dynamic import to avoid SSR issues with force-graph
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
+// Dynamic imports to avoid SSR issues with force-graph
+const ForceGraph2D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph2D), {
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading graph...</div>
+});
+
+const ForceGraph3D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph3D), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading graph...</div>
 });
@@ -19,16 +24,98 @@ interface Props {
 
 // Custom node type extending the force-graph node structure
 interface GraphNodeData {
+  id: string;
   title: string;
   color: string;
   status: 'blocked' | 'active' | 'done';
   card: Card;
+  x?: number;
+  y?: number;
+  z?: number;
 }
 
 // Custom link type extending the force-graph link structure
 interface GraphLinkData {
+  source: string | GraphNodeData;
+  target: string | GraphNodeData;
   progress: number;
   edge: Edge;
+}
+
+type ViewMode = '2D' | '3D';
+type DisplayMode = 'balls' | 'labels' | 'full';
+
+// Settings Panel Component
+function SettingsPanel({
+  viewMode,
+  displayMode,
+  onViewModeChange,
+  onDisplayModeChange,
+}: {
+  viewMode: ViewMode;
+  displayMode: DisplayMode;
+  onViewModeChange: (mode: ViewMode) => void;
+  onDisplayModeChange: (mode: DisplayMode) => void;
+}) {
+  return (
+    <div className="settings-panel">
+      <div className="settings-row">
+        <span className="settings-label">View</span>
+        <div className="toggle-group">
+          <button
+            className={`toggle-btn ${viewMode === '2D' ? 'active' : ''}`}
+            onClick={() => onViewModeChange('2D')}
+          >
+            2D
+          </button>
+          <button
+            className={`toggle-btn ${viewMode === '3D' ? 'active' : ''}`}
+            onClick={() => onViewModeChange('3D')}
+          >
+            3D
+          </button>
+        </div>
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">Display</span>
+        <div className="toggle-group">
+          <button
+            className={`toggle-btn ${displayMode === 'balls' ? 'active' : ''}`}
+            onClick={() => onDisplayModeChange('balls')}
+          >
+            Balls
+          </button>
+          <button
+            className={`toggle-btn ${displayMode === 'labels' ? 'active' : ''}`}
+            onClick={() => onDisplayModeChange('labels')}
+          >
+            Labels
+          </button>
+          <button
+            className={`toggle-btn ${displayMode === 'full' ? 'active' : ''}`}
+            onClick={() => onDisplayModeChange('full')}
+          >
+            Full
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Lazy-loaded three.js modules (only loaded client-side)
+let THREE: typeof import('three') | null = null;
+let CSS2DRenderer: typeof import('three/examples/jsm/renderers/CSS2DRenderer.js').CSS2DRenderer | null = null;
+let CSS2DObject: typeof import('three/examples/jsm/renderers/CSS2DRenderer.js').CSS2DObject | null = null;
+
+// Initialize three.js modules (called only on client)
+async function initThree() {
+  if (!THREE) {
+    THREE = await import('three');
+    const css2d = await import('three/examples/jsm/renderers/CSS2DRenderer.js');
+    CSS2DRenderer = css2d.CSS2DRenderer;
+    CSS2DObject = css2d.CSS2DObject;
+  }
 }
 
 export default function DagbanGraph({ data }: Props) {
@@ -36,9 +123,22 @@ export default function DagbanGraph({ data }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [viewMode, setViewMode] = useState<ViewMode>('2D');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
+
+  // Load three.js on mount
+  useEffect(() => {
+    initThree().then(() => {
+      if (CSS2DRenderer) {
+        setCss2DRendererInstance(new CSS2DRenderer());
+      }
+    });
+  }, []);
 
   // Convert dagban data to force-graph format
-  const graphData = {
+  const graphData = useMemo(() => ({
     nodes: data.cards.map(card => {
       const status = getCardStatus(card, data.edges, data.cards);
       const color = getCardColor(card, status, data.categories);
@@ -56,7 +156,7 @@ export default function DagbanGraph({ data }: Props) {
       progress: edge.progress,
       edge,
     })),
-  };
+  }), [data]);
 
   // Resize handling
   useEffect(() => {
@@ -75,20 +175,19 @@ export default function DagbanGraph({ data }: Props) {
 
   // Zoom to fit all nodes on initial load after layout stabilizes
   useEffect(() => {
-    // Wait for the force simulation to stabilize before zooming to fit
     const timer = setTimeout(() => {
       if (graphRef.current) {
-        graphRef.current.zoomToFit(400, 50); // 400ms transition, 50px padding
+        graphRef.current.zoomToFit(400, 50);
       }
-    }, 500); // Wait 500ms for initial layout to settle
+    }, 500);
     return () => clearTimeout(timer);
-  }, [data]); // Re-run when data changes
+  }, [data, viewMode]);
 
   // Node radius
   const NODE_RADIUS = 8;
 
-  // Custom node rendering - colored balls (text on hover via nodeLabel)
-  const nodeCanvasObject = useCallback((node: { x?: number; y?: number } & GraphNodeData, ctx: CanvasRenderingContext2D) => {
+  // Custom node rendering for 2D - colored balls with optional labels
+  const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
 
@@ -104,32 +203,83 @@ export default function DagbanGraph({ data }: Props) {
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-  }, []);
 
-  // Custom link rendering - fuse style
-  const linkCanvasObject = useCallback((link: { source: { x: number; y: number }; target: { x: number; y: number } } & GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    const source = link.source;
-    const target = link.target;
+    // Draw label for labels/full mode
+    if (displayMode === 'labels' || displayMode === 'full') {
+      const label = node.title;
+      const fontSize = 12;
+      ctx.font = `${fontSize}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      // Draw background
+      const textWidth = ctx.measureText(label).width;
+      const padding = 4;
+      const bgHeight = fontSize + 2;
+      const labelY = y + NODE_RADIUS + 4;
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(
+        x - textWidth / 2 - padding,
+        labelY - 1,
+        textWidth + padding * 2,
+        bgHeight
+      );
+
+      // Draw text
+      ctx.fillStyle = node.color;
+      ctx.fillText(label, x, labelY);
+
+      // Draw placeholder profile pic for full mode
+      if (displayMode === 'full') {
+        const picSize = 16;
+        const picY = labelY + bgHeight + 4;
+
+        // Placeholder circle for profile pic
+        ctx.beginPath();
+        ctx.arc(x, picY + picSize / 2, picSize / 2, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Simple person icon inside
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(x, picY + picSize / 2 - 2, 3, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, picY + picSize / 2 + 5, 5, Math.PI, 0, false);
+        ctx.fill();
+      }
+    }
+  }, [displayMode]);
+
+  // Custom link rendering for 2D - fuse style
+  const linkCanvasObject = useCallback((link: GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const source = link.source as GraphNodeData;
+    const target = link.target as GraphNodeData;
 
     if (!source.x || !target.x) return;
 
     const progress = link.progress / 100;
 
     // Calculate the point where the fuse has burned to
-    const burnX = source.x + (target.x - source.x) * progress;
-    const burnY = source.y + (target.y - source.y) * progress;
+    const burnX = source.x + ((target.x - source.x) * progress);
+    const burnY = source.y! + ((target.y! - source.y!) * progress);
 
     // Unburned part (ahead of progress) - bright white
     ctx.beginPath();
     ctx.moveTo(burnX, burnY);
-    ctx.lineTo(target.x, target.y);
+    ctx.lineTo(target.x, target.y!);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.lineWidth = 2 / globalScale;
     ctx.stroke();
 
     // Burned part (behind progress) - dim
     ctx.beginPath();
-    ctx.moveTo(source.x, source.y);
+    ctx.moveTo(source.x, source.y!);
     ctx.lineTo(burnX, burnY);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 2 / globalScale;
@@ -144,35 +294,196 @@ export default function DagbanGraph({ data }: Props) {
     }
   }, []);
 
+  // Create 3D node object with HTML labels
+  const nodeThreeObject = useCallback((node: GraphNodeData) => {
+    if (displayMode === 'balls' || !CSS2DObject) {
+      return undefined; // Use default sphere
+    }
+
+    const nodeEl = document.createElement('div');
+    nodeEl.className = 'node-label';
+    nodeEl.style.color = node.color;
+
+    if (displayMode === 'labels') {
+      nodeEl.textContent = node.title;
+    } else if (displayMode === 'full') {
+      // Create container for full mode with label + profile placeholder
+      nodeEl.innerHTML = `
+        <div style="text-align: center;">
+          <div>${node.title}</div>
+          <div style="
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            margin: 4px auto 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          ">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
+              <circle cx="12" cy="8" r="4"/>
+              <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
+            </svg>
+          </div>
+        </div>
+      `;
+    }
+
+    return new CSS2DObject(nodeEl);
+  }, [displayMode]);
+
+  // Custom 3D link rendering with fuse effect
+  const linkThreeObject = useCallback((link: GraphLinkData) => {
+    if (!THREE) return null;
+
+    const progress = link.progress / 100;
+
+    // Create a group to hold both parts of the fuse
+    const group = new THREE.Group();
+
+    // We'll update positions in linkPositionUpdate
+    // For now, return a simple line that will be updated
+    const material = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.6
+    });
+    const geometry = new THREE.BufferGeometry();
+    const line = new THREE.Line(geometry, material);
+
+    // Store progress for later use
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (group as any).fuseProgress = progress;
+    group.add(line);
+
+    return group;
+  }, []);
+
+  // Update 3D link positions
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const FG = ForceGraph2D as any;
+  const linkPositionUpdate = useCallback((group: any, link: GraphLinkData) => {
+    if (!THREE) return false;
+
+    const source = link.source as GraphNodeData;
+    const target = link.target as GraphNodeData;
+
+    if (!source.x || !target.x) return false;
+
+    const progress = link.progress / 100;
+    const sx = source.x, sy = source.y ?? 0, sz = source.z ?? 0;
+    const tx = target.x, ty = target.y ?? 0, tz = target.z ?? 0;
+
+    // Clear existing children
+    while (group.children.length > 0) {
+      group.remove(group.children[0]);
+    }
+
+    // Burned position
+    const bx = sx + (tx - sx) * progress;
+    const by = sy + (ty - sy) * progress;
+    const bz = sz + (tz - sz) * progress;
+
+    // Unburned part (bright)
+    const unburnedGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(bx, by, bz),
+      new THREE.Vector3(tx, ty, tz)
+    ]);
+    const unburnedMat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.6
+    });
+    group.add(new THREE.Line(unburnedGeom, unburnedMat));
+
+    // Burned part (dim)
+    const burnedGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(sx, sy, sz),
+      new THREE.Vector3(bx, by, bz)
+    ]);
+    const burnedMat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.15
+    });
+    group.add(new THREE.Line(burnedGeom, burnedMat));
+
+    // Spark point
+    if (progress > 0 && progress < 1) {
+      const sparkGeom = new THREE.SphereGeometry(2, 8, 8);
+      const sparkMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9
+      });
+      const spark = new THREE.Mesh(sparkGeom, sparkMat);
+      spark.position.set(bx, by, bz);
+      group.add(spark);
+    }
+
+    return true;
+  }, []);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const FG2D = ForceGraph2D as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const FG3D = ForceGraph3D as any;
+
+  // Common props for both 2D and 3D graphs
+  const commonProps = {
+    ref: graphRef,
+    width: dimensions.width,
+    height: dimensions.height,
+    graphData: graphData,
+    backgroundColor: "#000000",
+    nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
+    onNodeClick: (node: GraphNodeData) => {
+      console.log('Clicked node:', node);
+    },
+    nodeColor: (node: GraphNodeData) => node.color,
+    linkDirectionalArrowLength: 6,
+    linkDirectionalArrowRelPos: 1,
+  };
 
   return (
-    <div ref={containerRef} className="w-full h-full bg-black">
-      <FG
-        ref={graphRef}
-        width={dimensions.width}
-        height={dimensions.height}
-        graphData={graphData}
-        nodeCanvasObject={nodeCanvasObject}
-        nodePointerAreaPaint={(node: { x?: number; y?: number } & GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
-          const x = node.x ?? 0;
-          const y = node.y ?? 0;
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-          ctx.fill();
-        }}
-        linkCanvasObject={linkCanvasObject}
-        linkDirectionalArrowLength={6}
-        linkDirectionalArrowRelPos={1}
-        linkColor={() => 'rgba(255,255,255,0.2)'}
-        backgroundColor="#000000"
-        nodeLabel={(node: GraphNodeData) => node.card.description || node.title}
-        onNodeClick={(node: GraphNodeData) => {
-          console.log('Clicked node:', node);
-        }}
+    <div ref={containerRef} className="w-full h-full bg-black relative">
+      <SettingsPanel
+        viewMode={viewMode}
+        displayMode={displayMode}
+        onViewModeChange={setViewMode}
+        onDisplayModeChange={setDisplayMode}
       />
+
+      {viewMode === '2D' ? (
+        <FG2D
+          {...commonProps}
+          nodeCanvasObject={nodeCanvasObject}
+          nodePointerAreaPaint={(node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
+            const x = node.x ?? 0;
+            const y = node.y ?? 0;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+            ctx.fill();
+          }}
+          linkCanvasObject={linkCanvasObject}
+          linkColor={() => 'rgba(255,255,255,0.2)'}
+        />
+      ) : css2DRendererInstance ? (
+        <FG3D
+          {...commonProps}
+          extraRenderers={[css2DRendererInstance]}
+          nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
+          nodeThreeObjectExtend={displayMode !== 'balls'}
+          linkThreeObject={linkThreeObject}
+          linkPositionUpdate={linkPositionUpdate}
+          linkOpacity={0.6}
+          nodeOpacity={1}
+        />
+      ) : (
+        <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading 3D graph...</div>
+      )}
     </div>
   );
 }
