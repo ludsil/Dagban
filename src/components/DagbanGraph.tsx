@@ -186,58 +186,70 @@ export default function DagbanGraph({ data }: Props) {
   // Node radius
   const NODE_RADIUS = 8;
 
-  // Custom node rendering for 2D - colored balls with optional labels
+  // Custom node rendering for 2D
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
 
-    // Draw ball
-    ctx.beginPath();
-    ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-    ctx.fillStyle = node.color;
-    ctx.fill();
+    if (displayMode === 'balls') {
+      // Balls mode: just draw the colored ball
+      ctx.beginPath();
+      ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+      ctx.fillStyle = node.color;
+      ctx.fill();
 
-    // Border for active cards
-    if (node.status === 'active') {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    // Draw label for labels/full mode
-    if (displayMode === 'labels' || displayMode === 'full') {
+      // Border for active cards
+      if (node.status === 'active') {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    } else {
+      // Labels/Full mode: text REPLACES the ball
       const label = node.title;
       const fontSize = 12;
       ctx.font = `${fontSize}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      ctx.textBaseline = 'middle';
 
-      // Draw background
       const textWidth = ctx.measureText(label).width;
       const padding = 4;
-      const bgHeight = fontSize + 2;
-      const labelY = y + NODE_RADIUS + 4;
+      const bgHeight = fontSize + padding * 2;
+      const picSize = displayMode === 'full' ? 16 : 0;
+      const picPadding = displayMode === 'full' ? 4 : 0;
+      const totalWidth = textWidth + padding * 2 + picSize + picPadding;
 
+      // Draw background (centered on node position)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(
-        x - textWidth / 2 - padding,
-        labelY - 1,
-        textWidth + padding * 2,
-        bgHeight
+      ctx.beginPath();
+      ctx.roundRect(
+        x - totalWidth / 2,
+        y - bgHeight / 2,
+        totalWidth,
+        bgHeight,
+        4
       );
+      ctx.fill();
 
-      // Draw text
+      // Border for active cards
+      if (node.status === 'active') {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // Draw text (left-aligned within the box)
+      ctx.textAlign = 'left';
       ctx.fillStyle = node.color;
-      ctx.fillText(label, x, labelY);
+      ctx.fillText(label, x - totalWidth / 2 + padding, y);
 
-      // Draw placeholder profile pic for full mode
+      // Draw profile pic on the RIGHT side of text (full mode only)
       if (displayMode === 'full') {
-        const picSize = 16;
-        const picY = labelY + bgHeight + 4;
+        const picX = x - totalWidth / 2 + padding + textWidth + picPadding + picSize / 2;
+        const picY = y;
 
         // Placeholder circle for profile pic
         ctx.beginPath();
-        ctx.arc(x, picY + picSize / 2, picSize / 2, 0, 2 * Math.PI);
+        ctx.arc(picX, picY, picSize / 2, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.fill();
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -247,10 +259,10 @@ export default function DagbanGraph({ data }: Props) {
         // Simple person icon inside
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.beginPath();
-        ctx.arc(x, picY + picSize / 2 - 2, 3, 0, 2 * Math.PI);
+        ctx.arc(picX, picY - 2, 2.5, 0, 2 * Math.PI);
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(x, picY + picSize / 2 + 5, 5, Math.PI, 0, false);
+        ctx.arc(picX, picY + 4, 4, Math.PI, 0, false);
         ctx.fill();
       }
     }
@@ -294,7 +306,7 @@ export default function DagbanGraph({ data }: Props) {
     }
   }, []);
 
-  // Create 3D node object with HTML labels
+  // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
   const nodeThreeObject = useCallback((node: GraphNodeData) => {
     if (displayMode === 'balls' || !CSS2DObject) {
       return undefined; // Use default sphere
@@ -303,30 +315,31 @@ export default function DagbanGraph({ data }: Props) {
     const nodeEl = document.createElement('div');
     nodeEl.className = 'node-label';
     nodeEl.style.color = node.color;
+    nodeEl.style.display = 'flex';
+    nodeEl.style.alignItems = 'center';
+    nodeEl.style.gap = '4px';
 
     if (displayMode === 'labels') {
       nodeEl.textContent = node.title;
     } else if (displayMode === 'full') {
-      // Create container for full mode with label + profile placeholder
+      // Create container for full mode: text + profile pic on the RIGHT
       nodeEl.innerHTML = `
-        <div style="text-align: center;">
-          <div>${node.title}</div>
-          <div style="
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.4);
-            margin: 4px auto 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          ">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
-              <circle cx="12" cy="8" r="4"/>
-              <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
-            </svg>
-          </div>
+        <span>${node.title}</span>
+        <div style="
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.2);
+          border: 1px solid rgba(255,255,255,0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        ">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
+          </svg>
         </div>
       `;
     }
@@ -464,9 +477,26 @@ export default function DagbanGraph({ data }: Props) {
             const x = node.x ?? 0;
             const y = node.y ?? 0;
             ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-            ctx.fill();
+
+            if (displayMode === 'balls') {
+              ctx.beginPath();
+              ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+              ctx.fill();
+            } else {
+              // Match the text label area for click detection
+              const fontSize = 12;
+              ctx.font = `${fontSize}px Arial`;
+              const textWidth = ctx.measureText(node.title).width;
+              const padding = 4;
+              const bgHeight = fontSize + padding * 2;
+              const picSize = displayMode === 'full' ? 16 : 0;
+              const picPadding = displayMode === 'full' ? 4 : 0;
+              const totalWidth = textWidth + padding * 2 + picSize + picPadding;
+
+              ctx.beginPath();
+              ctx.roundRect(x - totalWidth / 2, y - bgHeight / 2, totalWidth, bgHeight, 4);
+              ctx.fill();
+            }
           }}
           linkCanvasObject={linkCanvasObject}
           linkColor={() => 'rgba(255,255,255,0.2)'}
@@ -476,7 +506,7 @@ export default function DagbanGraph({ data }: Props) {
           {...commonProps}
           extraRenderers={[css2DRendererInstance]}
           nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
-          nodeThreeObjectExtend={displayMode !== 'balls'}
+          nodeThreeObjectExtend={false}
           linkThreeObject={linkThreeObject}
           linkPositionUpdate={linkPositionUpdate}
           linkOpacity={0.6}
