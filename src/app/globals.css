@@ -348,3 +348,177 @@ body {
 .card-detail-btn.save:hover {
   background-color: #22c55e;
 }
+
+/* Context Menu - right-click menu on canvas */
+.context-menu {
+  position: fixed;
+  min-width: 160px;
+  background-color: rgba(0, 0, 0, 0.9);
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 3000;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.context-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.context-menu-item svg {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.context-menu-item:hover svg {
+  color: #4ade80;
+}
+
+/* Card Creation Form - floating form for creating new cards */
+.card-creation-form {
+  position: fixed;
+  width: 280px;
+  background-color: rgba(0, 0, 0, 0.9);
+  border-radius: 8px;
+  padding: 16px;
+  z-index: 3000;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.card-creation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.card-creation-close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.card-creation-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.card-creation-field {
+  margin-bottom: 12px;
+}
+
+.card-creation-label {
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.card-creation-input,
+.card-creation-select {
+  width: 100%;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  transition: all 0.15s ease;
+}
+
+.card-creation-input:focus,
+.card-creation-select:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.card-creation-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.card-creation-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+}
+
+.card-creation-select option {
+  background-color: #1a1a1a;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.card-creation-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.card-creation-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.card-creation-btn.cancel {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.card-creation-btn.cancel:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.card-creation-btn.create {
+  background-color: #4ade80;
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.card-creation-btn.create:hover {
+  background-color: #22c55e;
+}
+
+.card-creation-btn.create:disabled {
+  background-color: rgba(74, 222, 128, 0.3);
+  color: rgba(0, 0, 0, 0.4);
+  cursor: not-allowed;
+}

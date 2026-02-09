@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import DagbanGraph from '@/components/DagbanGraph';
 import { sampleGraph } from '@/lib/sample-data';
 import { usePersistedGraph } from '@/lib/storage';
-import type { DagbanGraph as GraphData } from '@/lib/types';
+import type { DagbanGraph as GraphData, Card } from '@/lib/types';
 
 export default function Home() {
   const [graph, setGraph] = usePersistedGraph(sampleGraph);

@@ -11,6 +11,26 @@ interface SelectedNodeInfo {
   screenY: number;
 }
 
+// Context menu state
+interface ContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  graphX: number;
+  graphY: number;
+}
+
+// Card creation form state
+interface CardCreationState {
+  visible: boolean;
+  x: number;
+  y: number;
+  graphX: number;
+  graphY: number;
+  title: string;
+  categoryId: string;
+}
+
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
@@ -29,6 +49,7 @@ interface Props {
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
   onCategoryAdd?: (category: Category) => void;
   onCategoryDelete?: (categoryId: string) => void;
+  onCardCreate?: (card: Card) => void;
 }
 
 // Custom node type extending the force-graph node structure
@@ -207,6 +228,184 @@ function CardDetailPanel({
   );
 }
 
+// Context Menu Component
+function ContextMenu({
+  state,
+  onClose,
+  onCreateCard,
+}: {
+  state: ContextMenuState;
+  onClose: () => void;
+  onCreateCard: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  if (!state.visible) return null;
+
+  return (
+    <div
+      ref={menuRef}
+      className="context-menu"
+      style={{
+        left: `${state.x}px`,
+        top: `${state.y}px`,
+      }}
+    >
+      <button
+        className="context-menu-item"
+        onClick={() => {
+          onCreateCard();
+          onClose();
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        Create new card
+      </button>
+    </div>
+  );
+}
+
+// Card Creation Form Component
+function CardCreationForm({
+  state,
+  categories,
+  onClose,
+  onSubmit,
+  onTitleChange,
+  onCategoryChange,
+}: {
+  state: CardCreationState;
+  categories: Category[];
+  onClose: () => void;
+  onSubmit: () => void;
+  onTitleChange: (title: string) => void;
+  onCategoryChange: (categoryId: string) => void;
+}) {
+  const formRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (formRef.current && !formRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    // Focus the input when form opens
+    if (state.visible && inputRef.current) {
+      inputRef.current.focus();
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose, state.visible]);
+
+  if (!state.visible) return null;
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && state.title.trim()) {
+      onSubmit();
+    }
+  };
+
+  return (
+    <div
+      ref={formRef}
+      className="card-creation-form"
+      style={{
+        left: `${state.x}px`,
+        top: `${state.y}px`,
+      }}
+    >
+      <div className="card-creation-header">
+        <span>New Card</span>
+        <button className="card-creation-close" onClick={onClose}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="card-creation-field">
+        <label className="card-creation-label">Title</label>
+        <input
+          ref={inputRef}
+          type="text"
+          className="card-creation-input"
+          value={state.title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Enter card title..."
+        />
+      </div>
+
+      <div className="card-creation-field">
+        <label className="card-creation-label">Category</label>
+        <select
+          className="card-creation-select"
+          value={state.categoryId}
+          onChange={(e) => onCategoryChange(e.target.value)}
+        >
+          <option value="">No category</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="card-creation-actions">
+        <button className="card-creation-btn cancel" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="card-creation-btn create"
+          onClick={onSubmit}
+          disabled={!state.title.trim()}
+        >
+          Create
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Custom link type extending the force-graph link structure
 interface GraphLinkData {
   source: string | GraphNodeData;
@@ -342,7 +541,12 @@ async function initThree() {
   }
 }
 
-export default function DagbanGraph({ data, onCardChange }: Props) {
+// Generate unique ID for new cards
+function generateId(): string {
+  return `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
@@ -353,6 +557,26 @@ export default function DagbanGraph({ data, onCardChange }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    graphX: 0,
+    graphY: 0,
+  });
+
+  // Card creation form state
+  const [cardCreation, setCardCreation] = useState<CardCreationState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    graphX: 0,
+    graphY: 0,
+    title: '',
+    categoryId: '',
+  });
 
   // Load three.js on mount
   useEffect(() => {
@@ -410,6 +634,72 @@ export default function DagbanGraph({ data, onCardChange }: Props) {
     }, 1000);
     return () => clearTimeout(timer);
   }, [viewMode]);
+
+  // Handle right-click on canvas for context menu
+  const handleContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+
+    // Get graph coordinates from screen coordinates
+    if (graphRef.current && viewMode === '2D') {
+      const coords = graphRef.current.screen2GraphCoords(event.clientX, event.clientY);
+      setContextMenu({
+        visible: true,
+        x: event.clientX,
+        y: event.clientY,
+        graphX: coords.x,
+        graphY: coords.y,
+      });
+    } else {
+      // For 3D mode, just use screen coordinates (card will appear at origin)
+      setContextMenu({
+        visible: true,
+        x: event.clientX,
+        y: event.clientY,
+        graphX: 0,
+        graphY: 0,
+      });
+    }
+  }, [viewMode]);
+
+  // Close context menu
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  }, []);
+
+  // Open card creation form
+  const openCardCreation = useCallback(() => {
+    setCardCreation({
+      visible: true,
+      x: contextMenu.x,
+      y: contextMenu.y,
+      graphX: contextMenu.graphX,
+      graphY: contextMenu.graphY,
+      title: '',
+      categoryId: data.categories.length > 0 ? data.categories[0].id : '',
+    });
+  }, [contextMenu, data.categories]);
+
+  // Close card creation form
+  const closeCardCreation = useCallback(() => {
+    setCardCreation(prev => ({ ...prev, visible: false, title: '', categoryId: '' }));
+  }, []);
+
+  // Handle card creation submission
+  const handleCardCreation = useCallback(() => {
+    if (!cardCreation.title.trim() || !onCardCreate) return;
+
+    const now = new Date().toISOString();
+    const newCard: Card = {
+      id: generateId(),
+      title: cardCreation.title.trim(),
+      categoryId: cardCreation.categoryId || (data.categories.length > 0 ? data.categories[0].id : ''),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    onCardCreate(newCard);
+    closeCardCreation();
+  }, [cardCreation, data.categories, onCardCreate, closeCardCreation]);
 
   // Node radius
   const NODE_RADIUS = 8;
@@ -692,12 +982,17 @@ export default function DagbanGraph({ data, onCardChange }: Props) {
     nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
     onNodeClick: handleNodeClick,
     nodeColor: (node: GraphNodeData) => node.color,
-    linkDirectionalArrowLength: 3,  // Smaller arrows
+    linkDirectionalArrowLength: 6,
     linkDirectionalArrowRelPos: 1,
+    linkDirectionalArrowColor: () => 'rgba(255, 255, 255, 0.8)',
   };
 
   return (
-    <div ref={containerRef} className="w-full h-full bg-black relative">
+    <div
+      ref={containerRef}
+      className="w-full h-full bg-black relative"
+      onContextMenu={handleContextMenu}
+    >
       <Header onLogoClick={() => setShowSettings(!showSettings)} />
       {showSettings && (
         <SettingsPanel
@@ -739,6 +1034,24 @@ export default function DagbanGraph({ data, onCardChange }: Props) {
         <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading 3D graph...</div>
       )}
 
+      {/* Context Menu */}
+      <ContextMenu
+        state={contextMenu}
+        onClose={closeContextMenu}
+        onCreateCard={openCardCreation}
+      />
+
+      {/* Card Creation Form */}
+      <CardCreationForm
+        state={cardCreation}
+        categories={data.categories}
+        onClose={closeCardCreation}
+        onSubmit={handleCardCreation}
+        onTitleChange={(title) => setCardCreation(prev => ({ ...prev, title }))}
+        onCategoryChange={(categoryId) => setCardCreation(prev => ({ ...prev, categoryId }))}
+      />
+
+      {/* Card Detail Panel */}
       {selectedNode && (
         <CardDetailPanel
           selectedNode={selectedNode}
