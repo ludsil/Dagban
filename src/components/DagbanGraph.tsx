@@ -4,6 +4,13 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category } from '@/lib/types';
 
+// Selected node info for detail panel
+interface SelectedNodeInfo {
+  node: GraphNodeData;
+  screenX: number;
+  screenY: number;
+}
+
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
@@ -32,6 +39,170 @@ interface GraphNodeData {
   x?: number;
   y?: number;
   z?: number;
+}
+
+// Card Detail Panel Component - positioned next to clicked node
+function CardDetailPanel({
+  selectedNode,
+  categories,
+  onClose,
+  onCardChange,
+}: {
+  selectedNode: SelectedNodeInfo;
+  categories: Category[];
+  onClose: () => void;
+  onCardChange?: (cardId: string, updates: Partial<Card>) => void;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { node, screenX, screenY } = selectedNode;
+  const card = node.card;
+
+  // Local state for editing
+  const [title, setTitle] = useState(card.title);
+  const [description, setDescription] = useState(card.description || '');
+  const [categoryId, setCategoryId] = useState(card.category_id || '');
+  const [assignee, setAssignee] = useState(card.assignee || '');
+
+  // Handle click outside to close
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    // Delay adding listener to prevent immediate close from the same click
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 100);
+
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  // Save changes
+  const handleSave = useCallback(() => {
+    if (onCardChange) {
+      onCardChange(card.id, {
+        title,
+        description: description || undefined,
+        category_id: categoryId || undefined,
+        assignee: assignee || undefined,
+      });
+    }
+    onClose();
+  }, [card.id, title, description, categoryId, assignee, onCardChange, onClose]);
+
+  // Calculate panel position - position to the right of the node, or left if near edge
+  const panelWidth = 280;
+  const panelHeight = 320;
+  const offset = 20;
+
+  let left = screenX + offset;
+  let top = screenY - panelHeight / 2;
+
+  // Adjust if panel would go off-screen
+  if (typeof window !== 'undefined') {
+    if (left + panelWidth > window.innerWidth - 20) {
+      left = screenX - panelWidth - offset;
+    }
+    if (top < 20) {
+      top = 20;
+    }
+    if (top + panelHeight > window.innerHeight - 20) {
+      top = window.innerHeight - panelHeight - 20;
+    }
+  }
+
+  return (
+    <div
+      ref={panelRef}
+      className="card-detail-panel"
+      style={{
+        left: `${left}px`,
+        top: `${top}px`,
+      }}
+    >
+      <div className="card-detail-header">
+        <span className="card-detail-status" style={{ backgroundColor: node.color }}>
+          {node.status}
+        </span>
+        <button className="card-detail-close" onClick={onClose}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="card-detail-field">
+        <label className="card-detail-label">Title</label>
+        <input
+          type="text"
+          className="card-detail-input"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </div>
+
+      <div className="card-detail-field">
+        <label className="card-detail-label">Description</label>
+        <textarea
+          className="card-detail-textarea"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Add a description..."
+          rows={3}
+        />
+      </div>
+
+      <div className="card-detail-field">
+        <label className="card-detail-label">Category</label>
+        <select
+          className="card-detail-select"
+          value={categoryId}
+          onChange={(e) => setCategoryId(e.target.value)}
+        >
+          <option value="">No category</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="card-detail-field">
+        <label className="card-detail-label">Assignee</label>
+        <input
+          type="text"
+          className="card-detail-input"
+          value={assignee}
+          onChange={(e) => setAssignee(e.target.value)}
+          placeholder="Enter assignee..."
+        />
+      </div>
+
+      <div className="card-detail-actions">
+        <button className="card-detail-btn cancel" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="card-detail-btn save" onClick={handleSave}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // Custom link type extending the force-graph link structure
@@ -169,7 +340,7 @@ async function initThree() {
   }
 }
 
-export default function DagbanGraph({ data }: Props) {
+export default function DagbanGraph({ data, onCardChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
@@ -179,6 +350,7 @@ export default function DagbanGraph({ data }: Props) {
   const [showSettings, setShowSettings] = useState(true);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
+  const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
 
   // Load three.js on mount
   useEffect(() => {
