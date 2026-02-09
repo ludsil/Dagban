@@ -7,7 +7,7 @@ import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Cate
 // Dynamic import to avoid SSR issues with force-graph
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-gray-900 flex items-center justify-center text-gray-400">Loading graph...</div>
+  loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading graph...</div>
 });
 
 interface Props {
@@ -119,31 +119,28 @@ export default function DagbanGraph({ data }: Props) {
     const burnX = source.x + (target.x - source.x) * progress;
     const burnY = source.y + (target.y - source.y) * progress;
 
-    // Unburned part (ahead of progress) - bright
+    // Unburned part (ahead of progress) - bright white
     ctx.beginPath();
     ctx.moveTo(burnX, burnY);
     ctx.lineTo(target.x, target.y);
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)'; // amber
-    ctx.lineWidth = 3 / globalScale;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 2 / globalScale;
     ctx.stroke();
 
     // Burned part (behind progress) - dim
     ctx.beginPath();
     ctx.moveTo(source.x, source.y);
     ctx.lineTo(burnX, burnY);
-    ctx.strokeStyle = 'rgba(107, 114, 128, 0.5)'; // gray
-    ctx.lineWidth = 3 / globalScale;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 2 / globalScale;
     ctx.stroke();
 
     // Fuse head / spark point
     if (progress > 0 && progress < 1) {
       ctx.beginPath();
-      ctx.arc(burnX, burnY, 5 / globalScale, 0, 2 * Math.PI);
-      ctx.fillStyle = '#fbbf24'; // amber
+      ctx.arc(burnX, burnY, 4 / globalScale, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.fill();
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1 / globalScale;
-      ctx.stroke();
     }
   }, []);
 
@@ -151,7 +148,7 @@ export default function DagbanGraph({ data }: Props) {
   const FG = ForceGraph2D as any;
 
   return (
-    <div ref={containerRef} className="w-full h-full bg-gray-900">
+    <div ref={containerRef} className="w-full h-full bg-black">
       <FG
         ref={graphRef}
         width={dimensions.width}
@@ -169,7 +166,8 @@ export default function DagbanGraph({ data }: Props) {
         linkCanvasObject={linkCanvasObject}
         linkDirectionalArrowLength={6}
         linkDirectionalArrowRelPos={1}
-        backgroundColor="#111827"
+        linkColor={() => 'rgba(255,255,255,0.2)'}
+        backgroundColor="#000000"
         nodeLabel={(node: GraphNodeData) => node.card.description || node.title}
         onNodeClick={(node: GraphNodeData) => {
           console.log('Clicked node:', node);
