@@ -225,16 +225,6 @@ export default function DagbanGraph({ data }: Props) {
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Zoom to fit all nodes on initial load after layout stabilizes
-  useEffect(() => {
-    // Wait longer for simulation to settle before zooming
-    const timer = setTimeout(() => {
-      if (graphRef.current) {
-        graphRef.current.zoomToFit(400, 80); // Zoom out with padding
-      }
-    }, 1500); // Increased delay for simulation to settle
-    return () => clearTimeout(timer);
-  }, [data, viewMode]);
 
   // Node radius
   const NODE_RADIUS = 8;
@@ -370,23 +360,26 @@ export default function DagbanGraph({ data }: Props) {
       nodeEl.textContent = node.title;
     } else if (displayMode === 'full') {
       // Create container for full mode: text + profile pic on the RIGHT
+      // Using inline flex container to ensure horizontal layout
       nodeEl.innerHTML = `
-        <span>${node.title}</span>
-        <div style="
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: rgba(255,255,255,0.2);
-          border: 1px solid rgba(255,255,255,0.4);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        ">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
-            <circle cx="12" cy="8" r="4"/>
-            <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
-          </svg>
+        <div style="display: flex; align-items: center; gap: 4px; flex-direction: row;">
+          <span>${node.title}</span>
+          <div style="
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+          ">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
+              <circle cx="12" cy="8" r="4"/>
+              <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
+            </svg>
+          </div>
         </div>
       `;
     }
@@ -539,11 +532,11 @@ export default function DagbanGraph({ data }: Props) {
           d3Force={(forceName: string, force: unknown) => {
             if (forceName === 'charge' && force) {
               // @ts-expect-error - force methods
-              force.strength(-60); // Less repulsion
+              force.strength(-200); // Strong repulsion = sparse
             }
             if (forceName === 'link' && force) {
               // @ts-expect-error - force methods
-              force.distance(40); // Shorter links
+              force.distance(100); // Longer links = sparse
             }
           }}
         />
