@@ -15,22 +15,21 @@ interface Props {
   onEdgeProgressChange?: (edgeId: string, progress: number) => void;
 }
 
-interface GraphNode {
-  id: string;
+// Custom node type extending the force-graph node structure
+interface GraphNodeData {
   title: string;
   color: string;
   status: 'blocked' | 'active' | 'done';
   card: Card;
 }
 
-interface GraphLink {
-  source: string;
-  target: string;
+// Custom link type extending the force-graph link structure
+interface GraphLinkData {
   progress: number;
   edge: Edge;
 }
 
-export default function DagbanGraph({ data, onEdgeProgressChange }: Props) {
+export default function DagbanGraph({ data }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
@@ -45,14 +44,14 @@ export default function DagbanGraph({ data, onEdgeProgressChange }: Props) {
         color,
         status,
         card,
-      } as GraphNode;
+      };
     }),
     links: data.edges.map(edge => ({
       source: edge.source,
       target: edge.target,
       progress: edge.progress,
       edge,
-    } as GraphLink)),
+    })),
   };
 
   // Resize handling
@@ -71,7 +70,7 @@ export default function DagbanGraph({ data, onEdgeProgressChange }: Props) {
   }, []);
 
   // Custom node rendering - post-it card style
-  const nodeCanvasObject = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+  const nodeCanvasObject = useCallback((node: { x?: number; y?: number } & GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const label = node.title;
     const fontSize = 12 / globalScale;
     ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
@@ -82,8 +81,8 @@ export default function DagbanGraph({ data, onEdgeProgressChange }: Props) {
     const cardWidth = textWidth + padding * 2;
     const cardHeight = fontSize + padding * 2;
 
-    const x = (node as unknown as { x: number }).x;
-    const y = (node as unknown as { y: number }).y;
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
 
     // Shadow
     ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
@@ -118,9 +117,9 @@ export default function DagbanGraph({ data, onEdgeProgressChange }: Props) {
   }, []);
 
   // Custom link rendering - fuse style
-  const linkCanvasObject = useCallback((link: GraphLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    const source = link.source as unknown as { x: number; y: number };
-    const target = link.target as unknown as { x: number; y: number };
+  const linkCanvasObject = useCallback((link: { source: { x: number; y: number }; target: { x: number; y: number } } & GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const source = link.source;
+    const target = link.target;
 
     if (!source.x || !target.x) return;
 
@@ -158,22 +157,25 @@ export default function DagbanGraph({ data, onEdgeProgressChange }: Props) {
     }
   }, []);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const FG = ForceGraph2D as any;
+
   return (
     <div ref={containerRef} className="w-full h-full bg-gray-900">
-      <ForceGraph2D
+      <FG
         width={dimensions.width}
         height={dimensions.height}
         graphData={graphData}
         nodeCanvasObject={nodeCanvasObject}
-        nodePointerAreaPaint={(node, color, ctx, globalScale) => {
+        nodePointerAreaPaint={(node: { x?: number; y?: number } & GraphNodeData, color: string, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const fontSize = 12 / globalScale;
           ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
           const padding = 8 / globalScale;
-          const textWidth = ctx.measureText((node as GraphNode).title).width;
+          const textWidth = ctx.measureText(node.title).width;
           const cardWidth = textWidth + padding * 2;
           const cardHeight = fontSize + padding * 2;
-          const x = (node as unknown as { x: number }).x;
-          const y = (node as unknown as { y: number }).y;
+          const x = node.x ?? 0;
+          const y = node.y ?? 0;
 
           ctx.fillStyle = color;
           ctx.beginPath();
@@ -184,8 +186,8 @@ export default function DagbanGraph({ data, onEdgeProgressChange }: Props) {
         linkDirectionalArrowLength={6}
         linkDirectionalArrowRelPos={1}
         backgroundColor="#111827"
-        nodeLabel={(node) => (node as GraphNode).card.description || (node as GraphNode).title}
-        onNodeClick={(node) => {
+        nodeLabel={(node: GraphNodeData) => node.card.description || node.title}
+        onNodeClick={(node: GraphNodeData) => {
           console.log('Clicked node:', node);
         }}
       />

@@ -32,7 +32,7 @@ export interface DagbanGraph {
 }
 
 // Computed state for a card based on graph
-export function getCardStatus(card: Card, edges: Edge[], cards: Card[]): CardStatus {
+export function getCardStatus(card: Card, edges: Edge[], _cards: Card[]): CardStatus {
   // Find all edges where this card is the target (dependencies)
   const incomingEdges = edges.filter(e => e.target === card.id);
 
