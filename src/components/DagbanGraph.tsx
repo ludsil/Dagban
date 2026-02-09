@@ -225,6 +225,17 @@ export default function DagbanGraph({ data }: Props) {
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
+  // Zoom to fit for 3D only (starts too zoomed out otherwise)
+  useEffect(() => {
+    if (viewMode === '3D') {
+      const timer = setTimeout(() => {
+        if (graphRef.current) {
+          graphRef.current.zoomToFit(400, 50);
+        }
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [viewMode]);
 
   // Node radius
   const NODE_RADIUS = 8;
