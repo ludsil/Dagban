@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category } from '@/lib/types';
 
 // Dynamic import to avoid SSR issues with force-graph
-const ForceGraph2D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph2D), {
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-gray-900 flex items-center justify-center text-gray-400">Loading graph...</div>
 });
