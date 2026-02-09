@@ -84,51 +84,26 @@ export default function DagbanGraph({ data }: Props) {
     return () => clearTimeout(timer);
   }, [data]); // Re-run when data changes
 
-  // Custom node rendering - post-it card style
-  const nodeCanvasObject = useCallback((node: { x?: number; y?: number } & GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    const label = node.title;
-    const fontSize = 12 / globalScale;
-    ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+  // Node radius
+  const NODE_RADIUS = 8;
 
-    // Card dimensions
-    const padding = 8 / globalScale;
-    const textWidth = ctx.measureText(label).width;
-    const cardWidth = textWidth + padding * 2;
-    const cardHeight = fontSize + padding * 2;
-
+  // Custom node rendering - colored balls (text on hover via nodeLabel)
+  const nodeCanvasObject = useCallback((node: { x?: number; y?: number } & GraphNodeData, ctx: CanvasRenderingContext2D) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
 
-    // Shadow
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-    ctx.shadowBlur = 4 / globalScale;
-    ctx.shadowOffsetX = 2 / globalScale;
-    ctx.shadowOffsetY = 2 / globalScale;
-
-    // Card background
-    ctx.fillStyle = node.color;
+    // Draw ball
     ctx.beginPath();
-    ctx.roundRect(x - cardWidth / 2, y - cardHeight / 2, cardWidth, cardHeight, 4 / globalScale);
+    ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+    ctx.fillStyle = node.color;
     ctx.fill();
-
-    // Reset shadow
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
 
     // Border for active cards
     if (node.status === 'active') {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.lineWidth = 2 / globalScale;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.lineWidth = 2;
       ctx.stroke();
     }
-
-    // Text
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = node.status === 'done' ? '#4b5563' : '#ffffff';
-    ctx.fillText(label, x, y);
   }, []);
 
   // Custom link rendering - fuse style
@@ -183,19 +158,12 @@ export default function DagbanGraph({ data }: Props) {
         height={dimensions.height}
         graphData={graphData}
         nodeCanvasObject={nodeCanvasObject}
-        nodePointerAreaPaint={(node: { x?: number; y?: number } & GraphNodeData, color: string, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          const fontSize = 12 / globalScale;
-          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
-          const padding = 8 / globalScale;
-          const textWidth = ctx.measureText(node.title).width;
-          const cardWidth = textWidth + padding * 2;
-          const cardHeight = fontSize + padding * 2;
+        nodePointerAreaPaint={(node: { x?: number; y?: number } & GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
           const x = node.x ?? 0;
           const y = node.y ?? 0;
-
           ctx.fillStyle = color;
           ctx.beginPath();
-          ctx.roundRect(x - cardWidth / 2, y - cardHeight / 2, cardWidth, cardHeight, 4 / globalScale);
+          ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
           ctx.fill();
         }}
         linkCanvasObject={linkCanvasObject}
