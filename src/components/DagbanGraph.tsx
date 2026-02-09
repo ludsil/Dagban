@@ -366,10 +366,11 @@ export default function DagbanGraph({ data }: Props) {
   const linkPositionUpdate = useCallback((group: any, link: GraphLinkData) => {
     if (!THREE) return false;
 
-    const source = link.source as GraphNodeData;
-    const target = link.target as GraphNodeData;
+    const source = link.source as GraphNodeData | undefined;
+    const target = link.target as GraphNodeData | undefined;
 
-    if (!source.x || !target.x) return false;
+    // Guard against undefined nodes during initialization
+    if (!source || !target || source.x === undefined || target.x === undefined) return false;
 
     const progress = link.progress / 100;
     const sx = source.x, sy = source.y ?? 0, sz = source.z ?? 0;
