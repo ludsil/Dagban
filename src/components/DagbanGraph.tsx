@@ -543,11 +543,11 @@ export default function DagbanGraph({ data }: Props) {
           d3Force={(forceName: string, force: unknown) => {
             if (forceName === 'charge' && force) {
               // @ts-expect-error - force methods
-              force.strength(-200); // Strong repulsion = sparse
+              force.strength(-400); // Very strong repulsion = very sparse
             }
             if (forceName === 'link' && force) {
               // @ts-expect-error - force methods
-              force.distance(100); // Longer links = sparse
+              force.distance(150); // Longer links = sparse
             }
           }}
         />
