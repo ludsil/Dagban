@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, placeholderUsers } from '@/lib/types';
 import { SelectedNodeInfo, GraphNodeData } from './types';
+import { Kbd } from '@/components/ui/kbd';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -35,6 +41,23 @@ export function CardDetailPanel({
   const [description, setDescription] = useState(card.description || '');
   const [assignee, setAssignee] = useState(card.assignee || '');
   const [showAssigneeInput, setShowAssigneeInput] = useState(false);
+  const [shiftHeld, setShiftHeld] = useState(false);
+
+  // Track shift key state
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftHeld(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftHeld(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Save changes helper
   const saveChanges = useCallback(() => {
@@ -123,8 +146,8 @@ export function CardDetailPanel({
   }, [onClose, onDelete, node]);
 
   // Calculate panel position - position to the right of the node, or left if near edge
-  const panelWidth = 320;
-  const panelHeight = 280;
+  const panelWidth = 340;
+  const panelHeight = 320;
   const offset = 20;
 
   let left = screenX + offset;
@@ -222,9 +245,8 @@ export function CardDetailPanel({
       <div className="postit-actions">
         <div className="postit-actions-left">
           <button
-            className="postit-action-btn"
+            className={`postit-action-btn ${shiftHeld ? 'shift-active' : ''}`}
             onClick={handleAddTask}
-            title="Create downstream task (Shift: link existing)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 5v14M5 12h14" />
@@ -232,9 +254,8 @@ export function CardDetailPanel({
             <span>Add task</span>
           </button>
           <button
-            className="postit-action-btn"
+            className={`postit-action-btn ${shiftHeld ? 'shift-active' : ''}`}
             onClick={handleAddDep}
-            title="Create upstream dependency (Shift: link existing)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -242,19 +263,36 @@ export function CardDetailPanel({
             </svg>
             <span>Add dep</span>
           </button>
-          <button
-            className="postit-action-btn postit-action-btn-danger"
-            onClick={handleDelete}
-            title="Delete this node"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-            </svg>
-            <span>Delete</span>
-          </button>
+          <Tooltip delayDuration={100}>
+            <TooltipTrigger asChild>
+              <button type="button" className="postit-kbd-wrapper">
+                <Kbd>⇧</Kbd>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={8}>
+              <p>Hold Shift to link to existing node</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
-        <div className="postit-status-badge" style={{ backgroundColor: node.color }}>
-          {node.status}
+        <div className="postit-actions-right">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="postit-delete-icon"
+                onClick={handleDelete}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                </svg>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Delete node</p>
+            </TooltipContent>
+          </Tooltip>
+          <div className="postit-status-badge" style={{ backgroundColor: node.color }}>
+            {node.status}
+          </div>
         </div>
       </div>
     </div>

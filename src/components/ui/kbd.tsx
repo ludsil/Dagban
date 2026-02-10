@@ -1,0 +1,26 @@
+import { cn } from "@/lib/utils"
+
+function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
+  return (
+    <kbd
+      data-slot="kbd"
+      className={cn(
+        "inline-flex h-5 w-fit min-w-5 items-center justify-center gap-1 rounded px-1.5 font-mono text-[10px] font-medium select-none bg-white/10 text-white/50",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function KbdGroup({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <kbd
+      data-slot="kbd-group"
+      className={cn("inline-flex items-center gap-1", className)}
+      {...props}
+    />
+  )
+}
+
+export { Kbd, KbdGroup }
