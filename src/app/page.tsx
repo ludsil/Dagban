@@ -59,6 +59,15 @@ export default function Home() {
     setGraph(newGraph);
   }, [graph, setGraph]);
 
+  // Handle card deletion (also removes connected edges)
+  const handleCardDelete = useCallback((cardId: string) => {
+    setGraph({
+      ...graph,
+      cards: graph.cards.filter(card => card.id !== cardId),
+      edges: graph.edges.filter(edge => edge.source !== cardId && edge.target !== cardId),
+    });
+  }, [graph, setGraph]);
+
   return (
     <div className="w-screen h-screen">
       <DagbanGraph
@@ -67,6 +76,7 @@ export default function Home() {
         onCardChange={handleCardChange}
         onCategoryChange={handleCategoryChange}
         onCardCreate={handleCardCreate}
+        onCardDelete={handleCardDelete}
       />
     </div>
   );

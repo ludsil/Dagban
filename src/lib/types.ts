@@ -1,5 +1,21 @@
 // Dagban core types
 
+// User type for team members
+export interface User {
+  id: string;
+  name: string;
+  avatar?: string; // URL to avatar image (optional)
+}
+
+// Placeholder users for development
+export const placeholderUsers: User[] = [
+  { id: 'alice', name: 'Alice Chen' },
+  { id: 'bob', name: 'Bob Smith' },
+  { id: 'charlie', name: 'Charlie Davis' },
+  { id: 'diana', name: 'Diana Evans' },
+  { id: 'ethan', name: 'Ethan Foster' },
+];
+
 // D3 schemePaired colors - matches react-force-graph nodeAutoColorBy
 // These are the exact colors used by the react-force-graph examples
 export const schemePaired = [

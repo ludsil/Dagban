@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category } from '@/lib/types';
+import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category, placeholderUsers } from '@/lib/types';
 import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } from '@/lib/colors';
 
 // Selected node info for detail panel
@@ -220,22 +220,23 @@ function CardDetailPanel({
       <div className="postit-status-bar" style={{ backgroundColor: node.color }} />
 
       {/* Assignee avatar in top right corner */}
-      <div className="postit-assignee-container">
+      <div className="postit-assignee-corner">
         {showAssigneeInput ? (
-          <input
-            type="text"
-            className="postit-assignee-input"
+          <select
+            className="postit-assignee-dropdown"
             value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-            onBlur={() => setShowAssigneeInput(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === 'Escape') {
-                setShowAssigneeInput(false);
-              }
+            onChange={(e) => {
+              setAssignee(e.target.value);
+              setShowAssigneeInput(false);
             }}
-            placeholder="Name..."
+            onBlur={() => setShowAssigneeInput(false)}
             autoFocus
-          />
+          >
+            <option value="">Unassigned</option>
+            {placeholderUsers.map(user => (
+              <option key={user.id} value={user.name}>{user.name}</option>
+            ))}
+          </select>
         ) : (
           <button
             className={`postit-assignee-avatar ${!assignee ? 'empty' : ''}`}
@@ -355,6 +356,217 @@ function NodeContextMenu({
         </svg>
         Create downstream task
       </button>
+      <button
+        className="context-menu-item context-menu-item-danger"
+        onClick={() => {
+          if (state.node) {
+            onDelete(state.node);
+          }
+          onClose();
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+        </svg>
+        Delete node
+      </button>
+    </div>
+  );
+}
+
+// Toast Notification Component
+function Toast({ state, onClose }: { state: ToastState; onClose: () => void }) {
+  useEffect(() => {
+    if (state.visible && !state.action) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.visible, state.action, onClose]);
+
+  if (!state.visible) return null;
+
+  return (
+    <div className={`toast toast-${state.type}`}>
+      <span>{state.message}</span>
+      {state.action && (
+        <button className="toast-action" onClick={state.action.onClick}>
+          {state.action.label}
+        </button>
+      )}
+      <button className="toast-close" onClick={onClose}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// Command Palette Component
+function CommandPalette({
+  state,
+  nodes,
+  onClose,
+  onSelectNode,
+  onQueryChange,
+  onNewNode,
+}: {
+  state: CommandPaletteState;
+  nodes: GraphNodeData[];
+  onClose: () => void;
+  onSelectNode: (node: GraphNodeData) => void;
+  onQueryChange: (query: string) => void;
+  onNewNode: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Filter nodes based on query
+  const filteredNodes = useMemo(() => {
+    if (!state.query.trim()) return nodes.slice(0, 10);
+    const lowerQuery = state.query.toLowerCase();
+    return nodes
+      .filter(node => node.title.toLowerCase().includes(lowerQuery))
+      .slice(0, 10);
+  }, [nodes, state.query]);
+
+  // Reset selection when filtered results change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [filteredNodes.length]);
+
+  useEffect(() => {
+    if (state.visible && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [state.visible]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!state.visible) return;
+
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex(prev => Math.min(prev + 1, filteredNodes.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex(prev => Math.max(prev - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (filteredNodes[selectedIndex]) {
+          onSelectNode(filteredNodes[selectedIndex]);
+          onClose();
+        } else if (state.query.trim()) {
+          onNewNode();
+          onClose();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [state.visible, filteredNodes, selectedIndex, onClose, onSelectNode, onNewNode, state.query]);
+
+  if (!state.visible) return null;
+
+  return (
+    <div className="command-palette-overlay" onClick={onClose}>
+      <div className="command-palette" onClick={e => e.stopPropagation()}>
+        <div className="command-palette-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          <input
+            ref={inputRef}
+            type="text"
+            className="command-palette-input"
+            placeholder="Search nodes or type to create..."
+            value={state.query}
+            onChange={(e) => onQueryChange(e.target.value)}
+          />
+          <span className="command-palette-hint">esc to close</span>
+        </div>
+        <div className="command-palette-results">
+          {filteredNodes.map((node, index) => (
+            <button
+              key={node.id}
+              className={`command-palette-item ${index === selectedIndex ? 'selected' : ''}`}
+              onClick={() => {
+                onSelectNode(node);
+                onClose();
+              }}
+              onMouseEnter={() => setSelectedIndex(index)}
+            >
+              <div
+                className="command-palette-item-dot"
+                style={{ backgroundColor: node.color }}
+              />
+              <span className="command-palette-item-title">{node.title}</span>
+              <span className="command-palette-item-status">{node.status}</span>
+            </button>
+          ))}
+          {filteredNodes.length === 0 && state.query.trim() && (
+            <button
+              className="command-palette-item selected"
+              onClick={() => {
+                onNewNode();
+                onClose();
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span className="command-palette-item-title">Create &quot;{state.query}&quot;</span>
+            </button>
+          )}
+        </div>
+        <div className="command-palette-footer">
+          <span><kbd>up/down</kbd> navigate</span>
+          <span><kbd>enter</kbd> select</span>
+          <span><kbd>esc</kbd> close</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Keyboard Shortcuts Help Panel
+function KeyboardShortcutsHelp({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  if (!visible) return null;
+
+  return (
+    <div className="shortcuts-help">
+      <div className="shortcuts-help-header">
+        <span>Keyboard Shortcuts</span>
+        <button className="shortcuts-help-close" onClick={onClose}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div className="shortcuts-help-list">
+        <div className="shortcut-item">
+          <kbd>Delete</kbd> / <kbd>Backspace</kbd>
+          <span>Delete hovered node</span>
+        </div>
+        <div className="shortcut-item">
+          <kbd>Cmd</kbd>+<kbd>Z</kbd>
+          <span>Undo last action</span>
+        </div>
+        <div className="shortcut-item">
+          <kbd>Cmd</kbd>+<kbd>K</kbd>
+          <span>Open command palette</span>
+        </div>
+        <div className="shortcut-item">
+          <kbd>?</kbd>
+          <span>Show this help</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -670,7 +882,7 @@ function generateId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props) {
+export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDelete, onUndo }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
@@ -701,13 +913,43 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     parentNodeId: null,
   });
 
-  // Hover tooltip state
+  // Hover tooltip state (tracks which node is hovered for keyboard shortcuts)
   const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState>({
     visible: false,
     x: 0,
     y: 0,
     title: '',
+    nodeId: null,
   });
+
+  // Toast notification state
+  const [toast, setToast] = useState<ToastState>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+
+  // Command palette state
+  const [commandPalette, setCommandPalette] = useState<CommandPaletteState>({
+    visible: false,
+    query: '',
+  });
+
+  // Keyboard shortcuts help state
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+  // Undo stack for local undo functionality
+  const undoStackRef = useRef<UndoAction[]>([]);
+
+  // Show toast notification
+  const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
+    setToast({ visible: true, message, type, action });
+  }, []);
+
+  // Hide toast
+  const hideToast = useCallback(() => {
+    setToast(prev => ({ ...prev, visible: false }));
+  }, []);
 
   // Load three.js on mount
   useEffect(() => {
@@ -796,8 +1038,102 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     setNodeContextMenu(prev => ({ ...prev, visible: false, node: null }));
   }, []);
 
+  // Handle delete node
+  const handleDeleteNode = useCallback((node: GraphNodeData) => {
+    if (!onCardDelete) return;
+
+    // Find connected edges
+    const connectedEdges = data.edges.filter(
+      e => e.source === node.id || e.target === node.id
+    );
+
+    // Store undo action
+    undoStackRef.current.push({
+      type: 'delete_card',
+      card: node.card,
+      connectedEdges,
+    });
+
+    // Delete the card
+    onCardDelete(node.id);
+
+    // Show toast with undo option
+    showToast(`Deleted "${node.title}"`, 'info', {
+      label: 'Undo',
+      onClick: () => {
+        handleUndo();
+      },
+    });
+  }, [data.edges, onCardDelete, showToast]);
+
+  // Handle undo
+  const handleUndo = useCallback(() => {
+    if (onUndo) {
+      onUndo();
+      showToast('Undone', 'success');
+      return;
+    }
+
+    // Local undo if no external handler
+    const action = undoStackRef.current.pop();
+    if (!action) {
+      showToast('Nothing to undo', 'warning');
+      return;
+    }
+
+    if (action.type === 'delete_card' && onCardCreate) {
+      // Restore deleted card
+      onCardCreate(action.card);
+      showToast(`Restored "${action.card.title}"`, 'success');
+    }
+  }, [onUndo, onCardCreate, showToast]);
+
+  // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if typing in an input or textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      // Skip if command palette is open (it handles its own keys)
+      if (commandPalette.visible) return;
+
+      // Delete key - delete hovered node
+      if ((e.key === 'Delete' || e.key === 'Backspace') && hoverTooltip.nodeId) {
+        e.preventDefault();
+        const node = graphData.nodes.find(n => n.id === hoverTooltip.nodeId);
+        if (node) {
+          handleDeleteNode(node);
+        }
+      }
+
+      // Cmd+Z / Ctrl+Z - Undo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+
+      // Cmd+K / Ctrl+K - Command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPalette({ visible: true, query: '' });
+      }
+
+      // ? - Show keyboard shortcuts help
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setShowShortcutsHelp(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hoverTooltip.nodeId, commandPalette.visible, graphData.nodes, handleDeleteNode, handleUndo]);
+
   // Open card creation form for new root node
-  const openRootNodeCreation = useCallback(() => {
+  const openRootNodeCreation = useCallback((initialTitle?: string) => {
     // Center on screen
     const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
     const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
@@ -806,10 +1142,19 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
       visible: true,
       x: centerX,
       y: centerY,
-      title: '',
+      title: initialTitle || '',
       description: '',
       parentNodeId: null,
     });
+  }, []);
+
+  // Handle command palette node selection
+  const handleCommandPaletteSelectNode = useCallback((node: GraphNodeData) => {
+    // Center graph on selected node
+    if (graphRef.current && node.x !== undefined && node.y !== undefined) {
+      graphRef.current.centerAt(node.x, node.y, 500);
+      graphRef.current.zoom(2, 500);
+    }
   }, []);
 
   // Open card creation form for downstream task
@@ -1141,19 +1486,18 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     });
   }, []);
 
-  // Handle node hover - show tooltip
-  const handleNodeHover = useCallback((node: GraphNodeData | null, prevNode: GraphNodeData | null) => {
+  // Handle node hover - track for keyboard shortcuts
+  const handleNodeHover = useCallback((node: GraphNodeData | null) => {
     if (node) {
-      // We need to track the mouse position for the tooltip
-      // The tooltip position will be updated via mousemove
       setHoverTooltip({
         visible: true,
-        x: 0, // Will be updated by mousemove
+        x: 0,
         y: 0,
         title: node.title,
+        nodeId: node.id,
       });
     } else {
-      setHoverTooltip(prev => ({ ...prev, visible: false }));
+      setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
     }
   }, []);
 
@@ -1251,6 +1595,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         state={nodeContextMenu}
         onClose={closeNodeContextMenu}
         onCreateDownstream={openDownstreamCreation}
+        onDelete={handleDeleteNode}
       />
 
       {/* Card Creation Form */}
@@ -1282,8 +1627,28 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
           }}
         >
           {hoverTooltip.title}
+          <span className="tooltip-hint">Del to delete</span>
         </div>
       )}
+
+      {/* Toast Notification */}
+      <Toast state={toast} onClose={hideToast} />
+
+      {/* Command Palette */}
+      <CommandPalette
+        state={commandPalette}
+        nodes={graphData.nodes}
+        onClose={() => setCommandPalette({ visible: false, query: '' })}
+        onSelectNode={handleCommandPaletteSelectNode}
+        onQueryChange={(query) => setCommandPalette(prev => ({ ...prev, query }))}
+        onNewNode={() => openRootNodeCreation(commandPalette.query)}
+      />
+
+      {/* Keyboard Shortcuts Help */}
+      <KeyboardShortcutsHelp
+        visible={showShortcutsHelp}
+        onClose={() => setShowShortcutsHelp(false)}
+      />
 
     </div>
   );
