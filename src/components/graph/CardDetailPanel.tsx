@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { Plus, Link, Trash2, User } from 'lucide-react';
 
 interface CardDetailPanelProps {
@@ -295,7 +296,7 @@ export function CardDetailPanel({
       </div>
 
       {/* Title - large, editable */}
-      <textarea
+      <Textarea
         ref={titleRef}
         className="postit-title"
         value={title}
@@ -306,7 +307,7 @@ export function CardDetailPanel({
       />
 
       {/* Free text area */}
-      <textarea
+      <Textarea
         ref={descriptionRef}
         className="postit-content"
         value={description}
