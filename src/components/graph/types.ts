@@ -7,9 +7,17 @@ export interface GraphNodeData {
   color: string;
   status: 'blocked' | 'active' | 'done';
   card: Card;
+  // Whether this node matches current filter criteria
+  matchesFilter?: boolean;
+  // Position coordinates (set by force simulation)
   x?: number;
   y?: number;
   z?: number;
+  // Fixed position coordinates (fx/fy/fz lock a node's position)
+  // When set, the force simulation will not move this node
+  fx?: number;
+  fy?: number;
+  fz?: number;
   __bckgDimensions?: [number, number];
 }
 
@@ -61,6 +69,8 @@ export interface HoverTooltipState {
   y: number;
   title: string;
   nodeId: string | null;
+  color: string | null;
+  assignee: string | null;
 }
 
 // Toast notification state
@@ -87,3 +97,4 @@ export type UndoAction =
 export type ViewMode = '2D' | '3D';
 export type DisplayMode = 'balls' | 'labels' | 'full';
 export type ColorMode = 'category' | 'indegree' | 'outdegree';
+export type ArrowMode = 'end' | 'middle' | 'none';

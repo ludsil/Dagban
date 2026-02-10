@@ -7,6 +7,7 @@ export { ToastNotification } from './ToastNotification';
 export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 export { Header } from './Header';
 export { SettingsPanel } from './SettingsPanel';
+export { FilterSidebar } from './FilterSidebar';
 
 // Re-export types
 export * from './types';

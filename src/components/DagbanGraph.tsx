@@ -8,18 +8,17 @@ import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } f
 // Import extracted components
 import {
   CardDetailPanel,
-  NodeContextMenu,
   CardCreationForm,
   CommandPalette,
   ToastNotification,
   KeyboardShortcutsHelp,
   Header,
   SettingsPanel,
+  FilterSidebar,
   // Types
   GraphNodeData,
   GraphLinkData,
   SelectedNodeInfo,
-  NodeContextMenuState,
   CardCreationState,
   HoverTooltipState,
   ToastState,
@@ -29,6 +28,7 @@ import {
   ViewMode,
   DisplayMode,
   ColorMode,
+  ArrowMode,
 } from './graph';
 
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
@@ -78,6 +78,19 @@ function generateId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Dim a hex color by reducing its saturation and adding transparency
+function dimColor(hex: string): string {
+  // Handle rgba format
+  if (hex.startsWith('rgba')) {
+    return hex.replace(/[\d.]+\)$/, '0.25)');
+  }
+  // Convert hex to rgb and add low opacity
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, 0.25)`;
+}
+
 export default function DagbanGraph({
   data,
   onCardChange,
@@ -96,18 +109,11 @@ export default function DagbanGraph({
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
   const [colorMode, setColorMode] = useState<ColorMode>('category');
+  const [arrowMode, setArrowMode] = useState<ArrowMode>('end');
   const [showSettings, setShowSettings] = useState(showSettingsProp);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
-
-  // Node context menu state (right-click on node)
-  const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    node: null,
-  });
 
   // Card creation form state
   const [cardCreation, setCardCreation] = useState<CardCreationState>({
@@ -127,6 +133,8 @@ export default function DagbanGraph({
     y: 0,
     title: '',
     nodeId: null,
+    color: null,
+    assignee: null,
   });
 
   // Toast notification state
@@ -152,8 +160,31 @@ export default function DagbanGraph({
     direction: 'downstream',
   });
 
+  // Drag-to-connect state
+  const [dragConnect, setDragConnect] = useState<{
+    active: boolean;
+    sourceNode: GraphNodeData | null;
+    targetNode: GraphNodeData | null;
+    progress: number; // 0 to 1 (3 seconds)
+    startTime: number | null;
+  }>({
+    active: false,
+    sourceNode: null,
+    targetNode: null,
+    progress: 0,
+    startTime: null,
+  });
+  const dragConnectAnimationRef = useRef<number | null>(null);
+
+  // Refs for incremental graph update detection
+  const currentNodesRef = useRef<GraphNodeData[]>([]);
+  const currentLinksRef = useRef<GraphLinkData[]>([]);
+
   // Undo stack for local undo functionality
   const undoStackRef = useRef<UndoAction[]>([]);
+
+  // Filter state - selected assignees for filtering
+  const [selectedAssignees, setSelectedAssignees] = useState<Set<string>>(new Set());
 
   // Show toast notification
   const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
@@ -163,6 +194,24 @@ export default function DagbanGraph({
   // Hide toast
   const hideToast = useCallback(() => {
     setToast(prev => ({ ...prev, visible: false }));
+  }, []);
+
+  // Handle assignee filter toggle
+  const handleAssigneeToggle = useCallback((assignee: string) => {
+    setSelectedAssignees(prev => {
+      const next = new Set(prev);
+      if (next.has(assignee)) {
+        next.delete(assignee);
+      } else {
+        next.add(assignee);
+      }
+      return next;
+    });
+  }, []);
+
+  // Clear all filters
+  const handleClearFilters = useCallback(() => {
+    setSelectedAssignees(new Set());
   }, []);
 
   // Load three.js on mount
@@ -186,11 +235,26 @@ export default function DagbanGraph({
     };
   }, [data.edges]);
 
+  // Check if a card matches the current filters
+  const cardMatchesFilter = useCallback((card: Card): boolean => {
+    // If no filters are selected, all cards match
+    if (selectedAssignees.size === 0) return true;
+
+    // Check assignee filter
+    if (card.assignee) {
+      return selectedAssignees.has(card.assignee);
+    } else {
+      // Unassigned cards match if '__unassigned__' is selected
+      return selectedAssignees.has('__unassigned__');
+    }
+  }, [selectedAssignees]);
+
   // Convert dagban data to force-graph format
   const graphData = useMemo(() => ({
     nodes: data.cards.map(card => {
       const status = getCardStatus(card, data.edges, data.cards);
       const categoryColor = getCardColor(card, status, data.categories);
+      const matchesFilter = cardMatchesFilter(card);
 
       // Compute color based on colorMode
       let color: string;
@@ -204,12 +268,19 @@ export default function DagbanGraph({
         color = categoryColor;
       }
 
+      // Dim the color if node doesn't match filter
+      if (!matchesFilter && selectedAssignees.size > 0) {
+        // Apply dimming by reducing opacity in the color
+        color = dimColor(color);
+      }
+
       return {
         id: card.id,
         title: card.title,
         color,
         status,
         card,
+        matchesFilter,
       };
     }),
     links: data.edges.map(edge => ({
@@ -218,7 +289,36 @@ export default function DagbanGraph({
       progress: edge.progress,
       edge,
     })),
-  }), [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree]);
+  }), [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree, cardMatchesFilter, selectedAssignees.size]);
+
+  // Incremental graph update - detect edge-only changes to avoid full reset
+  useEffect(() => {
+    // Guard: ensure graphRef has the graphData method (ForceGraph is mounted)
+    if (!graphRef.current || typeof graphRef.current.graphData !== 'function') {
+      // Still update refs for tracking
+      currentNodesRef.current = graphData.nodes;
+      currentLinksRef.current = graphData.links;
+      return;
+    }
+
+    // Check if only edges were added (nodes are the same)
+    const nodesChanged = graphData.nodes.length !== currentNodesRef.current.length ||
+      !graphData.nodes.every((n, i) => n.id === currentNodesRef.current[i]?.id);
+
+    if (!nodesChanged && graphData.links.length > currentLinksRef.current.length) {
+      // Only edges added - do incremental update preserving node positions
+      currentLinksRef.current = graphData.links;
+      const currentData = graphRef.current.graphData();
+      graphRef.current.graphData({
+        nodes: currentData.nodes,
+        links: graphData.links
+      });
+    } else {
+      // Full update needed
+      currentNodesRef.current = graphData.nodes;
+      currentLinksRef.current = graphData.links;
+    }
+  }, [graphData]);
 
   // Resize handling
   useEffect(() => {
@@ -235,22 +335,18 @@ export default function DagbanGraph({
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Zoom to fit on load
+  // Set initial camera distance for 3D mode (more zoomed in than default)
   useEffect(() => {
+    if (viewMode !== '3D') return;
     const timer = setTimeout(() => {
       if (graphRef.current) {
-        // 2D: large padding so it barely zooms, 3D: normal zoom
-        const padding = viewMode === '2D' ? 200 : 50;
-        graphRef.current.zoomToFit(400, padding);
+        // Set camera distance to 300 for a more zoomed-in view
+        // (default is typically around 1000)
+        graphRef.current.cameraPosition({ z: 300 });
       }
-    }, 1000);
+    }, 100);
     return () => clearTimeout(timer);
   }, [viewMode]);
-
-  // Close node context menu
-  const closeNodeContextMenu = useCallback(() => {
-    setNodeContextMenu(prev => ({ ...prev, visible: false, node: null }));
-  }, []);
 
   // Handle undo
   const handleUndo = useCallback(() => {
@@ -522,6 +618,10 @@ export default function DagbanGraph({
     // Check if this is the source node in connection mode
     const isConnectionSource = connectionMode.active && connectionMode.sourceNode?.id === node.id;
 
+    // Check if this node is part of a drag-to-connect animation
+    const isDragConnectTarget = dragConnect.active && dragConnect.targetNode?.id === node.id;
+    const isDragConnectSource = dragConnect.active && dragConnect.sourceNode?.id === node.id;
+
     if (displayMode === 'balls') {
       // Draw glow effect for connection source
       if (isConnectionSource) {
@@ -532,6 +632,43 @@ export default function DagbanGraph({
         ctx.beginPath();
         ctx.arc(x, y, NODE_RADIUS + 3, 0, 2 * Math.PI);
         ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // Draw spinning circle animation for drag-to-connect on target node
+      if (isDragConnectTarget && dragConnect.progress > 0) {
+        const animRadius = NODE_RADIUS + 8;
+        const progress = dragConnect.progress;
+        const rotation = performance.now() / 200; // Spinning speed
+
+        // Outer glow that grows with progress
+        ctx.beginPath();
+        ctx.arc(x, y, animRadius + 4, 0, 2 * Math.PI);
+        ctx.fillStyle = `rgba(74, 222, 128, ${0.2 * progress})`;
+        ctx.fill();
+
+        // Background arc (faint circle)
+        ctx.beginPath();
+        ctx.arc(x, y, animRadius, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.2)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Progress arc (spinning and filling up)
+        ctx.beginPath();
+        ctx.arc(x, y, animRadius, rotation, rotation + progress * 2 * Math.PI);
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+
+      // Highlight source node during drag connect
+      if (isDragConnectSource) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 4, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -618,7 +755,7 @@ export default function DagbanGraph({
       // Store dimensions for pointer area
       (node as GraphNodeData & { __bckgDimensions?: [number, number] }).__bckgDimensions = bckgDimensions;
     }
-  }, [displayMode, connectionMode.active, connectionMode.sourceNode?.id]);
+  }, [displayMode, connectionMode.active, connectionMode.sourceNode?.id, dragConnect.active, dragConnect.progress, dragConnect.sourceNode?.id, dragConnect.targetNode?.id]);
 
   // Custom link rendering for 2D - uniform line with small arrow in middle
   const linkCanvasObject = useCallback((link: GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -635,30 +772,38 @@ export default function DagbanGraph({
     ctx.lineWidth = 1 / globalScale;
     ctx.stroke();
 
-    // Draw small arrow in the middle of the edge (fixed size, doesn't scale with zoom)
-    const midX = (source.x + target.x) / 2;
-    const midY = (source.y! + target.y!) / 2;
-    const angle = Math.atan2(target.y! - source.y!, target.x - source.x);
-    const arrowLength = 2; // Fixed size in graph units
-    const arrowWidth = Math.PI / 4; // 45 degrees - wider angle to maintain width with shorter length
+    // Draw arrow based on arrowMode
+    if (arrowMode !== 'none') {
+      const angle = Math.atan2(target.y! - source.y!, target.x - source.x);
+      const arrowLength = 4;
+      const arrowWidth = Math.PI / 6;
 
-    ctx.beginPath();
-    ctx.moveTo(
-      midX + arrowLength * Math.cos(angle),
-      midY + arrowLength * Math.sin(angle)
-    );
-    ctx.lineTo(
-      midX - arrowLength * Math.cos(angle - arrowWidth),
-      midY - arrowLength * Math.sin(angle - arrowWidth)
-    );
-    ctx.lineTo(
-      midX - arrowLength * Math.cos(angle + arrowWidth),
-      midY - arrowLength * Math.sin(angle + arrowWidth)
-    );
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fill();
-  }, []);
+      let arrowX: number, arrowY: number;
+      if (arrowMode === 'end') {
+        const arrowOffset = 8;
+        arrowX = target.x - arrowOffset * Math.cos(angle);
+        arrowY = target.y! - arrowOffset * Math.sin(angle);
+      } else {
+        // middle
+        arrowX = (source.x + target.x) / 2;
+        arrowY = (source.y! + target.y!) / 2;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(arrowX, arrowY);
+      ctx.lineTo(
+        arrowX - arrowLength * Math.cos(angle - arrowWidth),
+        arrowY - arrowLength * Math.sin(angle - arrowWidth)
+      );
+      ctx.lineTo(
+        arrowX - arrowLength * Math.cos(angle + arrowWidth),
+        arrowY - arrowLength * Math.sin(angle + arrowWidth)
+      );
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fill();
+    }
+  }, [arrowMode]);
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
   const nodeThreeObject = useCallback((node: GraphNodeData) => {
@@ -709,88 +854,7 @@ export default function DagbanGraph({
     return new CSS2DObject(nodeEl);
   }, [displayMode]);
 
-  // Custom 3D link rendering with fuse effect
-  const linkThreeObject = useCallback((link: GraphLinkData) => {
-    if (!THREE) return null;
-
-    const progress = link.progress / 100;
-
-    // Create a group to hold both parts of the fuse
-    const group = new THREE.Group();
-
-    // We'll update positions in linkPositionUpdate
-    // For now, return a simple line that will be updated
-    const material = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.6
-    });
-    const geometry = new THREE.BufferGeometry();
-    const line = new THREE.Line(geometry, material);
-
-    // Store progress for later use
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (group as any).fuseProgress = progress;
-    group.add(line);
-
-    return group;
-  }, []);
-
-  // Update 3D link positions - uniform line with arrow in middle
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const linkPositionUpdate = useCallback((group: any, link: GraphLinkData) => {
-    if (!THREE) return false;
-
-    const source = link.source as GraphNodeData | undefined;
-    const target = link.target as GraphNodeData | undefined;
-
-    // Guard against undefined nodes during initialization
-    if (!source || !target || source.x === undefined || target.x === undefined) return false;
-
-    const sx = source.x, sy = source.y ?? 0, sz = source.z ?? 0;
-    const tx = target.x, ty = target.y ?? 0, tz = target.z ?? 0;
-
-    // Clear existing children
-    while (group.children.length > 0) {
-      group.remove(group.children[0]);
-    }
-
-    // Uniform line from source to target
-    const lineGeom = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(sx, sy, sz),
-      new THREE.Vector3(tx, ty, tz)
-    ]);
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.3
-    });
-    group.add(new THREE.Line(lineGeom, lineMat));
-
-    // Arrow cone in the middle
-    const midX = (sx + tx) / 2;
-    const midY = (sy + ty) / 2;
-    const midZ = (sz + tz) / 2;
-
-    const arrowGeom = new THREE.ConeGeometry(1.5, 3, 8);
-    const arrowMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.5
-    });
-    const arrow = new THREE.Mesh(arrowGeom, arrowMat);
-    arrow.position.set(midX, midY, midZ);
-
-    // Orient arrow to point from source to target
-    const direction = new THREE.Vector3(tx - sx, ty - sy, tz - sz).normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    const quaternion = new THREE.Quaternion().setFromUnitVectors(up, direction);
-    arrow.setRotationFromQuaternion(quaternion);
-
-    group.add(arrow);
-
-    return true;
-  }, []);
+  // No custom linkThreeObject needed - use built-in arrow rendering for 3D
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG2D = ForceGraph2D as any;
@@ -799,6 +863,9 @@ export default function DagbanGraph({
 
   // Handle node left-click - show detail panel or complete connection
   const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
+    // Hide tooltip when clicking a node
+    setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
+
     // If in connection mode, complete the connection
     if (connectionMode.active && connectionMode.sourceNode) {
       completeConnection(node);
@@ -813,17 +880,6 @@ export default function DagbanGraph({
     });
   }, [connectionMode.active, connectionMode.sourceNode, completeConnection]);
 
-  // Handle node right-click - show context menu
-  const handleNodeRightClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
-    event.preventDefault();
-    setNodeContextMenu({
-      visible: true,
-      x: event.clientX,
-      y: event.clientY,
-      node,
-    });
-  }, []);
-
   // Handle node hover - track for keyboard shortcuts
   const handleNodeHover = useCallback((node: GraphNodeData | null) => {
     if (node) {
@@ -833,6 +889,8 @@ export default function DagbanGraph({
         y: 0,
         title: node.title,
         nodeId: node.id,
+        color: node.color,
+        assignee: node.card.assignee || null,
       });
     } else {
       setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
@@ -860,6 +918,144 @@ export default function DagbanGraph({
     };
   }, [hoverTooltip.visible]);
 
+  // Handle background click - close panel and cancel connection mode
+  const handleBackgroundClick = useCallback(() => {
+    if (selectedNode) {
+      setSelectedNode(null);
+    }
+    if (connectionMode.active) {
+      cancelConnectionMode();
+    }
+  }, [selectedNode, connectionMode.active, cancelConnectionMode]);
+
+  // Handle node drag end - unfix the node so user can drag it freely
+  // We fix nodes with fx/fy to preserve layout on data updates, but we want
+  // to allow users to drag nodes around. When they stop dragging, we remove
+  // the fixed position to allow natural graph movement.
+  const handleNodeDragEnd = useCallback((node: GraphNodeData) => {
+    // Remove fixed position constraints so node can participate in layout
+    // Note: force-graph uses undefined (not delete) to unfix
+    node.fx = undefined;
+    node.fy = undefined;
+    node.fz = undefined;
+
+    // Cancel any drag-to-connect animation
+    if (dragConnectAnimationRef.current) {
+      cancelAnimationFrame(dragConnectAnimationRef.current);
+      dragConnectAnimationRef.current = null;
+    }
+    setDragConnect({
+      active: false,
+      sourceNode: null,
+      targetNode: null,
+      progress: 0,
+      startTime: null,
+    });
+  }, []);
+
+  // Complete drag-to-connect - create edge from source to target
+  const completeDragConnect = useCallback((sourceNode: GraphNodeData, targetNode: GraphNodeData) => {
+    if (!onEdgeCreate) return;
+
+    // Don't allow self-connections
+    if (sourceNode.id === targetNode.id) {
+      return;
+    }
+
+    // Check if edge already exists
+    const edgeExists = data.edges.some(
+      e => e.source === sourceNode.id && e.target === targetNode.id
+    );
+    if (edgeExists) {
+      showToast('Connection already exists', 'warning');
+      return;
+    }
+
+    // Create the edge (source -> target, so target becomes downstream)
+    onEdgeCreate(sourceNode.id, targetNode.id);
+    showToast(`Connected "${sourceNode.title}" -> "${targetNode.title}"`, 'success');
+  }, [onEdgeCreate, data.edges, showToast]);
+
+  // Handle node drag - detect when dragged node touches another node
+  const handleNodeDrag = useCallback((node: GraphNodeData) => {
+    if (!node.x || !node.y) return;
+
+    // Check if the dragged node is touching any other node
+    const TOUCH_DISTANCE = NODE_RADIUS * 3; // Distance to consider "touching"
+    let touchingNode: GraphNodeData | null = null;
+
+    for (const otherNode of graphData.nodes as GraphNodeData[]) {
+      if (otherNode.id === node.id) continue;
+      if (!otherNode.x || !otherNode.y) continue;
+
+      const dx = node.x - otherNode.x;
+      const dy = node.y - otherNode.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < TOUCH_DISTANCE) {
+        touchingNode = otherNode;
+        break;
+      }
+    }
+
+    if (touchingNode) {
+      // Nodes are touching
+      if (!dragConnect.active || dragConnect.targetNode?.id !== touchingNode.id) {
+        // Start new connection timer
+        const now = performance.now();
+        setDragConnect({
+          active: true,
+          sourceNode: node,
+          targetNode: touchingNode,
+          progress: 0,
+          startTime: now,
+        });
+
+        // Start animation loop
+        const animate = () => {
+          const elapsed = performance.now() - now;
+          const progress = Math.min(elapsed / 1500, 1); // 1.5 seconds
+
+          if (progress >= 1) {
+            // Connection complete
+            completeDragConnect(node, touchingNode!);
+            setDragConnect({
+              active: false,
+              sourceNode: null,
+              targetNode: null,
+              progress: 0,
+              startTime: null,
+            });
+            dragConnectAnimationRef.current = null;
+          } else {
+            setDragConnect(prev => ({ ...prev, progress }));
+            dragConnectAnimationRef.current = requestAnimationFrame(animate);
+          }
+        };
+
+        if (dragConnectAnimationRef.current) {
+          cancelAnimationFrame(dragConnectAnimationRef.current);
+        }
+        dragConnectAnimationRef.current = requestAnimationFrame(animate);
+      }
+    } else {
+      // Nodes not touching - cancel animation
+      if (dragConnect.active) {
+        if (dragConnectAnimationRef.current) {
+          cancelAnimationFrame(dragConnectAnimationRef.current);
+          dragConnectAnimationRef.current = null;
+        }
+        setDragConnect({
+          active: false,
+          sourceNode: null,
+          targetNode: null,
+          progress: 0,
+          startTime: null,
+        });
+      }
+    }
+  }, [graphData.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect]);
+
   // Common props for both 2D and 3D graphs
   const commonProps = {
     ref: graphRef,
@@ -870,7 +1066,9 @@ export default function DagbanGraph({
     nodeLabel: () => '', // Disable default tooltip, using custom one
     onNodeClick: handleNodeClick,
     onNodeHover: handleNodeHover,
-    onNodeRightClick: handleNodeRightClick,
+    onBackgroundClick: handleBackgroundClick,
+    onNodeDrag: handleNodeDrag,
+    onNodeDragEnd: handleNodeDragEnd,
     nodeColor: (node: GraphNodeData) => node.color,
   };
 
@@ -890,11 +1088,24 @@ export default function DagbanGraph({
           viewMode={viewMode}
           displayMode={displayMode}
           colorMode={colorMode}
+          arrowMode={arrowMode}
           onViewModeChange={setViewMode}
           onDisplayModeChange={setDisplayMode}
           onColorModeChange={setColorMode}
+          onArrowModeChange={setArrowMode}
+          cards={data.cards}
+          selectedAssignees={selectedAssignees}
+          onAssigneeToggle={handleAssigneeToggle}
         />
       )}
+
+      {/* Filter Sidebar - now integrated into SettingsPanel */}
+      {/* <FilterSidebar
+        cards={data.cards}
+        selectedAssignees={selectedAssignees}
+        onAssigneeToggle={handleAssigneeToggle}
+        onClearFilters={handleClearFilters}
+      /> */}
 
       {viewMode === '2D' ? (
         <FG2D
@@ -921,22 +1132,17 @@ export default function DagbanGraph({
           extraRenderers={[css2DRendererInstance]}
           nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
           nodeThreeObjectExtend={true}
-          linkThreeObject={linkThreeObject}
-          linkPositionUpdate={linkPositionUpdate}
+          linkWidth={1}
           linkOpacity={0.6}
+          linkColor={() => 'rgba(255, 255, 255, 0.4)'}
+          linkDirectionalArrowLength={arrowMode !== 'none' ? 4 : 0}
+          linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
+          linkDirectionalArrowRelPos={arrowMode === 'end' ? 1 : 0.5}
           nodeOpacity={1}
         />
       ) : (
         <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
       )}
-
-      {/* Node Context Menu (right-click on node) */}
-      <NodeContextMenu
-        state={nodeContextMenu}
-        onClose={closeNodeContextMenu}
-        onCreateDownstream={openDownstreamCreation}
-        onDelete={handleDeleteNode}
-      />
 
       {/* Card Creation Form */}
       <CardCreationForm
@@ -950,6 +1156,7 @@ export default function DagbanGraph({
       {/* Card Detail Panel (left-click on node) */}
       {selectedNode && (
         <CardDetailPanel
+          key={selectedNode.node.id}
           selectedNode={selectedNode}
           onClose={() => setSelectedNode(null)}
           onCardChange={onCardChange}
@@ -970,7 +1177,19 @@ export default function DagbanGraph({
             top: `${hoverTooltip.y + 12}px`,
           }}
         >
-          {hoverTooltip.title}
+          <span style={{ color: hoverTooltip.color || 'inherit' }}>{hoverTooltip.title}</span>
+          <div className={`tooltip-assignee-avatar ${!hoverTooltip.assignee ? 'empty' : ''}`}>
+            {hoverTooltip.assignee ? (
+              <span className="tooltip-assignee-initials">
+                {hoverTooltip.assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')}
+              </span>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" opacity="0.4">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
+              </svg>
+            )}
+          </div>
         </div>
       )}
 
@@ -1012,6 +1231,21 @@ export default function DagbanGraph({
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
+        </div>
+      )}
+
+      {/* Drag-to-Connect Progress Indicator */}
+      {dragConnect.active && dragConnect.sourceNode && dragConnect.targetNode && (
+        <div className="drag-connect-indicator">
+          <div className="drag-connect-progress-bar">
+            <div
+              className="drag-connect-progress-fill"
+              style={{ width: `${dragConnect.progress * 100}%` }}
+            />
+          </div>
+          <span className="drag-connect-text">
+            Connecting: {dragConnect.sourceNode.title} → {dragConnect.targetNode.title}
+          </span>
         </div>
       )}
 

@@ -33,10 +33,12 @@ export function CardDetailPanel({
 }: CardDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const { node, screenX, screenY } = selectedNode;
   const card = node.card;
 
   // Local state for editing
+  // Note: Component is keyed by card.id in DagbanGraph, so state is reset on card change
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
   const [assignee, setAssignee] = useState(card.assignee || '');
@@ -59,6 +61,24 @@ export function CardDetailPanel({
     };
   }, []);
 
+  // Refs to track latest values for unmount save (closures capture stale state)
+  const stateRef = useRef({ title, description, assignee });
+  const cardRef = useRef(card);
+  const onCardChangeRef = useRef(onCardChange);
+
+  // Keep refs updated with latest values
+  useEffect(() => {
+    stateRef.current = { title, description, assignee };
+  }, [title, description, assignee]);
+
+  useEffect(() => {
+    cardRef.current = card;
+  }, [card]);
+
+  useEffect(() => {
+    onCardChangeRef.current = onCardChange;
+  }, [onCardChange]);
+
   // Save changes helper
   const saveChanges = useCallback(() => {
     const titleChanged = title !== card.title;
@@ -73,41 +93,62 @@ export function CardDetailPanel({
     }
   }, [title, description, assignee, card.title, card.description, card.assignee, card.id, onCardChange]);
 
-  // Focus title on open
+  // Save changes when component unmounts (e.g., when clicking another card)
   useEffect(() => {
-    if (titleRef.current) {
-      titleRef.current.focus();
-      titleRef.current.select();
-    }
-  }, []);
+    return () => {
+      const { title, description, assignee } = stateRef.current;
+      const card = cardRef.current;
+      const onCardChange = onCardChangeRef.current;
 
-  // Handle click outside to close (and save if changes)
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        saveChanges();
-        onClose();
+      const titleChanged = title !== card.title;
+      const descChanged = description !== (card.description || '');
+      const assigneeChanged = assignee !== (card.assignee || '');
+
+      if ((titleChanged || descChanged || assigneeChanged) && onCardChange) {
+        onCardChange(card.id, {
+          title,
+          description: description || undefined,
+          assignee: assignee || undefined,
+        });
       }
     };
+  }, []); // Empty deps - runs only on unmount
 
-    const handleEscape = (e: KeyboardEvent) => {
+  // Focus on open: title if new/empty, description end if existing
+  useEffect(() => {
+    if (!card.title && titleRef.current) {
+      // New card - focus title
+      titleRef.current.focus();
+    } else if (descriptionRef.current) {
+      // Existing card - focus description and move cursor to end
+      descriptionRef.current.focus();
+      descriptionRef.current.setSelectionRange(
+        descriptionRef.current.value.length,
+        descriptionRef.current.value.length
+      );
+    }
+  }, [card.title]);
+
+  // Handle Escape and Enter keys to close panel
+  // Note: Click outside is handled by onBackgroundClick in DagbanGraph
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         saveChanges();
         onClose();
       }
+      // Enter closes panel (Shift+Enter for newlines is handled on textarea)
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        saveChanges();
+        onClose();
+      }
     };
 
-    // Delay adding listener to prevent immediate close from the same click
-    const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-    }, 100);
-
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [onClose, saveChanges]);
 
@@ -173,6 +214,15 @@ export function CardDetailPanel({
     e.target.style.height = e.target.scrollHeight + 'px';
   };
 
+  // Handle Enter key in title - save and close (no newlines allowed)
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveChanges();
+      onClose();
+    }
+  };
+
   return (
     <div
       ref={panelRef}
@@ -229,12 +279,14 @@ export function CardDetailPanel({
         className="postit-title"
         value={title}
         onChange={handleTitleChange}
+        onKeyDown={handleTitleKeyDown}
         placeholder="Untitled"
         rows={1}
       />
 
       {/* Free text area */}
       <textarea
+        ref={descriptionRef}
         className="postit-content"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
