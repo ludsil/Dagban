@@ -32,12 +32,12 @@ interface CardCreationState {
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-[#000011] flex items-center justify-center text-gray-500">Loading graph...</div>
+  loading: () => <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading graph...</div>
 });
 
 const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-[#000011] flex items-center justify-center text-gray-500">Loading graph...</div>
+  loading: () => <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading graph...</div>
 });
 
 interface Props {
@@ -979,7 +979,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     width: dimensions.width,
     height: dimensions.height,
     graphData: graphData,
-    backgroundColor: "#000011",
+    backgroundColor: "#000000",
     nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
     onNodeRightClick: handleNodeRightClick,
     nodeColor: (node: GraphNodeData) => node.color,
@@ -988,7 +988,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   return (
     <div
       ref={containerRef}
-      className="w-full h-full bg-[#000011] relative"
+      className="w-full h-full bg-[#000000] relative"
     >
       <Header
         onLogoClick={() => setShowSettings(!showSettings)}
@@ -1034,7 +1034,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
           nodeOpacity={1}
         />
       ) : (
-        <div className="w-full h-full bg-[#000011] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
+        <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
       )}
 
       {/* Node Context Menu (right-click on node) */}
