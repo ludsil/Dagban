@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { ViewMode, DisplayMode, ColorMode, ArrowMode } from './types';
 import { Card, Category, Edge } from '@/lib/types';
 
@@ -52,6 +52,19 @@ export function SettingsPanel({
   onBlockerThresholdChange,
 }: SettingsPanelProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(section)) {
+        next.delete(section);
+      } else {
+        next.add(section);
+      }
+      return next;
+    });
+  };
 
   // Handle / key to focus search
   useEffect(() => {
@@ -253,22 +266,29 @@ export function SettingsPanel({
       {/* Category filter */}
       {categories && selectedCategories && onCategoryToggle && categories.length > 0 && (
         <div className="filter-section">
-          <div className="filter-section-header">
+          <div className="filter-section-header" onClick={() => toggleSection('category')}>
             <span className="filter-section-title">Category</span>
-            <span className="filter-section-count">{categories.length}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="filter-section-count">{categories.length}</span>
+              <svg className={`filter-section-toggle ${collapsedSections.has('category') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
           </div>
-          <div className="filter-category-list">
-            {categories.map(category => (
-              <button
-                key={category.id}
-                className={`filter-category-item ${selectedCategories.has(category.id) ? 'selected' : ''}`}
-                onClick={() => onCategoryToggle(category.id)}
-              >
-                <div className="filter-category-dot" style={{ backgroundColor: category.color }} />
-                <span className="filter-category-name">{category.name}</span>
-                <span className="filter-category-count">{categoryCounts.get(category.id) || 0}</span>
-              </button>
-            ))}
+          <div className={`filter-section-content ${collapsedSections.has('category') ? 'collapsed' : ''}`}>
+            <div className="filter-category-list">
+              {categories.map(category => (
+                <button
+                  key={category.id}
+                  className={`filter-category-item ${selectedCategories.has(category.id) ? 'selected' : ''}`}
+                  onClick={() => onCategoryToggle(category.id)}
+                >
+                  <div className="filter-category-dot" style={{ backgroundColor: category.color }} />
+                  <span className="filter-category-name">{category.name}</span>
+                  <span className="filter-category-count">{categoryCounts.get(category.id) || 0}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -276,31 +296,36 @@ export function SettingsPanel({
       {/* Status filter */}
       {selectedStatuses && onStatusToggle && (
         <div className="filter-section">
-          <div className="filter-section-header">
+          <div className="filter-section-header" onClick={() => toggleSection('status')}>
             <span className="filter-section-title">Status</span>
+            <svg className={`filter-section-toggle ${collapsedSections.has('status') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
           </div>
-          <div className="filter-status-list">
-            <button
-              className={`filter-status-item ${selectedStatuses.has('active') ? 'selected' : ''}`}
-              onClick={() => onStatusToggle('active')}
-            >
-              <div className="filter-status-dot active" />
-              <span className="filter-status-name">Active</span>
-            </button>
-            <button
-              className={`filter-status-item ${selectedStatuses.has('blocked') ? 'selected' : ''}`}
-              onClick={() => onStatusToggle('blocked')}
-            >
-              <div className="filter-status-dot blocked" />
-              <span className="filter-status-name">Blocked</span>
-            </button>
-            <button
-              className={`filter-status-item ${selectedStatuses.has('done') ? 'selected' : ''}`}
-              onClick={() => onStatusToggle('done')}
-            >
-              <div className="filter-status-dot done" />
-              <span className="filter-status-name">Done</span>
-            </button>
+          <div className={`filter-section-content ${collapsedSections.has('status') ? 'collapsed' : ''}`}>
+            <div className="filter-status-list">
+              <button
+                className={`filter-status-item ${selectedStatuses.has('active') ? 'selected' : ''}`}
+                onClick={() => onStatusToggle('active')}
+              >
+                <div className="filter-status-dot active" />
+                <span className="filter-status-name">Active</span>
+              </button>
+              <button
+                className={`filter-status-item ${selectedStatuses.has('blocked') ? 'selected' : ''}`}
+                onClick={() => onStatusToggle('blocked')}
+              >
+                <div className="filter-status-dot blocked" />
+                <span className="filter-status-name">Blocked</span>
+              </button>
+              <button
+                className={`filter-status-item ${selectedStatuses.has('done') ? 'selected' : ''}`}
+                onClick={() => onStatusToggle('done')}
+              >
+                <div className="filter-status-dot done" />
+                <span className="filter-status-name">Done</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -308,19 +333,26 @@ export function SettingsPanel({
       {/* Blocker rate filter */}
       {onBlockerThresholdChange && maxBlockerCount > 0 && (
         <div className="filter-section">
-          <div className="filter-section-header">
+          <div className="filter-section-header" onClick={() => toggleSection('blocker')}>
             <span className="filter-section-title">Blocker Rate</span>
-            <span className="filter-section-value">≥{blockerThreshold}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="filter-section-value">≥{blockerThreshold}</span>
+              <svg className={`filter-section-toggle ${collapsedSections.has('blocker') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
           </div>
-          <div className="filter-slider-container">
-            <input
-              type="range"
-              className="filter-slider"
-              min={0}
-              max={maxBlockerCount}
-              value={blockerThreshold}
-              onChange={(e) => onBlockerThresholdChange(parseInt(e.target.value))}
-            />
+          <div className={`filter-section-content ${collapsedSections.has('blocker') ? 'collapsed' : ''}`}>
+            <div className="filter-slider-container">
+              <input
+                type="range"
+                className="filter-slider"
+                min={0}
+                max={maxBlockerCount}
+                value={blockerThreshold}
+                onChange={(e) => onBlockerThresholdChange(parseInt(e.target.value))}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -328,39 +360,46 @@ export function SettingsPanel({
       {/* Assignee filter */}
       {cards && selectedAssignees && onAssigneeToggle && (assignees.length > 0 || unassignedCount > 0) && (
         <div className="filter-section">
-          <div className="filter-section-header">
+          <div className="filter-section-header" onClick={() => toggleSection('assignee')}>
             <span className="filter-section-title">Assignee</span>
-            <span className="filter-section-count">{assignees.length + (unassignedCount > 0 ? 1 : 0)}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="filter-section-count">{assignees.length + (unassignedCount > 0 ? 1 : 0)}</span>
+              <svg className={`filter-section-toggle ${collapsedSections.has('assignee') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
           </div>
-          <div className="filter-assignee-list">
-            {assignees.map(assignee => (
-              <button
-                key={assignee}
-                className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
-                onClick={() => onAssigneeToggle(assignee)}
-              >
-                <div className="filter-assignee-avatar">
-                  <span className="filter-assignee-initials">{getInitials(assignee)}</span>
-                </div>
-                <span className="filter-assignee-name">{assignee}</span>
-                <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
-              </button>
-            ))}
-            {unassignedCount > 0 && (
-              <button
-                className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
-                onClick={() => onAssigneeToggle('__unassigned__')}
-              >
-                <div className="filter-assignee-avatar unassigned">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-                  </svg>
-                </div>
-                <span className="filter-assignee-name">Unassigned</span>
-                <span className="filter-assignee-count">{unassignedCount}</span>
-              </button>
-            )}
+          <div className={`filter-section-content ${collapsedSections.has('assignee') ? 'collapsed' : ''}`}>
+            <div className="filter-assignee-list">
+              {assignees.map(assignee => (
+                <button
+                  key={assignee}
+                  className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
+                  onClick={() => onAssigneeToggle(assignee)}
+                >
+                  <div className="filter-assignee-avatar">
+                    <span className="filter-assignee-initials">{getInitials(assignee)}</span>
+                  </div>
+                  <span className="filter-assignee-name">{assignee}</span>
+                  <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
+                </button>
+              ))}
+              {unassignedCount > 0 && (
+                <button
+                  className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
+                  onClick={() => onAssigneeToggle('__unassigned__')}
+                >
+                  <div className="filter-assignee-avatar unassigned">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
+                    </svg>
+                  </div>
+                  <span className="filter-assignee-name">Unassigned</span>
+                  <span className="filter-assignee-count">{unassignedCount}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
