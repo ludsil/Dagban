@@ -753,3 +753,23 @@ body {
   color: rgba(0, 0, 0, 0.4);
   cursor: not-allowed;
 }
+
+/* Node Hover Tooltip - dark theme matching */
+.node-hover-tooltip {
+  position: fixed;
+  z-index: 4000;
+  pointer-events: none;
+  background-color: rgba(20, 20, 20, 0.95);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
