@@ -615,6 +615,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   const [showSettings, setShowSettings] = useState(true);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
+  const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
 
   // Node context menu state (right-click on node)
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState>({
@@ -828,12 +829,12 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         // Text on left side
         ctx.fillText(label, x - bckgDimensions[0] / 2 + fontSize * 0.2, y);
 
-        // Profile pic on right side
+        // Assignee avatar on right side
         const picX = x + bckgDimensions[0] / 2 - picSize / 2 - fontSize * 0.2;
         const picY = y;
         const picRadius = picSize / 2;
 
-        // Placeholder circle
+        // Circle background
         ctx.beginPath();
         ctx.arc(picX, picY, picRadius, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
@@ -842,16 +843,32 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         ctx.lineWidth = 1 / globalScale;
         ctx.stroke();
 
-        // Person icon (scaled)
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        const headRadius = picRadius * 0.35;
-        const bodyRadius = picRadius * 0.5;
-        ctx.beginPath();
-        ctx.arc(picX, picY - headRadius * 0.8, headRadius, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(picX, picY + bodyRadius * 0.8, bodyRadius, Math.PI, 0, false);
-        ctx.fill();
+        // Get assignee initials or show placeholder icon
+        const assignee = node.card.assignee;
+        if (assignee) {
+          // Draw initials
+          const initials = assignee
+            .split(' ')
+            .map(part => part.charAt(0).toUpperCase())
+            .slice(0, 2)
+            .join('');
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.font = `bold ${fontSize * 0.6}px Sans-Serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(initials, picX, picY);
+        } else {
+          // Person icon placeholder (scaled)
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+          const headRadius = picRadius * 0.35;
+          const bodyRadius = picRadius * 0.5;
+          ctx.beginPath();
+          ctx.arc(picX, picY - headRadius * 0.8, headRadius, 0, 2 * Math.PI);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(picX, picY + bodyRadius * 0.8, bodyRadius, Math.PI, 0, false);
+          ctx.fill();
+        }
       } else {
         ctx.fillText(label, x, y);
       }
@@ -917,8 +934,16 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     if (displayMode === 'labels') {
       nodeEl.textContent = node.title;
     } else if (displayMode === 'full') {
-      // Create container for full mode: text + profile pic on the RIGHT
+      // Create container for full mode: text + assignee avatar on the RIGHT
       // Using inline flex container to ensure horizontal layout
+      const assignee = node.card.assignee;
+      const avatarContent = assignee
+        ? `<span style="color: rgba(255,255,255,0.9); font-size: 10px; font-weight: bold;">${assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')}</span>`
+        : `<svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
+          </svg>`;
+
       nodeEl.innerHTML = `
         <div style="display: flex; align-items: center; gap: 4px; flex-direction: row;">
           <span>${node.title}</span>
@@ -933,10 +958,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
             justify-content: center;
             flex-shrink: 0;
           ">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
-              <circle cx="12" cy="8" r="4"/>
-              <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
-            </svg>
+            ${avatarContent}
           </div>
         </div>
       `;
@@ -1033,6 +1055,15 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG3D = ForceGraph3D as any;
 
+  // Handle node left-click - show detail panel
+  const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
+    setSelectedNode({
+      node,
+      screenX: event.clientX,
+      screenY: event.clientY,
+    });
+  }, []);
+
   // Handle node right-click - show context menu
   const handleNodeRightClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
     event.preventDefault();
@@ -1088,7 +1119,9 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     height: dimensions.height,
     graphData: graphData,
     backgroundColor: "#000000",
-    nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
+    nodeLabel: () => '', // Disable default tooltip, using custom one
+    onNodeClick: handleNodeClick,
+    onNodeHover: handleNodeHover,
     onNodeRightClick: handleNodeRightClick,
     nodeColor: (node: GraphNodeData) => node.color,
   };
@@ -1162,6 +1195,29 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         onTitleChange={(title) => setCardCreation(prev => ({ ...prev, title }))}
         onDescriptionChange={(description) => setCardCreation(prev => ({ ...prev, description }))}
       />
+
+      {/* Card Detail Panel (left-click on node) */}
+      {selectedNode && (
+        <CardDetailPanel
+          selectedNode={selectedNode}
+          onClose={() => setSelectedNode(null)}
+          onCardChange={onCardChange}
+          onCreateDownstream={openDownstreamCreation}
+        />
+      )}
+
+      {/* Node Hover Tooltip */}
+      {hoverTooltip.visible && hoverTooltip.x > 0 && (
+        <div
+          className="node-hover-tooltip"
+          style={{
+            left: `${hoverTooltip.x + 12}px`,
+            top: `${hoverTooltip.y + 12}px`,
+          }}
+        >
+          {hoverTooltip.title}
+        </div>
+      )}
 
     </div>
   );
