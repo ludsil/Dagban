@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { ViewMode, DisplayMode, ColorMode, ArrowMode } from './types';
 import { Card } from '@/lib/types';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Toggle } from '@/components/ui/toggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 interface SettingsPanelProps {
@@ -138,22 +139,24 @@ export function SettingsPanel({
           </div>
           <div className="filter-assignee-list">
             {assignees.map(assignee => (
-              <button
+              <Toggle
                 key={assignee}
-                className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
-                onClick={() => onAssigneeToggle(assignee)}
+                pressed={selectedAssignees.has(assignee)}
+                onPressedChange={() => onAssigneeToggle(assignee)}
+                className="filter-assignee-toggle"
               >
                 <Avatar size="sm">
                   <AvatarFallback>{getInitials(assignee)}</AvatarFallback>
                 </Avatar>
                 <span className="filter-assignee-name">{assignee}</span>
                 <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
-              </button>
+              </Toggle>
             ))}
             {unassignedCount > 0 && (
-              <button
-                className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
-                onClick={() => onAssigneeToggle('__unassigned__')}
+              <Toggle
+                pressed={selectedAssignees.has('__unassigned__')}
+                onPressedChange={() => onAssigneeToggle('__unassigned__')}
+                className="filter-assignee-toggle"
               >
                 <Avatar size="sm">
                   <AvatarFallback>
@@ -165,7 +168,7 @@ export function SettingsPanel({
                 </Avatar>
                 <span className="filter-assignee-name">Unassigned</span>
                 <span className="filter-assignee-count">{unassignedCount}</span>
-              </button>
+              </Toggle>
             )}
           </div>
         </div>

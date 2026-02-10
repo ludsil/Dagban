@@ -1499,6 +1499,34 @@ html, body {
   color: rgba(255, 255, 255, 0.4);
 }
 
+/* shadcn Toggle styling for assignee filter */
+.filter-assignee-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.filter-assignee-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.filter-assignee-toggle[data-state="on"] {
+  background-color: rgba(74, 222, 128, 0.15);
+}
+
+.filter-assignee-toggle[data-state="on"] .filter-assignee-name {
+  color: #4ade80;
+}
+
 /* Drag-to-Connect Indicator */
 .drag-connect-indicator {
   position: fixed;
