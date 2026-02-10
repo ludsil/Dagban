@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Edge, Category } from '@/lib/types';
+import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } from '@/lib/colors';
 
 // Selected node info for detail panel
 interface SelectedNodeInfo {
@@ -27,6 +28,14 @@ interface CardCreationState {
   title: string;
   description: string;
   parentNodeId: string | null; // null for root node, string for downstream task
+}
+
+// Hover tooltip state
+interface HoverTooltipState {
+  visible: boolean;
+  x: number;
+  y: number;
+  title: string;
 }
 
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
@@ -424,6 +433,7 @@ interface GraphLinkData {
 
 type ViewMode = '2D' | '3D';
 type DisplayMode = 'balls' | 'labels' | 'full';
+type ColorMode = 'category' | 'indegree' | 'outdegree';
 
 // Header Component with logo and project switcher
 function Header({
@@ -493,13 +503,17 @@ function Header({
 function SettingsPanel({
   viewMode,
   displayMode,
+  colorMode,
   onViewModeChange,
   onDisplayModeChange,
+  onColorModeChange,
 }: {
   viewMode: ViewMode;
   displayMode: DisplayMode;
+  colorMode: ColorMode;
   onViewModeChange: (mode: ViewMode) => void;
   onDisplayModeChange: (mode: DisplayMode) => void;
+  onColorModeChange: (mode: ColorMode) => void;
 }) {
   return (
     <div className="settings-panel">
@@ -543,6 +557,29 @@ function SettingsPanel({
           </button>
         </div>
       </div>
+      <div className="settings-row">
+        <span className="settings-label">Color</span>
+        <div className="toggle-group">
+          <button
+            className={`toggle-btn ${colorMode === 'category' ? 'active' : ''}`}
+            onClick={() => onColorModeChange('category')}
+          >
+            Category
+          </button>
+          <button
+            className={`toggle-btn toggle-btn-indegree ${colorMode === 'indegree' ? 'active' : ''}`}
+            onClick={() => onColorModeChange('indegree')}
+          >
+            Indegree
+          </button>
+          <button
+            className={`toggle-btn toggle-btn-outdegree ${colorMode === 'outdegree' ? 'active' : ''}`}
+            onClick={() => onColorModeChange('outdegree')}
+          >
+            Outdegree
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -574,6 +611,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
+  const [colorMode, setColorMode] = useState<ColorMode>('category');
   const [showSettings, setShowSettings] = useState(true);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
@@ -596,6 +634,14 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     parentNodeId: null,
   });
 
+  // Hover tooltip state
+  const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    title: '',
+  });
+
   // Load three.js on mount
   useEffect(() => {
     initThree().then(() => {
@@ -605,11 +651,36 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     });
   }, []);
 
+  // Compute degree maps for color modes
+  const { indegrees, outdegrees, maxIndegree, maxOutdegree } = useMemo(() => {
+    const indegrees = computeIndegrees(data.edges);
+    const outdegrees = computeOutdegrees(data.edges);
+    return {
+      indegrees,
+      outdegrees,
+      maxIndegree: getMaxDegree(indegrees),
+      maxOutdegree: getMaxDegree(outdegrees),
+    };
+  }, [data.edges]);
+
   // Convert dagban data to force-graph format
   const graphData = useMemo(() => ({
     nodes: data.cards.map(card => {
       const status = getCardStatus(card, data.edges, data.cards);
-      const color = getCardColor(card, status, data.categories);
+      const categoryColor = getCardColor(card, status, data.categories);
+
+      // Compute color based on colorMode
+      let color: string;
+      if (colorMode === 'indegree') {
+        const degree = indegrees.get(card.id) || 0;
+        color = getGradientColor('indegree', degree, maxIndegree);
+      } else if (colorMode === 'outdegree') {
+        const degree = outdegrees.get(card.id) || 0;
+        color = getGradientColor('outdegree', degree, maxOutdegree);
+      } else {
+        color = categoryColor;
+      }
+
       return {
         id: card.id,
         title: card.title,
@@ -624,7 +695,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
       progress: edge.progress,
       edge,
     })),
-  }), [data]);
+  }), [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree]);
 
   // Resize handling
   useEffect(() => {
@@ -973,6 +1044,43 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     });
   }, []);
 
+  // Handle node hover - show tooltip
+  const handleNodeHover = useCallback((node: GraphNodeData | null, prevNode: GraphNodeData | null) => {
+    if (node) {
+      // We need to track the mouse position for the tooltip
+      // The tooltip position will be updated via mousemove
+      setHoverTooltip({
+        visible: true,
+        x: 0, // Will be updated by mousemove
+        y: 0,
+        title: node.title,
+      });
+    } else {
+      setHoverTooltip(prev => ({ ...prev, visible: false }));
+    }
+  }, []);
+
+  // Track mouse position for tooltip
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (hoverTooltip.visible) {
+        setHoverTooltip(prev => ({
+          ...prev,
+          x: e.clientX,
+          y: e.clientY,
+        }));
+      }
+    };
+
+    if (hoverTooltip.visible) {
+      window.addEventListener('mousemove', handleMouseMove);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [hoverTooltip.visible]);
+
   // Common props for both 2D and 3D graphs
   const commonProps = {
     ref: graphRef,
@@ -998,8 +1106,10 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         <SettingsPanel
           viewMode={viewMode}
           displayMode={displayMode}
+          colorMode={colorMode}
           onViewModeChange={setViewMode}
           onDisplayModeChange={setDisplayMode}
+          onColorModeChange={setColorMode}
         />
       )}
 

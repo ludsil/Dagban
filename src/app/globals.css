@@ -102,6 +102,26 @@ body {
   color: white;
 }
 
+/* Indegree toggle button - blue tint when active */
+.toggle-btn-indegree.active {
+  background-color: rgba(3, 105, 161, 0.4);
+  color: #7dd3fc;
+}
+
+.toggle-btn-indegree:hover {
+  color: #7dd3fc;
+}
+
+/* Outdegree toggle button - orange tint when active */
+.toggle-btn-outdegree.active {
+  background-color: rgba(194, 65, 12, 0.4);
+  color: #fdba74;
+}
+
+.toggle-btn-outdegree:hover {
+  color: #fdba74;
+}
+
 /* Header panel styling - top left corner */
 .header-panel {
   position: absolute;
