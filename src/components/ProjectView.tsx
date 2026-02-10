@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import DagbanGraph from '@/components/DagbanGraph';
 import { getEmptyGraph, getProjects, Project } from '@/lib/projects';
@@ -128,23 +128,21 @@ interface ProjectViewProps {
 
 export default function ProjectView({ projectId }: ProjectViewProps) {
   const router = useRouter();
-  const [project, setProject] = useState<Project | null>(null);
-  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [allProjects] = useState<Project[]>(() => getProjects());
   const [showSettings, setShowSettings] = useState(true);
   const [triggerNewNode, setTriggerNewNode] = useState(false);
 
-  // Load project data
+  // Derive current project from allProjects and projectId
+  const project = useMemo(() => {
+    return allProjects.find(p => p.id === projectId) || null;
+  }, [allProjects, projectId]);
+
+  // Redirect if project not found
   useEffect(() => {
-    const projects = getProjects();
-    setAllProjects(projects);
-    const currentProject = projects.find(p => p.id === projectId);
-    if (currentProject) {
-      setProject(currentProject);
-    } else {
-      // Project not found, redirect to home
+    if (!project) {
       router.push('/');
     }
-  }, [projectId, router]);
+  }, [project, router]);
 
   // Use persisted graph with project-specific storage
   const [graph, setGraph] = usePersistedGraph(getEmptyGraph(), projectId);

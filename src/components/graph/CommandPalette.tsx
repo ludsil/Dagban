@@ -22,6 +22,7 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [prevFilterLength, setPrevFilterLength] = useState(0);
 
   // Filter nodes based on query
   const filteredNodes = useMemo(() => {
@@ -32,10 +33,11 @@ export function CommandPalette({
       .slice(0, 10);
   }, [nodes, state.query]);
 
-  // Reset selection when filtered results change
-  useEffect(() => {
+  // Reset selection when filtered results change (during render, not in effect)
+  if (filteredNodes.length !== prevFilterLength) {
     setSelectedIndex(0);
-  }, [filteredNodes.length]);
+    setPrevFilterLength(filteredNodes.length);
+  }
 
   useEffect(() => {
     if (state.visible && inputRef.current) {

@@ -18,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Plus, Link, Trash2, User } from 'lucide-react';
 
 interface CardDetailPanelProps {

@@ -106,6 +106,8 @@ export default function DagbanGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
+  // Cache node positions to avoid reading graphRef during render
+  const cachedPositionsRef = useRef<Map<string, { x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null }>>(new Map());
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
@@ -300,23 +302,12 @@ export default function DagbanGraph({
   // CRITICAL: Preserve node positions when data changes to avoid graph reset
   // D3 simulation only initializes positions for nodes where x/y is NaN,
   // so we must copy existing positions to new node objects.
+  // We use cachedPositionsRef (populated by effect after render) to avoid reading graphRef during render.
+  // Reading the cached positions ref is intentional - we need previous render's positions.
+  /* eslint-disable react-hooks/refs */
   const graphData = useMemo(() => {
-    // Get existing nodes from the graph with their computed positions
-    const existingNodes = graphRef.current?.graphData?.()?.nodes as GraphNodeData[] | undefined;
-    const positionMap = new Map<string, { x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null }>();
-
-    if (existingNodes) {
-      existingNodes.forEach(n => {
-        positionMap.set(n.id, {
-          x: n.x,
-          y: n.y,
-          vx: n.vx,
-          vy: n.vy,
-          fx: n.fx,
-          fy: n.fy
-        });
-      });
-    }
+    // Use cached positions from previous render (intentional ref read - see comment above)
+    const positionMap = cachedPositionsRef.current;
 
     // Check if any filters are active
     const hasActiveFilters = selectedAssignees.size > 0 ||
@@ -377,6 +368,7 @@ export default function DagbanGraph({
       })),
     };
   }, [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree, cardMatchesFilter, selectedAssignees.size, selectedCategories.size, selectedStatuses.size, searchQuery]);
+  /* eslint-enable react-hooks/refs */
 
   // NOTE: Position preservation is now handled directly in the graphData useMemo above.
   // By copying x, y, vx, vy, fx, fy from existing nodes, D3 simulation preserves
@@ -409,6 +401,25 @@ export default function DagbanGraph({
     }, 100);
     return () => clearTimeout(timer);
   }, [viewMode]);
+
+  // Sync node positions to cache after render (so we can read from cache during next render)
+  useEffect(() => {
+    const nodes = graphRef.current?.graphData?.()?.nodes as GraphNodeData[] | undefined;
+    if (nodes) {
+      const newPositions = new Map<string, { x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null }>();
+      nodes.forEach(n => {
+        newPositions.set(n.id, {
+          x: n.x,
+          y: n.y,
+          vx: n.vx,
+          vy: n.vy,
+          fx: n.fx,
+          fy: n.fy
+        });
+      });
+      cachedPositionsRef.current = newPositions;
+    }
+  });
 
   // Handle undo
   const handleUndo = useCallback(() => {
@@ -667,7 +678,7 @@ export default function DagbanGraph({
     );
 
     closeCardCreation();
-  }, [cardCreation, data.categories, onCardCreate, onEdgeCreate, closeCardCreation]);
+  }, [cardCreation, data.categories, onCardCreate, closeCardCreation]);
 
   // Node radius
   const NODE_RADIUS = 8;

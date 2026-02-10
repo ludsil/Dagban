@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Project, getProjects, createProject, deleteProject } from '@/lib/projects';
 
@@ -13,13 +13,6 @@ interface CreateProjectModalProps {
 function CreateProjectModal({ isOpen, onClose, onCreate }: CreateProjectModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-
-  useEffect(() => {
-    if (isOpen) {
-      setName('');
-      setDescription('');
-    }
-  }, [isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,17 +108,12 @@ function DeleteConfirmModal({ isOpen, projectName, onClose, onConfirm }: DeleteC
 
 export default function ProjectList() {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(() => getProjects());
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; project: Project | null }>({
     isOpen: false,
     project: null,
   });
-
-  // Load projects on mount
-  useEffect(() => {
-    setProjects(getProjects());
-  }, []);
 
   const handleCreateProject = useCallback((name: string, description?: string) => {
     const newProject = createProject(name, description);
@@ -227,11 +215,13 @@ export default function ProjectList() {
         )}
       </main>
 
-      <CreateProjectModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onCreate={handleCreateProject}
-      />
+      {isCreateModalOpen && (
+        <CreateProjectModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onCreate={handleCreateProject}
+        />
+      )}
 
       <DeleteConfirmModal
         isOpen={deleteModalState.isOpen}
