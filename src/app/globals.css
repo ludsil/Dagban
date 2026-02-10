@@ -717,6 +717,12 @@ body {
   background-color: rgba(0, 0, 0, 0.2);
 }
 
+.postit-actions-left {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
 .postit-action-btn {
   display: flex;
   align-items: center;
