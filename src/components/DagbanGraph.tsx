@@ -11,13 +11,12 @@ interface SelectedNodeInfo {
   screenY: number;
 }
 
-// Context menu state
-interface ContextMenuState {
+// Node context menu state (right-click on a node)
+interface NodeContextMenuState {
   visible: boolean;
   x: number;
   y: number;
-  graphX: number;
-  graphY: number;
+  node: GraphNodeData | null;
 }
 
 // Card creation form state
@@ -25,10 +24,9 @@ interface CardCreationState {
   visible: boolean;
   x: number;
   y: number;
-  graphX: number;
-  graphY: number;
   title: string;
-  categoryId: string;
+  description: string;
+  parentNodeId: string | null; // null for root node, string for downstream task
 }
 
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
@@ -49,7 +47,7 @@ interface Props {
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
   onCategoryAdd?: (category: Category) => void;
   onCategoryDelete?: (categoryId: string) => void;
-  onCardCreate?: (card: Card) => void;
+  onCardCreate?: (card: Card, parentCardId?: string) => void;
 }
 
 // Custom node type extending the force-graph node structure
@@ -64,38 +62,59 @@ interface GraphNodeData {
   z?: number;
 }
 
-// Card Detail Panel Component - positioned next to clicked node
+// Card Detail Panel Component - Figma post-it style
 function CardDetailPanel({
   selectedNode,
-  categories,
   onClose,
   onCardChange,
+  onCreateDownstream,
 }: {
   selectedNode: SelectedNodeInfo;
-  categories: Category[];
   onClose: () => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
+  onCreateDownstream?: (parentNode: GraphNodeData) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
   const { node, screenX, screenY } = selectedNode;
   const card = node.card;
 
   // Local state for editing
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
-  const [categoryId, setCategoryId] = useState(card.categoryId || '');
-  const [assignee, setAssignee] = useState(card.assignee || '');
 
-  // Handle click outside to close
+  // Save changes helper
+  const saveChanges = useCallback(() => {
+    const titleChanged = title !== card.title;
+    const descChanged = description !== (card.description || '');
+    if ((titleChanged || descChanged) && onCardChange) {
+      onCardChange(card.id, {
+        title,
+        description: description || undefined,
+      });
+    }
+  }, [title, description, card.title, card.description, card.id, onCardChange]);
+
+  // Focus title on open
+  useEffect(() => {
+    if (titleRef.current) {
+      titleRef.current.focus();
+      titleRef.current.select();
+    }
+  }, []);
+
+  // Handle click outside to close (and save if changes)
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        saveChanges();
         onClose();
       }
     };
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        saveChanges();
         onClose();
       }
     };
@@ -112,24 +131,21 @@ function CardDetailPanel({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [onClose]);
+  }, [onClose, saveChanges]);
 
-  // Save changes
-  const handleSave = useCallback(() => {
-    if (onCardChange) {
-      onCardChange(card.id, {
-        title,
-        description: description || undefined,
-        categoryId: categoryId || undefined,
-        assignee: assignee || undefined,
-      });
-    }
+  // Handle creating downstream task
+  const handleCreateDownstream = useCallback(() => {
+    // Save any pending changes first
+    saveChanges();
     onClose();
-  }, [card.id, title, description, categoryId, assignee, onCardChange, onClose]);
+    if (onCreateDownstream) {
+      onCreateDownstream(node);
+    }
+  }, [saveChanges, onClose, onCreateDownstream, node]);
 
   // Calculate panel position - position to the right of the node, or left if near edge
-  const panelWidth = 280;
-  const panelHeight = 320;
+  const panelWidth = 320;
+  const panelHeight = 280;
   const offset = 20;
 
   let left = screenX + offset;
@@ -148,95 +164,72 @@ function CardDetailPanel({
     }
   }
 
+  // Auto-resize textarea
+  const handleTitleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setTitle(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
+  };
+
   return (
     <div
       ref={panelRef}
-      className="card-detail-panel"
+      className="postit-panel"
       style={{
         left: `${left}px`,
         top: `${top}px`,
       }}
     >
-      <div className="card-detail-header">
-        <span className="card-detail-status" style={{ backgroundColor: node.color }}>
-          {node.status}
-        </span>
-        <button className="card-detail-close" onClick={onClose}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
+      {/* Status indicator bar at top */}
+      <div className="postit-status-bar" style={{ backgroundColor: node.color }} />
 
-      <div className="card-detail-field">
-        <label className="card-detail-label">Title</label>
-        <input
-          type="text"
-          className="card-detail-input"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-      </div>
+      {/* Title - large, editable */}
+      <textarea
+        ref={titleRef}
+        className="postit-title"
+        value={title}
+        onChange={handleTitleChange}
+        placeholder="Untitled"
+        rows={1}
+      />
 
-      <div className="card-detail-field">
-        <label className="card-detail-label">Description</label>
-        <textarea
-          className="card-detail-textarea"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Add a description..."
-          rows={3}
-        />
-      </div>
+      {/* Free text area */}
+      <textarea
+        className="postit-content"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Add notes..."
+      />
 
-      <div className="card-detail-field">
-        <label className="card-detail-label">Category</label>
-        <select
-          className="card-detail-select"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
+      {/* Bottom action bar */}
+      <div className="postit-actions">
+        <button
+          className="postit-action-btn"
+          onClick={handleCreateDownstream}
+          title="Create downstream task"
         >
-          <option value="">No category</option>
-          {categories.map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="card-detail-field">
-        <label className="card-detail-label">Assignee</label>
-        <input
-          type="text"
-          className="card-detail-input"
-          value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
-          placeholder="Enter assignee..."
-        />
-      </div>
-
-      <div className="card-detail-actions">
-        <button className="card-detail-btn cancel" onClick={onClose}>
-          Cancel
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span>Add task</span>
         </button>
-        <button className="card-detail-btn save" onClick={handleSave}>
-          Save
-        </button>
+        <div className="postit-status-badge" style={{ backgroundColor: node.color }}>
+          {node.status}
+        </div>
       </div>
     </div>
   );
 }
 
-// Context Menu Component
-function ContextMenu({
+// Node Context Menu Component (right-click on node)
+function NodeContextMenu({
   state,
   onClose,
-  onCreateCard,
+  onCreateDownstream,
 }: {
-  state: ContextMenuState;
+  state: NodeContextMenuState;
   onClose: () => void;
-  onCreateCard: () => void;
+  onCreateDownstream: (node: GraphNodeData) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -262,7 +255,7 @@ function ContextMenu({
     };
   }, [onClose]);
 
-  if (!state.visible) return null;
+  if (!state.visible || !state.node) return null;
 
   return (
     <div
@@ -276,37 +269,37 @@ function ContextMenu({
       <button
         className="context-menu-item"
         onClick={() => {
-          onCreateCard();
+          if (state.node) {
+            onCreateDownstream(state.node);
+          }
           onClose();
         }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M12 5v14M5 12h14" />
         </svg>
-        Create new card
+        Create downstream task
       </button>
     </div>
   );
 }
 
-// Card Creation Form Component
+// Card Creation Form Component - post-it style
 function CardCreationForm({
   state,
-  categories,
   onClose,
   onSubmit,
   onTitleChange,
-  onCategoryChange,
+  onDescriptionChange,
 }: {
   state: CardCreationState;
-  categories: Category[];
   onClose: () => void;
   onSubmit: () => void;
   onTitleChange: (title: string) => void;
-  onCategoryChange: (categoryId: string) => void;
+  onDescriptionChange: (description: string) => void;
 }) {
   const formRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -325,8 +318,8 @@ function CardCreationForm({
     document.addEventListener('keydown', handleEscape);
 
     // Focus the input when form opens
-    if (state.visible && inputRef.current) {
-      inputRef.current.focus();
+    if (state.visible && titleRef.current) {
+      setTimeout(() => titleRef.current?.focus(), 50);
     }
 
     return () => {
@@ -337,65 +330,80 @@ function CardCreationForm({
 
   if (!state.visible) return null;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && state.title.trim()) {
-      onSubmit();
+  // Calculate position - center on screen for root nodes, or near click for downstream
+  let left = state.x;
+  let top = state.y;
+  const formWidth = 320;
+  const formHeight = 240;
+
+  // Adjust if panel would go off-screen
+  if (typeof window !== 'undefined') {
+    if (left + formWidth > window.innerWidth - 20) {
+      left = window.innerWidth - formWidth - 20;
     }
-  };
+    if (left < 20) {
+      left = 20;
+    }
+    if (top + formHeight > window.innerHeight - 20) {
+      top = window.innerHeight - formHeight - 20;
+    }
+    if (top < 20) {
+      top = 20;
+    }
+  }
+
+  const isDownstream = state.parentNodeId !== null;
 
   return (
     <div
       ref={formRef}
-      className="card-creation-form"
+      className="postit-panel postit-creation"
       style={{
-        left: `${state.x}px`,
-        top: `${state.y}px`,
+        left: `${left}px`,
+        top: `${top}px`,
       }}
     >
-      <div className="card-creation-header">
-        <span>New Card</span>
-        <button className="card-creation-close" onClick={onClose}>
+      {/* Header */}
+      <div className="postit-creation-header">
+        <span>{isDownstream ? 'New Downstream Task' : 'New Root Node'}</span>
+        <button className="postit-close" onClick={onClose}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>
       </div>
 
-      <div className="card-creation-field">
-        <label className="card-creation-label">Title</label>
-        <input
-          ref={inputRef}
-          type="text"
-          className="card-creation-input"
-          value={state.title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Enter card title..."
-        />
-      </div>
+      {/* Title - large, editable */}
+      <textarea
+        ref={titleRef}
+        className="postit-title"
+        value={state.title}
+        onChange={(e) => onTitleChange(e.target.value)}
+        placeholder="Title..."
+        rows={1}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && state.title.trim()) {
+            e.preventDefault();
+            onSubmit();
+          }
+        }}
+      />
 
-      <div className="card-creation-field">
-        <label className="card-creation-label">Category</label>
-        <select
-          className="card-creation-select"
-          value={state.categoryId}
-          onChange={(e) => onCategoryChange(e.target.value)}
-        >
-          <option value="">No category</option>
-          {categories.map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Description */}
+      <textarea
+        className="postit-content"
+        value={state.description}
+        onChange={(e) => onDescriptionChange(e.target.value)}
+        placeholder="Add notes..."
+      />
 
-      <div className="card-creation-actions">
-        <button className="card-creation-btn cancel" onClick={onClose}>
+      {/* Bottom action bar */}
+      <div className="postit-actions">
+        <button className="postit-cancel-btn" onClick={onClose}>
           Cancel
         </button>
         <button
-          className="card-creation-btn create"
+          className="postit-create-btn"
           onClick={onSubmit}
           disabled={!state.title.trim()}
         >
@@ -420,8 +428,10 @@ type DisplayMode = 'balls' | 'labels' | 'full';
 // Header Component with logo and project switcher
 function Header({
   onLogoClick,
+  onNewRootNode,
 }: {
   onLogoClick: () => void;
+  onNewRootNode: () => void;
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currentProject] = useState('Default Project');
@@ -464,6 +474,17 @@ function Header({
           </div>
         )}
       </div>
+      {/* New Root Node button */}
+      <button
+        className="new-root-btn"
+        onClick={onNewRootNode}
+        title="Create new root node"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        <span>New</span>
+      </button>
     </div>
   );
 }
@@ -558,13 +579,12 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
 
-  // Context menu state
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+  // Node context menu state (right-click on node)
+  const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState>({
     visible: false,
     x: 0,
     y: 0,
-    graphX: 0,
-    graphY: 0,
+    node: null,
   });
 
   // Card creation form state
@@ -572,10 +592,9 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     visible: false,
     x: 0,
     y: 0,
-    graphX: 0,
-    graphY: 0,
     title: '',
-    categoryId: '',
+    description: '',
+    parentNodeId: null,
   });
 
   // Load three.js on mount
@@ -635,53 +654,46 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     return () => clearTimeout(timer);
   }, [viewMode]);
 
-  // Handle right-click on canvas for context menu
-  const handleContextMenu = useCallback((event: React.MouseEvent) => {
-    event.preventDefault();
-
-    // Get graph coordinates from screen coordinates
-    if (graphRef.current && viewMode === '2D') {
-      const coords = graphRef.current.screen2GraphCoords(event.clientX, event.clientY);
-      setContextMenu({
-        visible: true,
-        x: event.clientX,
-        y: event.clientY,
-        graphX: coords.x,
-        graphY: coords.y,
-      });
-    } else {
-      // For 3D mode, just use screen coordinates (card will appear at origin)
-      setContextMenu({
-        visible: true,
-        x: event.clientX,
-        y: event.clientY,
-        graphX: 0,
-        graphY: 0,
-      });
-    }
-  }, [viewMode]);
-
-  // Close context menu
-  const closeContextMenu = useCallback(() => {
-    setContextMenu(prev => ({ ...prev, visible: false }));
+  // Close node context menu
+  const closeNodeContextMenu = useCallback(() => {
+    setNodeContextMenu(prev => ({ ...prev, visible: false, node: null }));
   }, []);
 
-  // Open card creation form
-  const openCardCreation = useCallback(() => {
+  // Open card creation form for new root node
+  const openRootNodeCreation = useCallback(() => {
+    // Center on screen
+    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
+    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
+
     setCardCreation({
       visible: true,
-      x: contextMenu.x,
-      y: contextMenu.y,
-      graphX: contextMenu.graphX,
-      graphY: contextMenu.graphY,
+      x: centerX,
+      y: centerY,
       title: '',
-      categoryId: data.categories.length > 0 ? data.categories[0].id : '',
+      description: '',
+      parentNodeId: null,
     });
-  }, [contextMenu, data.categories]);
+  }, []);
+
+  // Open card creation form for downstream task
+  const openDownstreamCreation = useCallback((parentNode: GraphNodeData) => {
+    // Position near the center of the screen
+    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
+    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
+
+    setCardCreation({
+      visible: true,
+      x: centerX,
+      y: centerY,
+      title: '',
+      description: '',
+      parentNodeId: parentNode.id,
+    });
+  }, []);
 
   // Close card creation form
   const closeCardCreation = useCallback(() => {
-    setCardCreation(prev => ({ ...prev, visible: false, title: '', categoryId: '' }));
+    setCardCreation(prev => ({ ...prev, visible: false, title: '', description: '', parentNodeId: null }));
   }, []);
 
   // Handle card creation submission
@@ -692,123 +704,131 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     const newCard: Card = {
       id: generateId(),
       title: cardCreation.title.trim(),
-      categoryId: cardCreation.categoryId || (data.categories.length > 0 ? data.categories[0].id : ''),
+      description: cardCreation.description.trim() || undefined,
+      categoryId: data.categories.length > 0 ? data.categories[0].id : '',
       createdAt: now,
       updatedAt: now,
     };
 
-    onCardCreate(newCard);
+    onCardCreate(newCard, cardCreation.parentNodeId || undefined);
     closeCardCreation();
   }, [cardCreation, data.categories, onCardCreate, closeCardCreation]);
 
   // Node radius
   const NODE_RADIUS = 8;
 
-  // Custom node rendering for 2D - balls + text label (like html-nodes example)
-  const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D) => {
+  // Custom node rendering for 2D - matches text-nodes example exactly
+  const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
 
-    // Always draw the colored ball
-    ctx.beginPath();
-    ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-    ctx.fillStyle = node.color;
-    ctx.fill();
-
-    // Add text label ABOVE ball for labels/full mode
-    if (displayMode === 'labels' || displayMode === 'full') {
-      const label = node.title;
-      const fontSize = 12;
-      ctx.font = `${fontSize}px sans-serif`;
-      ctx.textBaseline = 'bottom';
-      ctx.textAlign = 'left';
-
-      const textWidth = ctx.measureText(label).width;
-      const padding = 4;
-      const bgHeight = fontSize + 4;
-      const picSize = displayMode === 'full' ? 14 : 0;
-      const picGap = displayMode === 'full' ? 4 : 0;
-      const totalWidth = textWidth + padding * 2 + picSize + picGap;
-      const labelY = y - NODE_RADIUS - 6; // Position above the ball
-
-      // Draw background
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    if (displayMode === 'balls') {
+      // Balls mode: just draw the colored ball
       ctx.beginPath();
-      ctx.roundRect(
-        x - totalWidth / 2,
-        labelY - bgHeight,
-        totalWidth,
-        bgHeight,
-        4
-      );
+      ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+      ctx.fillStyle = node.color;
       ctx.fill();
 
-      // Draw text
-      ctx.fillStyle = node.color;
-      ctx.fillText(label, x - totalWidth / 2 + padding, labelY - 2);
+      // Store dimensions for pointer area
+      (node as GraphNodeData & { __bckgDimensions?: [number, number] }).__bckgDimensions = [NODE_RADIUS * 2, NODE_RADIUS * 2];
+    } else {
+      // Labels/Full mode: text IS the node (like text-nodes example)
+      const label = node.title;
+      const fontSize = 12 / globalScale;
+      ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+      const textWidth = ctx.measureText(label).width;
 
-      // Draw profile pic on the RIGHT side of text (full mode only)
+      // For full mode, add space for profile pic
+      const picSize = displayMode === 'full' ? fontSize * 1.2 : 0;
+      const picGap = displayMode === 'full' ? fontSize * 0.3 : 0;
+      const totalWidth = textWidth + picSize + picGap;
+
+      const bckgDimensions: [number, number] = [totalWidth + fontSize * 0.4, fontSize * 1.2]; // padding
+
+      // Draw dark background (matches html-nodes example)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(x - bckgDimensions[0] / 2, y - bckgDimensions[1] / 2, bckgDimensions[0], bckgDimensions[1]);
+
+      // Draw text (centered, or left-aligned if full mode with pic)
+      ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = node.color;
+
       if (displayMode === 'full') {
-        const picX = x - totalWidth / 2 + padding + textWidth + picGap + picSize / 2;
-        const picY = labelY - bgHeight / 2; // Center in the label box above
+        // Text on left side
+        ctx.fillText(label, x - bckgDimensions[0] / 2 + fontSize * 0.2, y);
+
+        // Profile pic on right side
+        const picX = x + bckgDimensions[0] / 2 - picSize / 2 - fontSize * 0.2;
+        const picY = y;
+        const picRadius = picSize / 2;
 
         // Placeholder circle
         ctx.beginPath();
-        ctx.arc(picX, picY, picSize / 2, 0, 2 * Math.PI);
+        ctx.arc(picX, picY, picRadius, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.fill();
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1 / globalScale;
         ctx.stroke();
 
-        // Person icon
+        // Person icon (scaled)
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        const headRadius = picRadius * 0.35;
+        const bodyRadius = picRadius * 0.5;
         ctx.beginPath();
-        ctx.arc(picX, picY - 1.5, 2, 0, 2 * Math.PI);
+        ctx.arc(picX, picY - headRadius * 0.8, headRadius, 0, 2 * Math.PI);
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(picX, picY + 3, 3, Math.PI, 0, false);
+        ctx.arc(picX, picY + bodyRadius * 0.8, bodyRadius, Math.PI, 0, false);
         ctx.fill();
+      } else {
+        ctx.fillText(label, x, y);
       }
+
+      // Store dimensions for pointer area
+      (node as GraphNodeData & { __bckgDimensions?: [number, number] }).__bckgDimensions = bckgDimensions;
     }
   }, [displayMode]);
 
-  // Custom link rendering for 2D - fuse style
+  // Custom link rendering for 2D - uniform line with small arrow in middle
   const linkCanvasObject = useCallback((link: GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const source = link.source as GraphNodeData;
     const target = link.target as GraphNodeData;
 
     if (!source.x || !target.x) return;
 
-    const progress = link.progress / 100;
-
-    // Calculate the point where the fuse has burned to
-    const burnX = source.x + ((target.x - source.x) * progress);
-    const burnY = source.y! + ((target.y! - source.y!) * progress);
-
-    // Unburned part (ahead of progress) - bright white
-    ctx.beginPath();
-    ctx.moveTo(burnX, burnY);
-    ctx.lineTo(target.x, target.y!);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.lineWidth = 2 / globalScale;
-    ctx.stroke();
-
-    // Burned part (behind progress) - dim
+    // Draw uniform line from source to target
     ctx.beginPath();
     ctx.moveTo(source.x, source.y!);
-    ctx.lineTo(burnX, burnY);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.lineWidth = 2 / globalScale;
+    ctx.lineTo(target.x, target.y!);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1 / globalScale;
     ctx.stroke();
 
-    // Fuse head / spark point
-    if (progress > 0 && progress < 1) {
-      ctx.beginPath();
-      ctx.arc(burnX, burnY, 4 / globalScale, 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.fill();
-    }
+    // Draw small arrow in the middle of the edge (fixed size, doesn't scale with zoom)
+    const midX = (source.x + target.x) / 2;
+    const midY = (source.y! + target.y!) / 2;
+    const angle = Math.atan2(target.y! - source.y!, target.x - source.x);
+    const arrowLength = 2; // Fixed size in graph units
+    const arrowWidth = Math.PI / 4; // 45 degrees - wider angle to maintain width with shorter length
+
+    ctx.beginPath();
+    ctx.moveTo(
+      midX + arrowLength * Math.cos(angle),
+      midY + arrowLength * Math.sin(angle)
+    );
+    ctx.lineTo(
+      midX - arrowLength * Math.cos(angle - arrowWidth),
+      midY - arrowLength * Math.sin(angle - arrowWidth)
+    );
+    ctx.lineTo(
+      midX - arrowLength * Math.cos(angle + arrowWidth),
+      midY - arrowLength * Math.sin(angle + arrowWidth)
+    );
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fill();
   }, []);
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
@@ -882,7 +902,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     return group;
   }, []);
 
-  // Update 3D link positions
+  // Update 3D link positions - uniform line with arrow in middle
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const linkPositionUpdate = useCallback((group: any, link: GraphLinkData) => {
     if (!THREE) return false;
@@ -893,7 +913,6 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     // Guard against undefined nodes during initialization
     if (!source || !target || source.x === undefined || target.x === undefined) return false;
 
-    const progress = link.progress / 100;
     const sx = source.x, sy = source.y ?? 0, sz = source.z ?? 0;
     const tx = target.x, ty = target.y ?? 0, tz = target.z ?? 0;
 
@@ -902,47 +921,39 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
       group.remove(group.children[0]);
     }
 
-    // Burned position
-    const bx = sx + (tx - sx) * progress;
-    const by = sy + (ty - sy) * progress;
-    const bz = sz + (tz - sz) * progress;
-
-    // Unburned part (bright)
-    const unburnedGeom = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(bx, by, bz),
+    // Uniform line from source to target
+    const lineGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(sx, sy, sz),
       new THREE.Vector3(tx, ty, tz)
     ]);
-    const unburnedMat = new THREE.LineBasicMaterial({
+    const lineMat = new THREE.LineBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.6
+      opacity: 0.3
     });
-    group.add(new THREE.Line(unburnedGeom, unburnedMat));
+    group.add(new THREE.Line(lineGeom, lineMat));
 
-    // Burned part (dim)
-    const burnedGeom = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(sx, sy, sz),
-      new THREE.Vector3(bx, by, bz)
-    ]);
-    const burnedMat = new THREE.LineBasicMaterial({
+    // Arrow cone in the middle
+    const midX = (sx + tx) / 2;
+    const midY = (sy + ty) / 2;
+    const midZ = (sz + tz) / 2;
+
+    const arrowGeom = new THREE.ConeGeometry(1.5, 3, 8);
+    const arrowMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.15
+      opacity: 0.5
     });
-    group.add(new THREE.Line(burnedGeom, burnedMat));
+    const arrow = new THREE.Mesh(arrowGeom, arrowMat);
+    arrow.position.set(midX, midY, midZ);
 
-    // Spark point
-    if (progress > 0 && progress < 1) {
-      const sparkGeom = new THREE.SphereGeometry(2, 8, 8);
-      const sparkMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.9
-      });
-      const spark = new THREE.Mesh(sparkGeom, sparkMat);
-      spark.position.set(bx, by, bz);
-      group.add(spark);
-    }
+    // Orient arrow to point from source to target
+    const direction = new THREE.Vector3(tx - sx, ty - sy, tz - sz).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(up, direction);
+    arrow.setRotationFromQuaternion(quaternion);
+
+    group.add(arrow);
 
     return true;
   }, []);
@@ -965,6 +976,17 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     });
   }, []);
 
+  // Handle node right-click - show context menu
+  const handleNodeRightClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
+    event.preventDefault();
+    setNodeContextMenu({
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      node,
+    });
+  }, []);
+
   // Common props for both 2D and 3D graphs
   const commonProps = {
     ref: graphRef,
@@ -974,19 +996,19 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     backgroundColor: "#000000",
     nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
     onNodeClick: handleNodeClick,
+    onNodeRightClick: handleNodeRightClick,
     nodeColor: (node: GraphNodeData) => node.color,
-    linkDirectionalArrowLength: 4,
-    linkDirectionalArrowRelPos: 1,
-    linkDirectionalArrowColor: () => 'rgba(255, 255, 255, 0.7)',
   };
 
   return (
     <div
       ref={containerRef}
       className="w-full h-full bg-black relative"
-      onContextMenu={handleContextMenu}
     >
-      <Header onLogoClick={() => setShowSettings(!showSettings)} />
+      <Header
+        onLogoClick={() => setShowSettings(!showSettings)}
+        onNewRootNode={openRootNodeCreation}
+      />
       {showSettings && (
         <SettingsPanel
           viewMode={viewMode}
@@ -1000,14 +1022,17 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         <FG2D
           {...commonProps}
           nodeCanvasObject={nodeCanvasObject}
-          nodePointerAreaPaint={(node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
-            const x = node.x ?? 0;
-            const y = node.y ?? 0;
+          nodePointerAreaPaint={(node: GraphNodeData & { __bckgDimensions?: [number, number] }, color: string, ctx: CanvasRenderingContext2D) => {
             ctx.fillStyle = color;
-            // Always include ball area for clicking
-            ctx.beginPath();
-            ctx.arc(x, y, NODE_RADIUS + 4, 0, 2 * Math.PI);
-            ctx.fill();
+            const bckgDimensions = node.__bckgDimensions;
+            if (bckgDimensions) {
+              ctx.fillRect(
+                (node.x ?? 0) - bckgDimensions[0] / 2,
+                (node.y ?? 0) - bckgDimensions[1] / 2,
+                bckgDimensions[0],
+                bckgDimensions[1]
+              );
+            }
           }}
           linkCanvasObject={linkCanvasObject}
           linkColor={() => 'rgba(255,255,255,0.2)'}
@@ -1027,30 +1052,29 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading 3D graph...</div>
       )}
 
-      {/* Context Menu */}
-      <ContextMenu
-        state={contextMenu}
-        onClose={closeContextMenu}
-        onCreateCard={openCardCreation}
+      {/* Node Context Menu (right-click on node) */}
+      <NodeContextMenu
+        state={nodeContextMenu}
+        onClose={closeNodeContextMenu}
+        onCreateDownstream={openDownstreamCreation}
       />
 
       {/* Card Creation Form */}
       <CardCreationForm
         state={cardCreation}
-        categories={data.categories}
         onClose={closeCardCreation}
         onSubmit={handleCardCreation}
         onTitleChange={(title) => setCardCreation(prev => ({ ...prev, title }))}
-        onCategoryChange={(categoryId) => setCardCreation(prev => ({ ...prev, categoryId }))}
+        onDescriptionChange={(description) => setCardCreation(prev => ({ ...prev, description }))}
       />
 
       {/* Card Detail Panel */}
       {selectedNode && (
         <CardDetailPanel
           selectedNode={selectedNode}
-          categories={data.categories}
           onClose={() => setSelectedNode(null)}
           onCardChange={onCardChange}
+          onCreateDownstream={openDownstreamCreation}
         />
       )}
     </div>
