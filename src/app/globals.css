@@ -724,23 +724,19 @@ body {
   gap: 8px;
 }
 
-.postit-actions-left .postit-action-btn {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
 .postit-action-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.7);
-  padding: 6px 12px;
+  padding: 4px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .postit-action-btn:hover {
