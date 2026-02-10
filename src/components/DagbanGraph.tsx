@@ -28,6 +28,7 @@ interface CardCreationState {
   title: string;
   description: string;
   parentNodeId: string | null; // null for root node, string for downstream task
+  childNodeId: string | null; // string for upstream dependency (new node becomes parent of this)
 }
 
 // Hover tooltip state
@@ -43,6 +44,7 @@ interface HoverTooltipState {
 interface ConnectionModeState {
   active: boolean;
   sourceNode: GraphNodeData | null;
+  direction: 'downstream' | 'upstream'; // downstream: source -> clicked, upstream: clicked -> source
 }
 
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
@@ -110,13 +112,17 @@ function CardDetailPanel({
   onClose,
   onCardChange,
   onCreateDownstream,
-  onStartConnection,
+  onCreateUpstream,
+  onLinkDownstream,
+  onLinkUpstream,
 }: {
   selectedNode: SelectedNodeInfo;
   onClose: () => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
   onCreateDownstream?: (parentNode: GraphNodeData) => void;
-  onStartConnection?: (sourceNode: GraphNodeData) => void;
+  onCreateUpstream?: (childNode: GraphNodeData) => void;
+  onLinkDownstream?: (sourceNode: GraphNodeData) => void;
+  onLinkUpstream?: (targetNode: GraphNodeData) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -181,24 +187,31 @@ function CardDetailPanel({
     };
   }, [onClose, saveChanges]);
 
-  // Handle creating downstream task
-  const handleCreateDownstream = useCallback(() => {
-    // Save any pending changes first
+  // Handle Add task button - creates new downstream, or links existing with shift
+  const handleAddTask = useCallback((e: React.MouseEvent) => {
     saveChanges();
     onClose();
-    if (onCreateDownstream) {
+    if (e.shiftKey && onLinkDownstream) {
+      // Shift+click: link to existing node as downstream
+      onLinkDownstream(node);
+    } else if (onCreateDownstream) {
+      // Normal click: create new downstream node
       onCreateDownstream(node);
     }
-  }, [saveChanges, onClose, onCreateDownstream, node]);
+  }, [saveChanges, onClose, onCreateDownstream, onLinkDownstream, node]);
 
-  // Handle starting connection mode
-  const handleStartConnection = useCallback(() => {
+  // Handle Add dep button - creates new upstream, or links existing with shift
+  const handleAddDep = useCallback((e: React.MouseEvent) => {
     saveChanges();
     onClose();
-    if (onStartConnection) {
-      onStartConnection(node);
+    if (e.shiftKey && onLinkUpstream) {
+      // Shift+click: link to existing node as upstream
+      onLinkUpstream(node);
+    } else if (onCreateUpstream) {
+      // Normal click: create new upstream dependency node
+      onCreateUpstream(node);
     }
-  }, [saveChanges, onClose, onStartConnection, node]);
+  }, [saveChanges, onClose, onCreateUpstream, onLinkUpstream, node]);
 
   // Calculate panel position - position to the right of the node, or left if near edge
   const panelWidth = 320;
@@ -301,8 +314,8 @@ function CardDetailPanel({
         <div className="postit-actions-left">
           <button
             className="postit-action-btn"
-            onClick={handleCreateDownstream}
-            title="Create downstream task"
+            onClick={handleAddTask}
+            title="Create downstream task (⇧ Shift: link existing)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 5v14M5 12h14" />
@@ -311,8 +324,8 @@ function CardDetailPanel({
           </button>
           <button
             className="postit-action-btn"
-            onClick={handleStartConnection}
-            title="Add dependency to this node"
+            onClick={handleAddDep}
+            title="Create upstream dependency (⇧ Shift: link existing)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -1059,6 +1072,7 @@ export default function DagbanGraph({
     title: '',
     description: '',
     parentNodeId: null,
+    childNodeId: null,
   });
 
   // Hover tooltip state (tracks which node is hovered for keyboard shortcuts)
@@ -1090,6 +1104,7 @@ export default function DagbanGraph({
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
     active: false,
     sourceNode: null,
+    direction: 'downstream',
   });
 
   // Undo stack for local undo functionality
@@ -1242,13 +1257,24 @@ export default function DagbanGraph({
     }
   }, [onUndo, onCardCreate, showToast]);
 
-  // Start connection mode - user wants to create an edge from this node
-  const startConnectionMode = useCallback((sourceNode: GraphNodeData) => {
+  // Start downstream connection mode - selected node becomes source, pick target
+  const startDownstreamConnection = useCallback((sourceNode: GraphNodeData) => {
     setConnectionMode({
       active: true,
       sourceNode,
+      direction: 'downstream',
     });
-    showToast(`Click another node to connect from "${sourceNode.title}"`, 'info');
+    showToast(`Click a node to make it downstream of "${sourceNode.title}"`, 'info');
+  }, [showToast]);
+
+  // Start upstream connection mode - selected node becomes target, pick source
+  const startUpstreamConnection = useCallback((targetNode: GraphNodeData) => {
+    setConnectionMode({
+      active: true,
+      sourceNode: targetNode, // Store the target node here, we'll swap in completeConnection
+      direction: 'upstream',
+    });
+    showToast(`Click a node to make it upstream of "${targetNode.title}"`, 'info');
   }, [showToast]);
 
   // Cancel connection mode
@@ -1256,15 +1282,27 @@ export default function DagbanGraph({
     setConnectionMode({
       active: false,
       sourceNode: null,
+      direction: 'downstream',
     });
   }, []);
 
-  // Complete connection - create edge from source to target
-  const completeConnection = useCallback((targetNode: GraphNodeData) => {
+  // Complete connection - create edge based on direction
+  const completeConnection = useCallback((clickedNode: GraphNodeData) => {
     if (!connectionMode.sourceNode || !onEdgeCreate) return;
 
-    const sourceId = connectionMode.sourceNode.id;
-    const targetId = targetNode.id;
+    // Determine source and target based on direction
+    let sourceId: string;
+    let targetId: string;
+
+    if (connectionMode.direction === 'downstream') {
+      // sourceNode -> clickedNode
+      sourceId = connectionMode.sourceNode.id;
+      targetId = clickedNode.id;
+    } else {
+      // clickedNode -> sourceNode (upstream)
+      sourceId = clickedNode.id;
+      targetId = connectionMode.sourceNode.id;
+    }
 
     // Don't allow self-connections
     if (sourceId === targetId) {
@@ -1284,9 +1322,11 @@ export default function DagbanGraph({
 
     // Create the edge
     onEdgeCreate(sourceId, targetId);
-    showToast(`Connected "${connectionMode.sourceNode.title}" to "${targetNode.title}"`, 'success');
+    const sourceNode = data.cards.find(c => c.id === sourceId);
+    const targetNode = data.cards.find(c => c.id === targetId);
+    showToast(`Connected "${sourceNode?.title}" → "${targetNode?.title}"`, 'success');
     cancelConnectionMode();
-  }, [connectionMode.sourceNode, onEdgeCreate, data.edges, showToast, cancelConnectionMode]);
+  }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, showToast, cancelConnectionMode]);
 
   // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
   useEffect(() => {
@@ -1344,6 +1384,7 @@ export default function DagbanGraph({
       title: initialTitle || '',
       description: '',
       parentNodeId: null,
+      childNodeId: null,
     });
   }, []);
 
@@ -1376,12 +1417,29 @@ export default function DagbanGraph({
       title: '',
       description: '',
       parentNodeId: parentNode.id,
+      childNodeId: null,
+    });
+  }, []);
+
+  // Open card creation form for upstream dependency
+  const openUpstreamCreation = useCallback((childNode: GraphNodeData) => {
+    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
+    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
+
+    setCardCreation({
+      visible: true,
+      x: centerX,
+      y: centerY,
+      title: '',
+      description: '',
+      parentNodeId: null,
+      childNodeId: childNode.id,
     });
   }, []);
 
   // Close card creation form
   const closeCardCreation = useCallback(() => {
-    setCardCreation(prev => ({ ...prev, visible: false, title: '', description: '', parentNodeId: null }));
+    setCardCreation(prev => ({ ...prev, visible: false, title: '', description: '', parentNodeId: null, childNodeId: null }));
   }, []);
 
   // Handle card creation submission
@@ -1398,9 +1456,16 @@ export default function DagbanGraph({
       updatedAt: now,
     };
 
+    // Create the card (with optional parent for downstream)
     onCardCreate(newCard, cardCreation.parentNodeId || undefined);
+
+    // If this is an upstream dependency, create edge from new card to child
+    if (cardCreation.childNodeId && onEdgeCreate) {
+      onEdgeCreate(newCard.id, cardCreation.childNodeId);
+    }
+
     closeCardCreation();
-  }, [cardCreation, data.categories, onCardCreate, closeCardCreation]);
+  }, [cardCreation, data.categories, onCardCreate, onEdgeCreate, closeCardCreation]);
 
   // Node radius
   const NODE_RADIUS = 8;
@@ -1845,7 +1910,9 @@ export default function DagbanGraph({
           onClose={() => setSelectedNode(null)}
           onCardChange={onCardChange}
           onCreateDownstream={openDownstreamCreation}
-          onStartConnection={startConnectionMode}
+          onCreateUpstream={openUpstreamCreation}
+          onLinkDownstream={startDownstreamConnection}
+          onLinkUpstream={startUpstreamConnection}
         />
       )}
 
