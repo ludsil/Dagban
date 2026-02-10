@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Category } from '@/lib/types';
 import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } from '@/lib/colors';
+import { getAvatarConfig, drawAvatar, getAvatarCSSStyles, getAvatarHTMLContent } from '@/lib/avatar';
 
 // Import extracted components
 import {
@@ -749,66 +750,29 @@ export default function DagbanGraph({
       ctx.font = `${fontSize}px Sans-Serif`;
       const textWidth = ctx.measureText(label).width;
 
-      // For full mode, add space for profile pic
-      const picSize = displayMode === 'full' ? fontSize * 1.2 : 0;
-      const picGap = displayMode === 'full' ? fontSize * 0.3 : 0;
-      const totalWidth = textWidth + picSize + picGap;
+      // For full mode, add space for avatar using standardized config
+      const avatarConfig = getAvatarConfig(fontSize);
+      const avatarSpace = displayMode === 'full' ? avatarConfig.size + avatarConfig.gap : 0;
+      const totalWidth = textWidth + avatarSpace;
 
-      const bckgDimensions: [number, number] = [totalWidth + fontSize * 0.4, fontSize * 1.2]; // padding
+      const bckgDimensions: [number, number] = [totalWidth + avatarConfig.padding * 2, fontSize * 1.2];
 
       // Draw dark background (matches html-nodes example)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       ctx.fillRect(x - bckgDimensions[0] / 2, y - bckgDimensions[1] / 2, bckgDimensions[0], bckgDimensions[1]);
 
-      // Draw text (centered, or left-aligned if full mode with pic)
+      // Draw text (centered, or left-aligned if full mode with avatar)
       ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = node.color;
 
       if (displayMode === 'full') {
         // Text on left side
-        ctx.fillText(label, x - bckgDimensions[0] / 2 + fontSize * 0.2, y);
+        ctx.fillText(label, x - bckgDimensions[0] / 2 + avatarConfig.padding, y);
 
-        // Assignee avatar on right side
-        const picX = x + bckgDimensions[0] / 2 - picSize / 2 - fontSize * 0.2;
-        const picY = y;
-        const picRadius = picSize / 2;
-
-        // Circle background
-        ctx.beginPath();
-        ctx.arc(picX, picY, picRadius, 0, 2 * Math.PI);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 1 / globalScale;
-        ctx.stroke();
-
-        // Get assignee initials or show placeholder icon
-        const assignee = node.card.assignee;
-        if (assignee) {
-          // Draw initials
-          const initials = assignee
-            .split(' ')
-            .map(part => part.charAt(0).toUpperCase())
-            .slice(0, 2)
-            .join('');
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          ctx.font = `bold ${fontSize * 0.6}px Sans-Serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(initials, picX, picY);
-        } else {
-          // Person icon placeholder (scaled)
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-          const headRadius = picRadius * 0.35;
-          const bodyRadius = picRadius * 0.5;
-          ctx.beginPath();
-          ctx.arc(picX, picY - headRadius * 0.8, headRadius, 0, 2 * Math.PI);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(picX, picY + bodyRadius * 0.8, bodyRadius, Math.PI, 0, false);
-          ctx.fill();
-        }
+        // Assignee avatar on right side using standardized utility
+        const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
+        drawAvatar(ctx, node.card.assignee, avatarX, y, fontSize, globalScale);
       } else {
         ctx.fillText(label, x, y);
       }
@@ -882,30 +846,15 @@ export default function DagbanGraph({
     if (displayMode === 'labels') {
       nodeEl.textContent = node.title;
     } else if (displayMode === 'full') {
-      // Create container for full mode: text + assignee avatar on the RIGHT
-      // Using inline flex container to ensure horizontal layout
-      const assignee = node.card.assignee;
-      const avatarContent = assignee
-        ? `<span style="color: rgba(255,255,255,0.9); font-size: 10px; font-weight: bold;">${assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')}</span>`
-        : `<svg width="10" height="10" viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
-            <circle cx="12" cy="8" r="4"/>
-            <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
-          </svg>`;
+      // Create container for full mode: text + assignee avatar using standardized utilities
+      const avatarSize = 16;
+      const avatarStyles = getAvatarCSSStyles(avatarSize);
+      const avatarContent = getAvatarHTMLContent(node.card.assignee, 10);
 
       nodeEl.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 4px; flex-direction: row;">
+        <div style="display: flex; align-items: center; gap: 5px; flex-direction: row;">
           <span>${node.title}</span>
-          <div style="
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.4);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-          ">
+          <div style="${avatarStyles}">
             ${avatarContent}
           </div>
         </div>
