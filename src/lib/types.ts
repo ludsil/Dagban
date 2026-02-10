@@ -1,5 +1,22 @@
 // Dagban core types
 
+// D3 schemePaired colors - matches react-force-graph nodeAutoColorBy
+// These are the exact colors used by the react-force-graph examples
+export const schemePaired = [
+  '#a6cee3', // light blue
+  '#1f78b4', // blue
+  '#b2df8a', // light green
+  '#33a02c', // green
+  '#fb9a99', // light red/pink
+  '#e31a1c', // red
+  '#fdbf6f', // light orange
+  '#ff7f00', // orange
+  '#cab2d6', // light purple
+  '#6a3d9a', // purple
+  '#ffff99', // light yellow
+  '#b15928', // brown
+];
+
 export interface Category {
   id: string;
   name: string;
@@ -57,13 +74,18 @@ export function getCardStatus(card: Card, edges: Edge[], _cards: Card[]): CardSt
 }
 
 // Get color for a card based on its status and category
+// Uses schemePaired colors to match react-force-graph exactly
 export function getCardColor(
   card: Card,
   status: CardStatus,
   categories: Category[]
 ): string {
-  const category = categories.find(c => c.id === card.categoryId);
-  const baseColor = category?.color || '#6b7280'; // gray fallback
+  // Find category index to pick from schemePaired (like nodeAutoColorBy)
+  const categoryIndex = categories.findIndex(c => c.id === card.categoryId);
+  // Use schemePaired colors, cycling if more categories than colors
+  const baseColor = categoryIndex >= 0
+    ? schemePaired[categoryIndex % schemePaired.length]
+    : schemePaired[0]; // fallback to first color
 
   switch (status) {
     case 'done':

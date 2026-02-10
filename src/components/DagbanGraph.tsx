@@ -32,12 +32,12 @@ interface CardCreationState {
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading graph...</div>
+  loading: () => <div className="w-full h-full bg-[#000011] flex items-center justify-center text-gray-500">Loading graph...</div>
 });
 
 const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading graph...</div>
+  loading: () => <div className="w-full h-full bg-[#000011] flex items-center justify-center text-gray-500">Loading graph...</div>
 });
 
 interface Props {
@@ -577,7 +577,6 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   const [showSettings, setShowSettings] = useState(true);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
-  const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
 
   // Node context menu state (right-click on node)
   const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState>({
@@ -735,7 +734,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
       // Labels/Full mode: text IS the node (like text-nodes example)
       const label = node.title;
       const fontSize = 12 / globalScale;
-      ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+      ctx.font = `${fontSize}px Sans-Serif`;
       const textWidth = ctx.measureText(label).width;
 
       // For full mode, add space for profile pic
@@ -963,19 +962,6 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG3D = ForceGraph3D as any;
 
-  // Handle node click - calculate screen position and show panel
-  const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
-    // Get screen coordinates from the mouse event
-    const screenX = event.clientX;
-    const screenY = event.clientY;
-
-    setSelectedNode({
-      node,
-      screenX,
-      screenY,
-    });
-  }, []);
-
   // Handle node right-click - show context menu
   const handleNodeRightClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
     event.preventDefault();
@@ -993,9 +979,8 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
     width: dimensions.width,
     height: dimensions.height,
     graphData: graphData,
-    backgroundColor: "#000000",
+    backgroundColor: "#000011",
     nodeLabel: (node: GraphNodeData) => node.card.description || node.title,
-    onNodeClick: handleNodeClick,
     onNodeRightClick: handleNodeRightClick,
     nodeColor: (node: GraphNodeData) => node.color,
   };
@@ -1003,7 +988,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
   return (
     <div
       ref={containerRef}
-      className="w-full h-full bg-black relative"
+      className="w-full h-full bg-[#000011] relative"
     >
       <Header
         onLogoClick={() => setShowSettings(!showSettings)}
@@ -1049,7 +1034,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
           nodeOpacity={1}
         />
       ) : (
-        <div className="w-full h-full bg-black flex items-center justify-center text-gray-500">Loading 3D graph...</div>
+        <div className="w-full h-full bg-[#000011] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
       )}
 
       {/* Node Context Menu (right-click on node) */}
@@ -1068,15 +1053,6 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate }: Props)
         onDescriptionChange={(description) => setCardCreation(prev => ({ ...prev, description }))}
       />
 
-      {/* Card Detail Panel */}
-      {selectedNode && (
-        <CardDetailPanel
-          selectedNode={selectedNode}
-          onClose={() => setSelectedNode(null)}
-          onCardChange={onCardChange}
-          onCreateDownstream={openDownstreamCreation}
-        />
-      )}
     </div>
   );
 }
