@@ -49,7 +49,7 @@ interface Props {
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
   onCategoryAdd?: (category: Category) => void;
   onCategoryDelete?: (categoryId: string) => void;
-  onCardCreate?: (card: Card, parentCardId?: string) => void;
+  onCardCreate?: (card: Card, parentCardId?: string, childCardId?: string) => void;
   onCardDelete?: (cardId: string) => void;
   onEdgeCreate?: (sourceId: string, targetId: string) => void;
   onUndo?: () => void;
@@ -501,13 +501,12 @@ export default function DagbanGraph({
       updatedAt: now,
     };
 
-    // Create the card (with optional parent for downstream)
-    onCardCreate(newCard, cardCreation.parentNodeId || undefined);
-
-    // If this is an upstream dependency, create edge from new card to child
-    if (cardCreation.childNodeId && onEdgeCreate) {
-      onEdgeCreate(newCard.id, cardCreation.childNodeId);
-    }
+    // Create the card with optional parent (downstream) or child (upstream)
+    onCardCreate(
+      newCard,
+      cardCreation.parentNodeId || undefined,
+      cardCreation.childNodeId || undefined
+    );
 
     closeCardCreation();
   }, [cardCreation, data.categories, onCardCreate, onEdgeCreate, closeCardCreation]);

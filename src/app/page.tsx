@@ -39,24 +39,35 @@ export default function Home() {
     });
   }, [graph, setGraph]);
 
-  // Handle card creation (with optional parent for downstream tasks)
-  const handleCardCreate = useCallback((card: Card, parentCardId?: string) => {
-    const newGraph = {
+  // Handle card creation (with optional parent for downstream or child for upstream)
+  const handleCardCreate = useCallback((card: Card, parentCardId?: string, childCardId?: string) => {
+    const newEdges = [...graph.edges];
+
+    // Add edge for downstream (new card is target of parent)
+    if (parentCardId) {
+      newEdges.push({
+        id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        source: parentCardId,
+        target: card.id,
+        progress: 0,
+      });
+    }
+
+    // Add edge for upstream (new card is source, child is target)
+    if (childCardId) {
+      newEdges.push({
+        id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-up`,
+        source: card.id,
+        target: childCardId,
+        progress: 0,
+      });
+    }
+
+    setGraph({
       ...graph,
       cards: [...graph.cards, card],
-      edges: parentCardId
-        ? [
-            ...graph.edges,
-            {
-              id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              source: parentCardId,
-              target: card.id,
-              progress: 0,
-            },
-          ]
-        : graph.edges,
-    };
-    setGraph(newGraph);
+      edges: newEdges,
+    });
   }, [graph, setGraph]);
 
   // Handle card deletion (also removes connected edges)
