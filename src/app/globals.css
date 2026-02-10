@@ -596,8 +596,8 @@ body {
 
 .postit-assignee-corner {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 12px;
+  right: 12px;
   z-index: 1;
 }
 
