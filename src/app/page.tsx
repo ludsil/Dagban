@@ -68,6 +68,22 @@ export default function Home() {
     });
   }, [graph, setGraph]);
 
+  // Handle edge creation between existing nodes
+  const handleEdgeCreate = useCallback((sourceId: string, targetId: string) => {
+    setGraph({
+      ...graph,
+      edges: [
+        ...graph.edges,
+        {
+          id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          source: sourceId,
+          target: targetId,
+          progress: 0,
+        },
+      ],
+    });
+  }, [graph, setGraph]);
+
   return (
     <div className="w-screen h-screen">
       <DagbanGraph
@@ -77,6 +93,7 @@ export default function Home() {
         onCategoryChange={handleCategoryChange}
         onCardCreate={handleCardCreate}
         onCardDelete={handleCardDelete}
+        onEdgeCreate={handleEdgeCreate}
       />
     </div>
   );
