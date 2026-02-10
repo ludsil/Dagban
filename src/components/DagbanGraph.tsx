@@ -39,6 +39,12 @@ interface HoverTooltipState {
   nodeId: string | null;
 }
 
+// Connection mode state (for creating edges)
+interface ConnectionModeState {
+  active: boolean;
+  sourceNode: GraphNodeData | null;
+}
+
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
@@ -59,7 +65,11 @@ interface Props {
   onCategoryDelete?: (categoryId: string) => void;
   onCardCreate?: (card: Card, parentCardId?: string) => void;
   onCardDelete?: (cardId: string) => void;
+  onEdgeCreate?: (sourceId: string, targetId: string) => void;
   onUndo?: () => void;
+  projectHeader?: React.ReactNode;
+  showSettingsProp?: boolean;
+  triggerNewNode?: boolean;
 }
 
 // Undo action types for internal undo stack
@@ -100,11 +110,13 @@ function CardDetailPanel({
   onClose,
   onCardChange,
   onCreateDownstream,
+  onStartConnection,
 }: {
   selectedNode: SelectedNodeInfo;
   onClose: () => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
   onCreateDownstream?: (parentNode: GraphNodeData) => void;
+  onStartConnection?: (sourceNode: GraphNodeData) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -178,6 +190,15 @@ function CardDetailPanel({
       onCreateDownstream(node);
     }
   }, [saveChanges, onClose, onCreateDownstream, node]);
+
+  // Handle starting connection mode
+  const handleStartConnection = useCallback(() => {
+    saveChanges();
+    onClose();
+    if (onStartConnection) {
+      onStartConnection(node);
+    }
+  }, [saveChanges, onClose, onStartConnection, node]);
 
   // Calculate panel position - position to the right of the node, or left if near edge
   const panelWidth = 320;
@@ -277,16 +298,18 @@ function CardDetailPanel({
 
       {/* Bottom action bar */}
       <div className="postit-actions">
-        <button
-          className="postit-action-btn"
-          onClick={handleCreateDownstream}
-          title="Create downstream task"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          <span>Add task</span>
-        </button>
+        <div className="postit-actions-left">
+          <button
+            className="postit-action-btn"
+            onClick={handleCreateDownstream}
+            title="Create downstream task"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>Add task</span>
+          </button>
+        </div>
         <div className="postit-status-badge" style={{ backgroundColor: node.color }}>
           {node.status}
         </div>
@@ -550,10 +573,6 @@ function KeyboardShortcutsHelp({ visible, onClose }: { visible: boolean; onClose
         </button>
       </div>
       <div className="shortcuts-help-list">
-        <div className="shortcut-item">
-          <kbd>Delete</kbd> / <kbd>Backspace</kbd>
-          <span>Delete hovered node</span>
-        </div>
         <div className="shortcut-item">
           <kbd>Cmd</kbd>+<kbd>Z</kbd>
           <span>Undo last action</span>
@@ -882,7 +901,7 @@ function generateId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDelete, onUndo }: Props) {
+export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDelete, onEdgeCreate, onUndo }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
@@ -937,6 +956,12 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
 
   // Keyboard shortcuts help state
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+  // Connection mode state (for creating edges between nodes)
+  const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
+    active: false,
+    sourceNode: null,
+  });
 
   // Undo stack for local undo functionality
   const undoStackRef = useRef<UndoAction[]>([]);
@@ -1088,6 +1113,52 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
     }
   }, [onUndo, onCardCreate, showToast]);
 
+  // Start connection mode - user wants to create an edge from this node
+  const startConnectionMode = useCallback((sourceNode: GraphNodeData) => {
+    setConnectionMode({
+      active: true,
+      sourceNode,
+    });
+    showToast(`Click another node to connect from "${sourceNode.title}"`, 'info');
+  }, [showToast]);
+
+  // Cancel connection mode
+  const cancelConnectionMode = useCallback(() => {
+    setConnectionMode({
+      active: false,
+      sourceNode: null,
+    });
+  }, []);
+
+  // Complete connection - create edge from source to target
+  const completeConnection = useCallback((targetNode: GraphNodeData) => {
+    if (!connectionMode.sourceNode || !onEdgeCreate) return;
+
+    const sourceId = connectionMode.sourceNode.id;
+    const targetId = targetNode.id;
+
+    // Don't allow self-connections
+    if (sourceId === targetId) {
+      showToast('Cannot connect a node to itself', 'warning');
+      return;
+    }
+
+    // Check if edge already exists
+    const edgeExists = data.edges.some(
+      e => e.source === sourceId && e.target === targetId
+    );
+    if (edgeExists) {
+      showToast('Connection already exists', 'warning');
+      cancelConnectionMode();
+      return;
+    }
+
+    // Create the edge
+    onEdgeCreate(sourceId, targetId);
+    showToast(`Connected "${connectionMode.sourceNode.title}" to "${targetNode.title}"`, 'success');
+    cancelConnectionMode();
+  }, [connectionMode.sourceNode, onEdgeCreate, data.edges, showToast, cancelConnectionMode]);
+
   // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1097,17 +1168,16 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
         return;
       }
 
+      // Escape cancels connection mode
+      if (e.key === 'Escape' && connectionMode.active) {
+        e.preventDefault();
+        cancelConnectionMode();
+        showToast('Connection cancelled', 'info');
+        return;
+      }
+
       // Skip if command palette is open (it handles its own keys)
       if (commandPalette.visible) return;
-
-      // Delete key - delete hovered node
-      if ((e.key === 'Delete' || e.key === 'Backspace') && hoverTooltip.nodeId) {
-        e.preventDefault();
-        const node = graphData.nodes.find(n => n.id === hoverTooltip.nodeId);
-        if (node) {
-          handleDeleteNode(node);
-        }
-      }
 
       // Cmd+Z / Ctrl+Z - Undo
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
@@ -1130,7 +1200,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoverTooltip.nodeId, commandPalette.visible, graphData.nodes, handleDeleteNode, handleUndo]);
+  }, [hoverTooltip.nodeId, commandPalette.visible, connectionMode.active, graphData.nodes, handleDeleteNode, handleUndo, cancelConnectionMode, showToast]);
 
   // Open card creation form for new root node
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
@@ -1204,7 +1274,23 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
     const x = node.x ?? 0;
     const y = node.y ?? 0;
 
+    // Check if this is the source node in connection mode
+    const isConnectionSource = connectionMode.active && connectionMode.sourceNode?.id === node.id;
+
     if (displayMode === 'balls') {
+      // Draw glow effect for connection source
+      if (isConnectionSource) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(74, 222, 128, 0.3)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 3, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
       // Balls mode: just draw the colored ball
       ctx.beginPath();
       ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
@@ -1466,14 +1552,21 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG3D = ForceGraph3D as any;
 
-  // Handle node left-click - show detail panel
+  // Handle node left-click - show detail panel or complete connection
   const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
+    // If in connection mode, complete the connection
+    if (connectionMode.active && connectionMode.sourceNode) {
+      completeConnection(node);
+      return;
+    }
+
+    // Otherwise show the detail panel
     setSelectedNode({
       node,
       screenX: event.clientX,
       screenY: event.clientY,
     });
-  }, []);
+  }, [connectionMode.active, connectionMode.sourceNode, completeConnection]);
 
   // Handle node right-click - show context menu
   const handleNodeRightClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
@@ -1614,6 +1707,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
           onClose={() => setSelectedNode(null)}
           onCardChange={onCardChange}
           onCreateDownstream={openDownstreamCreation}
+          onStartConnection={startConnectionMode}
         />
       )}
 
@@ -1627,7 +1721,6 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
           }}
         >
           {hoverTooltip.title}
-          <span className="tooltip-hint">Del to delete</span>
         </div>
       )}
 
@@ -1649,6 +1742,28 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
         visible={showShortcutsHelp}
         onClose={() => setShowShortcutsHelp(false)}
       />
+
+      {/* Connection Mode Indicator */}
+      {connectionMode.active && connectionMode.sourceNode && (
+        <div className="connection-mode-indicator">
+          <div className="connection-mode-source">
+            <div
+              className="connection-mode-dot"
+              style={{ backgroundColor: connectionMode.sourceNode.color }}
+            />
+            <span>{connectionMode.sourceNode.title}</span>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+          <span className="connection-mode-hint">Click a node to connect</span>
+          <button className="connection-mode-cancel" onClick={cancelConnectionMode}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
     </div>
   );
