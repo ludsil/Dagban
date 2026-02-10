@@ -1606,6 +1606,387 @@ html, body {
   color: #ef4444;
 }
 
+/* Filter Panel - FigJam/EU4 style hover panel */
+.filter-panel {
+  position: absolute;
+  top: 60px;
+  left: 16px;
+  background-color: rgba(20, 20, 20, 0.95);
+  border-radius: 10px;
+  z-index: 1000;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.filter-panel:not(.expanded) {
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+}
+
+.filter-panel.expanded {
+  width: 280px;
+  min-height: auto;
+}
+
+.filter-panel-collapsed {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.15s ease;
+}
+
+.filter-panel:hover .filter-panel-collapsed {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Search bar */
+.filter-panel-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.filter-panel-search svg {
+  color: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+}
+
+.filter-panel-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.filter-panel-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.filter-panel-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.15s ease;
+}
+
+.filter-panel-search-clear:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.filter-panel-search-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+/* Map Mode section - EU4 style */
+.filter-panel-mapmode {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.filter-panel-mapmode-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 8px;
+}
+
+.filter-panel-mapmode-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.mapmode-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.mapmode-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--mapmode-color);
+}
+
+.mapmode-btn.active {
+  background: color-mix(in srgb, var(--mapmode-color) 20%, transparent);
+  border-color: color-mix(in srgb, var(--mapmode-color) 50%, transparent);
+  color: var(--mapmode-color);
+}
+
+.mapmode-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mapmode-btn-label {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* Filter toggle button */
+.filter-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.filter-panel-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.filter-panel-toggle.active {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.filter-panel-toggle.has-filters {
+  color: #4ade80;
+}
+
+.filter-panel-toggle span:first-of-type {
+  flex: 1;
+}
+
+.filter-panel-badge {
+  background: #4ade80;
+  color: rgba(0, 0, 0, 0.9);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Filter sections */
+.filter-panel-sections {
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.filter-panel-clear {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 0 12px 8px;
+  padding: 6px 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: #ef4444;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-panel-clear:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.filter-panel-section {
+  padding: 8px 12px;
+}
+
+.filter-panel-section:not(:last-child) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.filter-panel-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.filter-panel-section-count {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+/* Filter chips */
+.filter-panel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.filter-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.filter-chip.selected {
+  background: color-mix(in srgb, var(--chip-color, #4ade80) 20%, transparent);
+  border-color: color-mix(in srgb, var(--chip-color, #4ade80) 50%, transparent);
+  color: var(--chip-color, #4ade80);
+}
+
+.filter-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.filter-chip-label {
+  white-space: nowrap;
+}
+
+.filter-chip-count {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.filter-chip.selected .filter-chip-count {
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* Status filter chips */
+.filter-chip.status-active {
+  --chip-color: #4ade80;
+}
+
+.filter-chip.status-blocked {
+  --chip-color: #f59e0b;
+}
+
+.filter-chip.status-done {
+  --chip-color: #9ca3af;
+}
+
+/* Assignee list in filter panel */
+.filter-panel-assignees {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter-assignee {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.filter-assignee:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.filter-assignee.selected {
+  background: rgba(74, 222, 128, 0.15);
+}
+
+.filter-assignee.selected .filter-assignee-name {
+  color: #4ade80;
+}
+
+.filter-assignee-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.filter-assignee-avatar.unassigned {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.filter-assignee-name {
+  flex: 1;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-assignee-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);

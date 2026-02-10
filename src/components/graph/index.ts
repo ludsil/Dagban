@@ -8,6 +8,7 @@ export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 export { Header } from './Header';
 export { SettingsPanel } from './SettingsPanel';
 export { FilterSidebar } from './FilterSidebar';
+export { FilterPanel } from './FilterPanel';
 
 // Re-export types
 export * from './types';

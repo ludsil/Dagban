@@ -14,7 +14,7 @@ import {
   KeyboardShortcutsHelp,
   Header,
   SettingsPanel,
-  FilterSidebar,
+  FilterPanel,
   // Types
   GraphNodeData,
   GraphLinkData,
@@ -179,8 +179,11 @@ export default function DagbanGraph({
   // Undo stack for local undo functionality
   const undoStackRef = useRef<UndoAction[]>([]);
 
-  // Filter state - selected assignees for filtering
+  // Filter state
   const [selectedAssignees, setSelectedAssignees] = useState<Set<string>>(new Set());
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Show toast notification
   const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
@@ -205,9 +208,38 @@ export default function DagbanGraph({
     });
   }, []);
 
+  // Handle category filter toggle
+  const handleCategoryToggle = useCallback((categoryId: string) => {
+    setSelectedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) {
+        next.delete(categoryId);
+      } else {
+        next.add(categoryId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Handle status filter toggle
+  const handleStatusToggle = useCallback((status: string) => {
+    setSelectedStatuses(prev => {
+      const next = new Set(prev);
+      if (next.has(status)) {
+        next.delete(status);
+      } else {
+        next.add(status);
+      }
+      return next;
+    });
+  }, []);
+
   // Clear all filters
   const handleClearFilters = useCallback(() => {
     setSelectedAssignees(new Set());
+    setSelectedCategories(new Set());
+    setSelectedStatuses(new Set());
+    setSearchQuery('');
   }, []);
 
   // Load three.js on mount
@@ -232,18 +264,36 @@ export default function DagbanGraph({
   }, [data.edges]);
 
   // Check if a card matches the current filters
-  const cardMatchesFilter = useCallback((card: Card): boolean => {
-    // If no filters are selected, all cards match
-    if (selectedAssignees.size === 0) return true;
+  const cardMatchesFilter = useCallback((card: Card, status: 'blocked' | 'active' | 'done'): boolean => {
+    // Check search query first
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const titleMatch = card.title.toLowerCase().includes(query);
+      const descMatch = card.description?.toLowerCase().includes(query);
+      if (!titleMatch && !descMatch) return false;
+    }
+
+    // Check category filter
+    if (selectedCategories.size > 0) {
+      if (!selectedCategories.has(card.categoryId)) return false;
+    }
+
+    // Check status filter
+    if (selectedStatuses.size > 0) {
+      if (!selectedStatuses.has(status)) return false;
+    }
 
     // Check assignee filter
-    if (card.assignee) {
-      return selectedAssignees.has(card.assignee);
-    } else {
-      // Unassigned cards match if '__unassigned__' is selected
-      return selectedAssignees.has('__unassigned__');
+    if (selectedAssignees.size > 0) {
+      if (card.assignee) {
+        if (!selectedAssignees.has(card.assignee)) return false;
+      } else {
+        if (!selectedAssignees.has('__unassigned__')) return false;
+      }
     }
-  }, [selectedAssignees]);
+
+    return true;
+  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees]);
 
   // Convert dagban data to force-graph format
   // CRITICAL: Preserve node positions when data changes to avoid graph reset
@@ -267,11 +317,17 @@ export default function DagbanGraph({
       });
     }
 
+    // Check if any filters are active
+    const hasActiveFilters = selectedAssignees.size > 0 ||
+      selectedCategories.size > 0 ||
+      selectedStatuses.size > 0 ||
+      searchQuery.length > 0;
+
     return {
       nodes: data.cards.map(card => {
         const status = getCardStatus(card, data.edges, data.cards);
         const categoryColor = getCardColor(card, status, data.categories);
-        const matchesFilter = cardMatchesFilter(card);
+        const matchesFilter = cardMatchesFilter(card, status);
 
         // Compute color based on colorMode
         let color: string;
@@ -286,7 +342,7 @@ export default function DagbanGraph({
         }
 
         // Dim the color if node doesn't match filter
-        if (!matchesFilter && selectedAssignees.size > 0) {
+        if (!matchesFilter && hasActiveFilters) {
           // Apply dimming by reducing opacity in the color
           color = dimColor(color);
         }
@@ -319,7 +375,7 @@ export default function DagbanGraph({
         edge,
       })),
     };
-  }, [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree, cardMatchesFilter, selectedAssignees.size]);
+  }, [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree, cardMatchesFilter, selectedAssignees.size, selectedCategories.size, selectedStatuses.size, searchQuery]);
 
   // NOTE: Position preservation is now handled directly in the graphData useMemo above.
   // By copying x, y, vx, vy, fx, fy from existing nodes, D3 simulation preserves
@@ -1104,13 +1160,22 @@ export default function DagbanGraph({
         />
       )}
 
-      {/* Filter Sidebar - now integrated into SettingsPanel */}
-      {/* <FilterSidebar
+      {/* Filter Panel - FigJam/EU4 style hover panel */}
+      <FilterPanel
         cards={data.cards}
+        categories={data.categories}
+        colorMode={colorMode}
+        onColorModeChange={setColorMode}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        selectedCategories={selectedCategories}
+        onCategoryToggle={handleCategoryToggle}
         selectedAssignees={selectedAssignees}
         onAssigneeToggle={handleAssigneeToggle}
+        selectedStatuses={selectedStatuses}
+        onStatusToggle={handleStatusToggle}
         onClearFilters={handleClearFilters}
-      /> */}
+      />
 
       {viewMode === '2D' ? (
         <FG2D
