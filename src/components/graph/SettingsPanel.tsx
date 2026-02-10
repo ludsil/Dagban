@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { ViewMode, DisplayMode, ColorMode, ArrowMode } from './types';
-import { Card } from '@/lib/types';
+import { Card, Category, Edge } from '@/lib/types';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
@@ -19,6 +19,17 @@ interface SettingsPanelProps {
   cards?: Card[];
   selectedAssignees?: Set<string>;
   onAssigneeToggle?: (assignee: string) => void;
+  // Extended filter props
+  categories?: Category[];
+  edges?: Edge[];
+  searchQuery?: string;
+  onSearchChange?: (query: string) => void;
+  selectedCategories?: Set<string>;
+  onCategoryToggle?: (categoryId: string) => void;
+  selectedStatuses?: Set<string>;
+  onStatusToggle?: (status: string) => void;
+  blockerThreshold?: number;
+  onBlockerThresholdChange?: (threshold: number) => void;
 }
 
 export function SettingsPanel({
@@ -33,7 +44,31 @@ export function SettingsPanel({
   cards,
   selectedAssignees,
   onAssigneeToggle,
+  categories,
+  edges,
+  searchQuery = '',
+  onSearchChange,
+  selectedCategories,
+  onCategoryToggle,
+  selectedStatuses,
+  onStatusToggle,
+  blockerThreshold = 0,
+  onBlockerThresholdChange,
 }: SettingsPanelProps) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle / key to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Extract unique assignees from cards
   const assignees = useMemo(() => {
     if (!cards) return [];
@@ -63,6 +98,54 @@ export function SettingsPanel({
     if (!cards) return 0;
     return cards.filter(card => !card.assignee).length;
   }, [cards]);
+
+  // Compute blocker counts (how many cards each card blocks = outdegree)
+  const blockerCounts = useMemo(() => {
+    if (!edges) return new Map<string, number>();
+    const counts = new Map<string, number>();
+    edges.forEach(edge => {
+      counts.set(edge.source, (counts.get(edge.source) || 0) + 1);
+    });
+    return counts;
+  }, [edges]);
+
+  // Get max blocker count
+  const maxBlockerCount = useMemo(() => {
+    if (blockerCounts.size === 0) return 0;
+    return Math.max(...blockerCounts.values());
+  }, [blockerCounts]);
+
+  // Count cards per category
+  const categoryCounts = useMemo(() => {
+    if (!cards || !categories) return new Map<string, number>();
+    const counts = new Map<string, number>();
+    cards.forEach(card => {
+      counts.set(card.categoryId, (counts.get(card.categoryId) || 0) + 1);
+    });
+    return counts;
+  }, [cards, categories]);
+
+  // Count cards per status (active/blocked/done)
+  const statusCounts = useMemo(() => {
+    if (!cards || !edges) return { active: 0, blocked: 0, done: 0 };
+    const counts = { active: 0, blocked: 0, done: 0 };
+    cards.forEach(card => {
+      const incomingEdges = edges.filter(e => e.target === card.id);
+      const hasIncompleteIncoming = incomingEdges.some(e => e.progress < 100);
+      if (hasIncompleteIncoming) {
+        counts.blocked++;
+      } else {
+        const outgoingEdges = edges.filter(e => e.source === card.id);
+        const allOutgoingComplete = outgoingEdges.length > 0 && outgoingEdges.every(e => e.progress >= 100);
+        if (allOutgoingComplete) {
+          counts.done++;
+        } else {
+          counts.active++;
+        }
+      }
+    });
+    return counts;
+  }, [cards, edges]);
 
   // Get initials from name
   const getInitials = (name: string) => {
@@ -129,6 +212,111 @@ export function SettingsPanel({
           <ToggleGroupItem value="none">None</ToggleGroupItem>
         </ToggleGroup>
       </div>
+
+      {/* Search filter */}
+      {onSearchChange && (
+        <div className="filter-section">
+          <div className="filter-section-header">
+            <span className="filter-section-title">Search</span>
+            <span className="filter-section-hint">/</span>
+          </div>
+          <input
+            ref={searchInputRef}
+            type="text"
+            className="filter-search-input"
+            placeholder="Filter nodes..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
+        </div>
+      )}
+
+      {/* Category filter */}
+      {categories && selectedCategories && onCategoryToggle && categories.length > 0 && (
+        <div className="filter-section">
+          <div className="filter-section-header">
+            <span className="filter-section-title">Category</span>
+            <span className="filter-section-count">{categories.length}</span>
+          </div>
+          <div className="filter-category-list">
+            {categories.map(category => (
+              <button
+                key={category.id}
+                className={`filter-category-item ${selectedCategories.has(category.id) ? 'selected' : ''}`}
+                onClick={() => onCategoryToggle(category.id)}
+              >
+                <div className="filter-category-dot" style={{ backgroundColor: category.color }} />
+                <span className="filter-category-name">{category.name}</span>
+                <span className="filter-category-count">{categoryCounts.get(category.id) || 0}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Status filter */}
+      {selectedStatuses && onStatusToggle && (
+        <div className="filter-section">
+          <div className="filter-section-header">
+            <span className="filter-section-title">Status</span>
+            <span className="filter-section-count">3</span>
+          </div>
+          <div className="filter-status-list">
+            <button
+              className={`filter-status-item ${selectedStatuses.has('active') ? 'selected' : ''}`}
+              onClick={() => onStatusToggle('active')}
+            >
+              <div className="filter-status-dot active" />
+              <span className="filter-status-name">Active</span>
+              <span className="filter-status-count">{statusCounts.active}</span>
+            </button>
+            <button
+              className={`filter-status-item ${selectedStatuses.has('blocked') ? 'selected' : ''}`}
+              onClick={() => onStatusToggle('blocked')}
+            >
+              <div className="filter-status-dot blocked" />
+              <span className="filter-status-name">Blocked</span>
+              <span className="filter-status-count">{statusCounts.blocked}</span>
+            </button>
+            <button
+              className={`filter-status-item ${selectedStatuses.has('done') ? 'selected' : ''}`}
+              onClick={() => onStatusToggle('done')}
+            >
+              <div className="filter-status-dot done" />
+              <span className="filter-status-name">Done</span>
+              <span className="filter-status-count">{statusCounts.done}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Blocker rate filter */}
+      {onBlockerThresholdChange && maxBlockerCount > 0 && (
+        <div className="filter-section">
+          <div className="filter-section-header">
+            <span className="filter-section-title">Blocker Rate</span>
+            <span className="filter-section-value">≥{blockerThreshold}</span>
+          </div>
+          <div className="filter-slider-container">
+            <input
+              type="range"
+              className="filter-slider"
+              min={0}
+              max={maxBlockerCount}
+              value={blockerThreshold}
+              onChange={(e) => onBlockerThresholdChange(parseInt(e.target.value))}
+            />
+            <div className="filter-slider-labels">
+              <span>0</span>
+              <span>{maxBlockerCount}</span>
+            </div>
+          </div>
+          <div className="filter-slider-hint">
+            Show nodes blocking ≥{blockerThreshold} others
+          </div>
+        </div>
+      )}
+
       {/* Assignee filter section - full list with names and counts */}
       {cards && selectedAssignees && onAssigneeToggle && (assignees.length > 0 || unassignedCount > 0) && (
         <div className="filter-section">

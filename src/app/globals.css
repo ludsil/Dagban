@@ -1499,6 +1499,215 @@ html, body {
   color: rgba(255, 255, 255, 0.4);
 }
 
+/* Search filter input */
+.filter-search-input {
+  width: 100%;
+  padding: 8px 10px;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.filter-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.filter-search-input:focus {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.filter-section-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+}
+
+/* Category filter */
+.filter-category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter-category-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.filter-category-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.filter-category-item.selected {
+  background-color: rgba(74, 222, 128, 0.15);
+}
+
+.filter-category-item.selected .filter-category-name {
+  color: #4ade80;
+}
+
+.filter-category-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.filter-category-name {
+  flex: 1;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-category-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Status filter */
+.filter-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter-status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.filter-status-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.filter-status-item.selected {
+  background-color: rgba(74, 222, 128, 0.15);
+}
+
+.filter-status-item.selected .filter-status-name {
+  color: #4ade80;
+}
+
+.filter-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.filter-status-dot.active {
+  background-color: #4ade80;
+}
+
+.filter-status-dot.blocked {
+  background-color: #f87171;
+}
+
+.filter-status-dot.done {
+  background-color: #9ca3af;
+}
+
+.filter-status-name {
+  flex: 1;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.filter-status-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Blocker rate slider */
+.filter-section-value {
+  font-size: 11px;
+  color: rgba(74, 222, 128, 0.9);
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
+.filter-slider-container {
+  padding: 4px 0;
+}
+
+.filter-slider {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.filter-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #4ade80;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.filter-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.filter-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #4ade80;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.filter-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 4px;
+}
+
+.filter-slider-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 6px;
+}
+
 /* Drag-to-Connect Indicator */
 .drag-connect-indicator {
   position: fixed;

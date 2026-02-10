@@ -187,6 +187,7 @@ export default function DagbanGraph({
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [blockerThreshold, setBlockerThreshold] = useState(0);
 
   // Show toast notification
   const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
@@ -243,6 +244,7 @@ export default function DagbanGraph({
     setSelectedCategories(new Set());
     setSelectedStatuses(new Set());
     setSearchQuery('');
+    setBlockerThreshold(0);
   }, []);
 
   // Load three.js on mount
@@ -264,6 +266,15 @@ export default function DagbanGraph({
       maxIndegree: getMaxDegree(indegrees),
       maxOutdegree: getMaxDegree(outdegrees),
     };
+  }, [data.edges]);
+
+  // Compute blocker counts (outdegree - how many cards each card blocks)
+  const blockerCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    data.edges.forEach(edge => {
+      counts.set(edge.source, (counts.get(edge.source) || 0) + 1);
+    });
+    return counts;
   }, [data.edges]);
 
   // Check if a card matches the current filters
@@ -295,8 +306,14 @@ export default function DagbanGraph({
       }
     }
 
+    // Check blocker threshold
+    if (blockerThreshold > 0) {
+      const blockerCount = blockerCounts.get(card.id) || 0;
+      if (blockerCount < blockerThreshold) return false;
+    }
+
     return true;
-  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees]);
+  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts]);
 
   // Convert dagban data to force-graph format
   // CRITICAL: Preserve node positions when data changes to avoid graph reset
@@ -1117,6 +1134,16 @@ export default function DagbanGraph({
           cards={data.cards}
           selectedAssignees={selectedAssignees}
           onAssigneeToggle={handleAssigneeToggle}
+          categories={data.categories}
+          edges={data.edges}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedCategories={selectedCategories}
+          onCategoryToggle={handleCategoryToggle}
+          selectedStatuses={selectedStatuses}
+          onStatusToggle={handleStatusToggle}
+          blockerThreshold={blockerThreshold}
+          onBlockerThresholdChange={setBlockerThreshold}
         />
       )}
 
