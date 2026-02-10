@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { ViewMode, DisplayMode, ColorMode, ArrowMode } from './types';
 import { Card } from '@/lib/types';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 interface SettingsPanelProps {
   viewMode: ViewMode;
@@ -74,89 +76,58 @@ export function SettingsPanel({
     <div className="settings-panel">
       <div className="settings-row">
         <span className="settings-label">View</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${viewMode === '2D' ? 'active' : ''}`}
-            onClick={() => onViewModeChange('2D')}
-          >
-            2D
-          </button>
-          <button
-            className={`toggle-btn ${viewMode === '3D' ? 'active' : ''}`}
-            onClick={() => onViewModeChange('3D')}
-          >
-            3D
-          </button>
-        </div>
+        <ToggleGroup
+          type="single"
+          value={viewMode}
+          onValueChange={(value) => value && onViewModeChange(value as ViewMode)}
+          variant="outline"
+          size="sm"
+        >
+          <ToggleGroupItem value="2D">2D</ToggleGroupItem>
+          <ToggleGroupItem value="3D">3D</ToggleGroupItem>
+        </ToggleGroup>
       </div>
       <div className="settings-row">
         <span className="settings-label">Display</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${displayMode === 'balls' ? 'active' : ''}`}
-            onClick={() => onDisplayModeChange('balls')}
-          >
-            Balls
-          </button>
-          <button
-            className={`toggle-btn ${displayMode === 'labels' ? 'active' : ''}`}
-            onClick={() => onDisplayModeChange('labels')}
-          >
-            Labels
-          </button>
-          <button
-            className={`toggle-btn ${displayMode === 'full' ? 'active' : ''}`}
-            onClick={() => onDisplayModeChange('full')}
-          >
-            Full
-          </button>
-        </div>
+        <ToggleGroup
+          type="single"
+          value={displayMode}
+          onValueChange={(value) => value && onDisplayModeChange(value as DisplayMode)}
+          variant="outline"
+          size="sm"
+        >
+          <ToggleGroupItem value="balls">Balls</ToggleGroupItem>
+          <ToggleGroupItem value="labels">Labels</ToggleGroupItem>
+          <ToggleGroupItem value="full">Full</ToggleGroupItem>
+        </ToggleGroup>
       </div>
       <div className="settings-row">
         <span className="settings-label">Color</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${colorMode === 'category' ? 'active' : ''}`}
-            onClick={() => onColorModeChange('category')}
-          >
-            Category
-          </button>
-          <button
-            className={`toggle-btn toggle-btn-indegree ${colorMode === 'indegree' ? 'active' : ''}`}
-            onClick={() => onColorModeChange('indegree')}
-          >
-            Indegree
-          </button>
-          <button
-            className={`toggle-btn toggle-btn-outdegree ${colorMode === 'outdegree' ? 'active' : ''}`}
-            onClick={() => onColorModeChange('outdegree')}
-          >
-            Outdegree
-          </button>
-        </div>
+        <ToggleGroup
+          type="single"
+          value={colorMode}
+          onValueChange={(value) => value && onColorModeChange(value as ColorMode)}
+          variant="outline"
+          size="sm"
+        >
+          <ToggleGroupItem value="category">Category</ToggleGroupItem>
+          <ToggleGroupItem value="indegree">Indegree</ToggleGroupItem>
+          <ToggleGroupItem value="outdegree">Outdegree</ToggleGroupItem>
+        </ToggleGroup>
       </div>
       <div className="settings-row">
         <span className="settings-label">Arrows</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${arrowMode === 'end' ? 'active' : ''}`}
-            onClick={() => onArrowModeChange('end')}
-          >
-            End
-          </button>
-          <button
-            className={`toggle-btn ${arrowMode === 'middle' ? 'active' : ''}`}
-            onClick={() => onArrowModeChange('middle')}
-          >
-            Middle
-          </button>
-          <button
-            className={`toggle-btn ${arrowMode === 'none' ? 'active' : ''}`}
-            onClick={() => onArrowModeChange('none')}
-          >
-            None
-          </button>
-        </div>
+        <ToggleGroup
+          type="single"
+          value={arrowMode}
+          onValueChange={(value) => value && onArrowModeChange(value as ArrowMode)}
+          variant="outline"
+          size="sm"
+        >
+          <ToggleGroupItem value="end">End</ToggleGroupItem>
+          <ToggleGroupItem value="middle">Middle</ToggleGroupItem>
+          <ToggleGroupItem value="none">None</ToggleGroupItem>
+        </ToggleGroup>
       </div>
       {/* Assignee filter section - full list with names and counts */}
       {cards && selectedAssignees && onAssigneeToggle && (assignees.length > 0 || unassignedCount > 0) && (
@@ -172,9 +143,9 @@ export function SettingsPanel({
                 className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
                 onClick={() => onAssigneeToggle(assignee)}
               >
-                <div className="filter-assignee-avatar">
-                  <span className="filter-assignee-initials">{getInitials(assignee)}</span>
-                </div>
+                <Avatar size="sm">
+                  <AvatarFallback>{getInitials(assignee)}</AvatarFallback>
+                </Avatar>
                 <span className="filter-assignee-name">{assignee}</span>
                 <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
               </button>
@@ -184,12 +155,14 @@ export function SettingsPanel({
                 className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
                 onClick={() => onAssigneeToggle('__unassigned__')}
               >
-                <div className="filter-assignee-avatar unassigned">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-                  </svg>
-                </div>
+                <Avatar size="sm">
+                  <AvatarFallback>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
+                    </svg>
+                  </AvatarFallback>
+                </Avatar>
                 <span className="filter-assignee-name">Unassigned</span>
                 <span className="filter-assignee-count">{unassignedCount}</span>
               </button>

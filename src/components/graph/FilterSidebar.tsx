@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { Card } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ChevronLeft, User } from 'lucide-react';
 
 interface FilterSidebarProps {
   cards: Card[];
@@ -65,33 +68,28 @@ export function FilterSidebar({
   return (
     <div className={`filter-sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="filter-sidebar-header">
-        <button
-          className="filter-sidebar-toggle"
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? 'Expand filters' : 'Collapse filters'}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s ease' }}
-          >
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-        </button>
+          <ChevronLeft
+            className="size-4 transition-transform"
+            style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}
+          />
+        </Button>
         {!collapsed && (
           <>
             <span className="filter-sidebar-title">Filters</span>
             {hasFilters && (
-              <button
-                className="filter-sidebar-clear"
+              <Button
+                variant="ghost"
+                size="xs"
                 onClick={onClearFilters}
               >
                 Clear
-              </button>
+              </Button>
             )}
           </>
         )}
@@ -111,9 +109,9 @@ export function FilterSidebar({
                   className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
                   onClick={() => onAssigneeToggle(assignee)}
                 >
-                  <div className="filter-assignee-avatar">
-                    <span className="filter-assignee-initials">{getInitials(assignee)}</span>
-                  </div>
+                  <Avatar size="sm">
+                    <AvatarFallback>{getInitials(assignee)}</AvatarFallback>
+                  </Avatar>
                   <span className="filter-assignee-name">{assignee}</span>
                   <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
                 </button>
@@ -123,12 +121,11 @@ export function FilterSidebar({
                   className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
                   onClick={() => onAssigneeToggle('__unassigned__')}
                 >
-                  <div className="filter-assignee-avatar unassigned">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                      <circle cx="12" cy="8" r="4" />
-                      <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-                    </svg>
-                  </div>
+                  <Avatar size="sm">
+                    <AvatarFallback>
+                      <User className="size-3" />
+                    </AvatarFallback>
+                  </Avatar>
                   <span className="filter-assignee-name">Unassigned</span>
                   <span className="filter-assignee-count">{unassignedCount}</span>
                 </button>

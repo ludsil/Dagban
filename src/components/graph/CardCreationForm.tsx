@@ -2,6 +2,9 @@
 
 import { useEffect, useRef } from 'react';
 import { CardCreationState } from './types';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { X } from 'lucide-react';
 
 interface CardCreationFormProps {
   state: CardCreationState;
@@ -86,17 +89,15 @@ export function CardCreationForm({
       {/* Header */}
       <div className="postit-creation-header">
         <span>{isDownstream ? 'New Downstream Task' : 'New Root Node'}</span>
-        <button className="postit-close" onClick={onClose}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
+        <Button variant="ghost" size="icon-xs" onClick={onClose}>
+          <X className="size-3.5" />
+        </Button>
       </div>
 
       {/* Title - large, editable */}
-      <textarea
+      <Textarea
         ref={titleRef}
-        className="postit-title"
+        className="postit-title border-none shadow-none resize-none min-h-0 p-0 text-lg font-semibold focus-visible:ring-0"
         value={state.title}
         onChange={(e) => onTitleChange(e.target.value)}
         placeholder="Title..."
@@ -110,8 +111,8 @@ export function CardCreationForm({
       />
 
       {/* Description */}
-      <textarea
-        className="postit-content"
+      <Textarea
+        className="postit-content border-none shadow-none resize-none min-h-[80px] p-0 focus-visible:ring-0"
         value={state.description}
         onChange={(e) => onDescriptionChange(e.target.value)}
         placeholder="Add notes..."
@@ -119,16 +120,16 @@ export function CardCreationForm({
 
       {/* Bottom action bar */}
       <div className="postit-actions">
-        <button className="postit-cancel-btn" onClick={onClose}>
+        <Button variant="ghost" size="sm" onClick={onClose}>
           Cancel
-        </button>
-        <button
-          className="postit-create-btn"
+        </Button>
+        <Button
+          size="sm"
           onClick={onSubmit}
           disabled={!state.title.trim()}
         >
           Create
-        </button>
+        </Button>
       </div>
     </div>
   );
