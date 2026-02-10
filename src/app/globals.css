@@ -720,7 +720,13 @@ body {
 .postit-actions-left {
   display: flex;
   flex-direction: row;
+  flex-wrap: nowrap;
   gap: 8px;
+}
+
+.postit-actions-left .postit-action-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .postit-action-btn {
