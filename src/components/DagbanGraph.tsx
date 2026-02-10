@@ -820,7 +820,7 @@ function FilterPanel({
       {/* Map mode toggles */}
       <div className="filter-mode-group">
         <button
-          className={\`filter-mode-btn \${colorMode === 'category' ? 'active' : ''}\`}
+          className={`filter-mode-btn ${colorMode === 'category' ? 'active' : ''}`}
           onClick={() => onColorModeChange('category')}
           title="Color by category"
         >
@@ -829,7 +829,7 @@ function FilterPanel({
           </svg>
         </button>
         <button
-          className={\`filter-mode-btn filter-mode-indegree \${colorMode === 'indegree' ? 'active' : ''}\`}
+          className={`filter-mode-btn filter-mode-indegree ${colorMode === 'indegree' ? 'active' : ''}`}
           onClick={() => onColorModeChange('indegree')}
           title="Color by indegree (incoming connections)"
         >
@@ -838,7 +838,7 @@ function FilterPanel({
           </svg>
         </button>
         <button
-          className={\`filter-mode-btn filter-mode-outdegree \${colorMode === 'outdegree' ? 'active' : ''}\`}
+          className={`filter-mode-btn filter-mode-outdegree ${colorMode === 'outdegree' ? 'active' : ''}`}
           onClick={() => onColorModeChange('outdegree')}
           title="Color by outdegree (outgoing connections)"
         >
