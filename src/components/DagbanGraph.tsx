@@ -309,6 +309,18 @@ function CardDetailPanel({
             </svg>
             <span>Add task</span>
           </button>
+          <button
+            className="postit-action-btn"
+            onClick={handleStartConnection}
+            title="Add dependency to this node"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+            <span>Add dep</span>
+          </button>
         </div>
         <div className="postit-status-badge" style={{ backgroundColor: node.color }}>
           {node.status}
@@ -731,6 +743,114 @@ interface GraphLinkData {
 type ViewMode = '2D' | '3D';
 type DisplayMode = 'balls' | 'labels' | 'full';
 type ColorMode = 'category' | 'indegree' | 'outdegree';
+// Filter Panel Component with search bar and map-mode toggles
+function FilterPanel({
+  searchQuery,
+  onSearchChange,
+  colorMode,
+  onColorModeChange,
+  matchCount,
+  totalCount,
+}: {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  colorMode: ColorMode;
+  onColorModeChange: (mode: ColorMode) => void;
+  matchCount: number;
+  totalCount: number;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus search on Cmd+F / Ctrl+F
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+      // Escape clears search when focused
+      if (e.key === 'Escape' && document.activeElement === inputRef.current) {
+        onSearchChange('');
+        inputRef.current?.blur();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onSearchChange]);
+
+  return (
+    <div className="filter-panel">
+      {/* Search bar */}
+      <div className="filter-search-container">
+        <svg className="filter-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        <input
+          ref={inputRef}
+          type="text"
+          className="filter-search-input"
+          placeholder="Filter nodes..."
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+        />
+        {searchQuery && (
+          <>
+            <span className="filter-search-count">
+              {matchCount}/{totalCount}
+            </span>
+            <button
+              className="filter-search-clear"
+              onClick={() => onSearchChange('')}
+              title="Clear search"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div className="filter-divider" />
+
+      {/* Map mode toggles */}
+      <div className="filter-mode-group">
+        <button
+          className={\`filter-mode-btn \${colorMode === 'category' ? 'active' : ''}\`}
+          onClick={() => onColorModeChange('category')}
+          title="Color by category"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+          </svg>
+        </button>
+        <button
+          className={\`filter-mode-btn filter-mode-indegree \${colorMode === 'indegree' ? 'active' : ''}\`}
+          onClick={() => onColorModeChange('indegree')}
+          title="Color by indegree (incoming connections)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </button>
+        <button
+          className={\`filter-mode-btn filter-mode-outdegree \${colorMode === 'outdegree' ? 'active' : ''}\`}
+          onClick={() => onColorModeChange('outdegree')}
+          title="Color by outdegree (outgoing connections)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M19 12l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 // Header Component with logo and project switcher
 function Header({
@@ -901,7 +1021,17 @@ function generateId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDelete, onEdgeCreate, onUndo }: Props) {
+export default function DagbanGraph({
+  data,
+  onCardChange,
+  onCardCreate,
+  onCardDelete,
+  onEdgeCreate,
+  onUndo,
+  projectHeader,
+  showSettingsProp = true,
+  triggerNewNode = false,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
@@ -909,7 +1039,7 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
   const [colorMode, setColorMode] = useState<ColorMode>('category');
-  const [showSettings, setShowSettings] = useState(true);
+  const [showSettings, setShowSettings] = useState(showSettingsProp);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
@@ -1217,6 +1347,13 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
       parentNodeId: null,
     });
   }, []);
+
+  // Trigger new node creation from parent component
+  useEffect(() => {
+    if (triggerNewNode) {
+      openRootNodeCreation();
+    }
+  }, [triggerNewNode, openRootNodeCreation]);
 
   // Handle command palette node selection
   const handleCommandPaletteSelectNode = useCallback((node: GraphNodeData) => {
@@ -1634,10 +1771,12 @@ export default function DagbanGraph({ data, onCardChange, onCardCreate, onCardDe
       ref={containerRef}
       className="w-full h-full bg-[#000000] relative"
     >
-      <Header
-        onLogoClick={() => setShowSettings(!showSettings)}
-        onNewRootNode={openRootNodeCreation}
-      />
+      {projectHeader || (
+        <Header
+          onLogoClick={() => setShowSettings(!showSettings)}
+          onNewRootNode={openRootNodeCreation}
+        />
+      )}
       {showSettings && (
         <SettingsPanel
           viewMode={viewMode}
