@@ -36,6 +36,7 @@ interface HoverTooltipState {
   x: number;
   y: number;
   title: string;
+  nodeId: string | null;
 }
 
 // Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
@@ -57,6 +58,28 @@ interface Props {
   onCategoryAdd?: (category: Category) => void;
   onCategoryDelete?: (categoryId: string) => void;
   onCardCreate?: (card: Card, parentCardId?: string) => void;
+  onCardDelete?: (cardId: string) => void;
+  onUndo?: () => void;
+}
+
+// Undo action types for internal undo stack
+type UndoAction =
+  | { type: 'delete_card'; card: Card; connectedEdges: Edge[] }
+  | { type: 'create_card'; cardId: string }
+  | { type: 'update_card'; cardId: string; previousState: Partial<Card> };
+
+// Toast notification state
+interface ToastState {
+  visible: boolean;
+  message: string;
+  type: 'info' | 'success' | 'warning';
+  action?: { label: string; onClick: () => void };
+}
+
+// Command palette state
+interface CommandPaletteState {
+  visible: boolean;
+  query: string;
 }
 
 // Custom node type extending the force-graph node structure
@@ -91,18 +114,22 @@ function CardDetailPanel({
   // Local state for editing
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
+  const [assignee, setAssignee] = useState(card.assignee || '');
+  const [showAssigneeInput, setShowAssigneeInput] = useState(false);
 
   // Save changes helper
   const saveChanges = useCallback(() => {
     const titleChanged = title !== card.title;
     const descChanged = description !== (card.description || '');
-    if ((titleChanged || descChanged) && onCardChange) {
+    const assigneeChanged = assignee !== (card.assignee || '');
+    if ((titleChanged || descChanged || assigneeChanged) && onCardChange) {
       onCardChange(card.id, {
         title,
         description: description || undefined,
+        assignee: assignee || undefined,
       });
     }
-  }, [title, description, card.title, card.description, card.id, onCardChange]);
+  }, [title, description, assignee, card.title, card.description, card.assignee, card.id, onCardChange]);
 
   // Focus title on open
   useEffect(() => {
@@ -192,6 +219,43 @@ function CardDetailPanel({
       {/* Status indicator bar at top */}
       <div className="postit-status-bar" style={{ backgroundColor: node.color }} />
 
+      {/* Assignee avatar in top right corner */}
+      <div className="postit-assignee-container">
+        {showAssigneeInput ? (
+          <input
+            type="text"
+            className="postit-assignee-input"
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+            onBlur={() => setShowAssigneeInput(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === 'Escape') {
+                setShowAssigneeInput(false);
+              }
+            }}
+            placeholder="Name..."
+            autoFocus
+          />
+        ) : (
+          <button
+            className={`postit-assignee-avatar ${!assignee ? 'empty' : ''}`}
+            onClick={() => setShowAssigneeInput(true)}
+            title={assignee || 'Assign someone'}
+          >
+            {assignee ? (
+              <span className="postit-assignee-initials">
+                {assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')}
+              </span>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/>
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
+
       {/* Title - large, editable */}
       <textarea
         ref={titleRef}
@@ -235,10 +299,12 @@ function NodeContextMenu({
   state,
   onClose,
   onCreateDownstream,
+  onDelete,
 }: {
   state: NodeContextMenuState;
   onClose: () => void;
   onCreateDownstream: (node: GraphNodeData) => void;
+  onDelete: (node: GraphNodeData) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
 

@@ -594,6 +594,73 @@ body {
   flex-shrink: 0;
 }
 
+.postit-assignee-container {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+}
+
+.postit-assignee-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.postit-assignee-avatar:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.postit-assignee-avatar.empty {
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  background: transparent;
+}
+
+.postit-assignee-avatar.empty:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.postit-assignee-avatar svg {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.postit-assignee-avatar.empty:hover svg {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.postit-assignee-initials {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.postit-assignee-input {
+  width: 100px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  outline: none;
+}
+
+.postit-assignee-input:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.postit-assignee-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
 .postit-title {
   width: 100%;
   background: transparent;
