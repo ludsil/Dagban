@@ -176,10 +176,6 @@ export default function DagbanGraph({
   });
   const dragConnectAnimationRef = useRef<number | null>(null);
 
-  // Refs for incremental graph update detection
-  const currentNodesRef = useRef<GraphNodeData[]>([]);
-  const currentLinksRef = useRef<GraphLinkData[]>([]);
-
   // Undo stack for local undo functionality
   const undoStackRef = useRef<UndoAction[]>([]);
 
@@ -250,75 +246,84 @@ export default function DagbanGraph({
   }, [selectedAssignees]);
 
   // Convert dagban data to force-graph format
-  const graphData = useMemo(() => ({
-    nodes: data.cards.map(card => {
-      const status = getCardStatus(card, data.edges, data.cards);
-      const categoryColor = getCardColor(card, status, data.categories);
-      const matchesFilter = cardMatchesFilter(card);
+  // CRITICAL: Preserve node positions when data changes to avoid graph reset
+  // D3 simulation only initializes positions for nodes where x/y is NaN,
+  // so we must copy existing positions to new node objects.
+  const graphData = useMemo(() => {
+    // Get existing nodes from the graph with their computed positions
+    const existingNodes = graphRef.current?.graphData?.()?.nodes as GraphNodeData[] | undefined;
+    const positionMap = new Map<string, { x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null }>();
 
-      // Compute color based on colorMode
-      let color: string;
-      if (colorMode === 'indegree') {
-        const degree = indegrees.get(card.id) || 0;
-        color = getGradientColor('indegree', degree, maxIndegree);
-      } else if (colorMode === 'outdegree') {
-        const degree = outdegrees.get(card.id) || 0;
-        color = getGradientColor('outdegree', degree, maxOutdegree);
-      } else {
-        color = categoryColor;
-      }
-
-      // Dim the color if node doesn't match filter
-      if (!matchesFilter && selectedAssignees.size > 0) {
-        // Apply dimming by reducing opacity in the color
-        color = dimColor(color);
-      }
-
-      return {
-        id: card.id,
-        title: card.title,
-        color,
-        status,
-        card,
-        matchesFilter,
-      };
-    }),
-    links: data.edges.map(edge => ({
-      source: edge.source,
-      target: edge.target,
-      progress: edge.progress,
-      edge,
-    })),
-  }), [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree, cardMatchesFilter, selectedAssignees.size]);
-
-  // Incremental graph update - detect edge-only changes to avoid full reset
-  useEffect(() => {
-    // Guard: ensure graphRef has the graphData method (ForceGraph is mounted)
-    if (!graphRef.current || typeof graphRef.current.graphData !== 'function') {
-      // Still update refs for tracking
-      currentNodesRef.current = graphData.nodes;
-      currentLinksRef.current = graphData.links;
-      return;
-    }
-
-    // Check if only edges were added (nodes are the same)
-    const nodesChanged = graphData.nodes.length !== currentNodesRef.current.length ||
-      !graphData.nodes.every((n, i) => n.id === currentNodesRef.current[i]?.id);
-
-    if (!nodesChanged && graphData.links.length > currentLinksRef.current.length) {
-      // Only edges added - do incremental update preserving node positions
-      currentLinksRef.current = graphData.links;
-      const currentData = graphRef.current.graphData();
-      graphRef.current.graphData({
-        nodes: currentData.nodes,
-        links: graphData.links
+    if (existingNodes) {
+      existingNodes.forEach(n => {
+        positionMap.set(n.id, {
+          x: n.x,
+          y: n.y,
+          vx: n.vx,
+          vy: n.vy,
+          fx: n.fx,
+          fy: n.fy
+        });
       });
-    } else {
-      // Full update needed
-      currentNodesRef.current = graphData.nodes;
-      currentLinksRef.current = graphData.links;
     }
-  }, [graphData]);
+
+    return {
+      nodes: data.cards.map(card => {
+        const status = getCardStatus(card, data.edges, data.cards);
+        const categoryColor = getCardColor(card, status, data.categories);
+        const matchesFilter = cardMatchesFilter(card);
+
+        // Compute color based on colorMode
+        let color: string;
+        if (colorMode === 'indegree') {
+          const degree = indegrees.get(card.id) || 0;
+          color = getGradientColor('indegree', degree, maxIndegree);
+        } else if (colorMode === 'outdegree') {
+          const degree = outdegrees.get(card.id) || 0;
+          color = getGradientColor('outdegree', degree, maxOutdegree);
+        } else {
+          color = categoryColor;
+        }
+
+        // Dim the color if node doesn't match filter
+        if (!matchesFilter && selectedAssignees.size > 0) {
+          // Apply dimming by reducing opacity in the color
+          color = dimColor(color);
+        }
+
+        // Get existing position data if available
+        const existing = positionMap.get(card.id);
+
+        return {
+          id: card.id,
+          title: card.title,
+          color,
+          status,
+          card,
+          matchesFilter,
+          // PRESERVE existing positions if available - this prevents graph reset
+          ...(existing && {
+            x: existing.x,
+            y: existing.y,
+            vx: existing.vx,
+            vy: existing.vy,
+            fx: existing.fx,
+            fy: existing.fy,
+          }),
+        };
+      }),
+      links: data.edges.map(edge => ({
+        source: edge.source,
+        target: edge.target,
+        progress: edge.progress,
+        edge,
+      })),
+    };
+  }, [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree, cardMatchesFilter, selectedAssignees.size]);
+
+  // NOTE: Position preservation is now handled directly in the graphData useMemo above.
+  // By copying x, y, vx, vy, fx, fy from existing nodes, D3 simulation preserves
+  // their positions instead of re-initializing them randomly.
 
   // Resize handling
   useEffect(() => {

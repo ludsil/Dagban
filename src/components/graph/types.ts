@@ -13,11 +13,16 @@ export interface GraphNodeData {
   x?: number;
   y?: number;
   z?: number;
+  // Velocity coordinates (set by D3 force simulation)
+  vx?: number;
+  vy?: number;
+  vz?: number;
   // Fixed position coordinates (fx/fy/fz lock a node's position)
   // When set, the force simulation will not move this node
-  fx?: number;
-  fy?: number;
-  fz?: number;
+  // D3 uses null to unset, undefined means not set
+  fx?: number | null;
+  fy?: number | null;
+  fz?: number | null;
   __bckgDimensions?: [number, number];
 }
 
