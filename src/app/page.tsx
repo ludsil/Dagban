@@ -1,5 +1,111 @@
-import ProjectList from '@/components/ProjectList';
+'use client';
+
+import { useCallback } from 'react';
+import DagbanGraph from '@/components/DagbanGraph';
+import { sampleGraph } from '@/lib/sample-data';
+import { usePersistedGraph } from '@/lib/storage';
+import type { DagbanGraph as GraphData, Card } from '@/lib/types';
 
 export default function Home() {
-  return <ProjectList />;
+  const [graph, setGraph] = usePersistedGraph(sampleGraph);
+
+  // Handle edge progress changes
+  const handleEdgeProgressChange = useCallback((edgeId: string, progress: number) => {
+    setGraph({
+      ...graph,
+      edges: graph.edges.map(edge =>
+        edge.id === edgeId ? { ...edge, progress } : edge
+      ),
+    });
+  }, [graph, setGraph]);
+
+  // Handle card updates
+  const handleCardChange = useCallback((cardId: string, updates: Partial<GraphData['cards'][0]>) => {
+    setGraph({
+      ...graph,
+      cards: graph.cards.map(card =>
+        card.id === cardId ? { ...card, ...updates, updatedAt: new Date().toISOString() } : card
+      ),
+    });
+  }, [graph, setGraph]);
+
+  // Handle category updates
+  const handleCategoryChange = useCallback((categoryId: string, updates: Partial<GraphData['categories'][0]>) => {
+    setGraph({
+      ...graph,
+      categories: graph.categories.map(cat =>
+        cat.id === categoryId ? { ...cat, ...updates } : cat
+      ),
+    });
+  }, [graph, setGraph]);
+
+  // Handle card creation (with optional parent for downstream or child for upstream)
+  const handleCardCreate = useCallback((card: Card, parentCardId?: string, childCardId?: string) => {
+    const newEdges = [...graph.edges];
+
+    // Add edge for downstream (new card is target of parent)
+    if (parentCardId) {
+      newEdges.push({
+        id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        source: parentCardId,
+        target: card.id,
+        progress: 0,
+      });
+    }
+
+    // Add edge for upstream (new card is source, child is target)
+    if (childCardId) {
+      newEdges.push({
+        id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-up`,
+        source: card.id,
+        target: childCardId,
+        progress: 0,
+      });
+    }
+
+    setGraph({
+      ...graph,
+      cards: [...graph.cards, card],
+      edges: newEdges,
+    });
+  }, [graph, setGraph]);
+
+  // Handle card deletion (also removes connected edges)
+  const handleCardDelete = useCallback((cardId: string) => {
+    setGraph({
+      ...graph,
+      cards: graph.cards.filter(card => card.id !== cardId),
+      edges: graph.edges.filter(edge => edge.source !== cardId && edge.target !== cardId),
+    });
+  }, [graph, setGraph]);
+
+  // Handle edge creation between existing nodes
+  const handleEdgeCreate = useCallback((sourceId: string, targetId: string) => {
+    setGraph({
+      ...graph,
+      edges: [
+        ...graph.edges,
+        {
+          id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          source: sourceId,
+          target: targetId,
+          progress: 0,
+        },
+      ],
+    });
+  }, [graph, setGraph]);
+
+  return (
+    <div className="w-screen h-screen">
+      <DagbanGraph
+        data={graph}
+        onEdgeProgressChange={handleEdgeProgressChange}
+        onCardChange={handleCardChange}
+        onCategoryChange={handleCategoryChange}
+        onCardCreate={handleCardCreate}
+        onCardDelete={handleCardDelete}
+        onEdgeCreate={handleEdgeCreate}
+      />
+    </div>
+  );
 }

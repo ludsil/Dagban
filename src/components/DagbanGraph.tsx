@@ -15,7 +15,6 @@ import {
   KeyboardShortcutsHelp,
   Header,
   SettingsPanel,
-  FilterPanel,
   // Types
   GraphNodeData,
   GraphLinkData,
@@ -1147,22 +1146,6 @@ export default function DagbanGraph({
         />
       )}
 
-      {/* Filter Panel - FigJam/EU4 style hover panel */}
-      <FilterPanel
-        cards={data.cards}
-        categories={data.categories}
-        colorMode={colorMode}
-        onColorModeChange={setColorMode}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        selectedCategories={selectedCategories}
-        onCategoryToggle={handleCategoryToggle}
-        selectedAssignees={selectedAssignees}
-        onAssigneeToggle={handleAssigneeToggle}
-        selectedStatuses={selectedStatuses}
-        onStatusToggle={handleStatusToggle}
-        onClearFilters={handleClearFilters}
-      />
 
       {viewMode === '2D' ? (
         <FG2D

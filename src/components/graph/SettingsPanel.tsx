@@ -3,8 +3,6 @@
 import { useMemo, useRef, useEffect } from 'react';
 import { ViewMode, DisplayMode, ColorMode, ArrowMode } from './types';
 import { Card, Category, Edge } from '@/lib/types';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 interface SettingsPanelProps {
   viewMode: ViewMode;
@@ -15,11 +13,9 @@ interface SettingsPanelProps {
   onDisplayModeChange: (mode: DisplayMode) => void;
   onColorModeChange: (mode: ColorMode) => void;
   onArrowModeChange: (mode: ArrowMode) => void;
-  // Assignee filter props
   cards?: Card[];
   selectedAssignees?: Set<string>;
   onAssigneeToggle?: (assignee: string) => void;
-  // Extended filter props
   categories?: Category[];
   edges?: Edge[];
   searchQuery?: string;
@@ -60,7 +56,11 @@ export function SettingsPanel({
   // Handle / key to focus search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      if (e.key === '/') {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
@@ -99,7 +99,7 @@ export function SettingsPanel({
     return cards.filter(card => !card.assignee).length;
   }, [cards]);
 
-  // Compute blocker counts (how many cards each card blocks = outdegree)
+  // Compute blocker counts
   const blockerCounts = useMemo(() => {
     if (!edges) return new Map<string, number>();
     const counts = new Map<string, number>();
@@ -109,7 +109,6 @@ export function SettingsPanel({
     return counts;
   }, [edges]);
 
-  // Get max blocker count
   const maxBlockerCount = useMemo(() => {
     if (blockerCounts.size === 0) return 0;
     return Math.max(...blockerCounts.values());
@@ -125,28 +124,6 @@ export function SettingsPanel({
     return counts;
   }, [cards, categories]);
 
-  // Count cards per status (active/blocked/done)
-  const statusCounts = useMemo(() => {
-    if (!cards || !edges) return { active: 0, blocked: 0, done: 0 };
-    const counts = { active: 0, blocked: 0, done: 0 };
-    cards.forEach(card => {
-      const incomingEdges = edges.filter(e => e.target === card.id);
-      const hasIncompleteIncoming = incomingEdges.some(e => e.progress < 100);
-      if (hasIncompleteIncoming) {
-        counts.blocked++;
-      } else {
-        const outgoingEdges = edges.filter(e => e.source === card.id);
-        const allOutgoingComplete = outgoingEdges.length > 0 && outgoingEdges.every(e => e.progress >= 100);
-        if (allOutgoingComplete) {
-          counts.done++;
-        } else {
-          counts.active++;
-        }
-      }
-    });
-    return counts;
-  }, [cards, edges]);
-
   // Get initials from name
   const getInitials = (name: string) => {
     return name
@@ -155,99 +132,168 @@ export function SettingsPanel({
       .slice(0, 2)
       .join('');
   };
+
+  // Map mode configs
+  const mapModes: { mode: ColorMode; label: string; icon: React.ReactNode; color: string }[] = [
+    {
+      mode: 'category',
+      label: 'Category',
+      color: '#4ade80',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      ),
+    },
+    {
+      mode: 'indegree',
+      label: 'Blockers',
+      color: '#7dd3fc',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 5v14" />
+          <path d="M19 12l-7 7-7-7" />
+        </svg>
+      ),
+    },
+    {
+      mode: 'outdegree',
+      label: 'Impact',
+      color: '#fdba74',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 19V5" />
+          <path d="M5 12l7-7 7 7" />
+        </svg>
+      ),
+    },
+  ];
+
   return (
     <div className="settings-panel">
-      <div className="settings-row">
-        <span className="settings-label">View</span>
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(value) => value && onViewModeChange(value as ViewMode)}
-          variant="outline"
-          size="sm"
-        >
-          <ToggleGroupItem value="2D">2D</ToggleGroupItem>
-          <ToggleGroupItem value="3D">3D</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-      <div className="settings-row">
-        <span className="settings-label">Display</span>
-        <ToggleGroup
-          type="single"
-          value={displayMode}
-          onValueChange={(value) => value && onDisplayModeChange(value as DisplayMode)}
-          variant="outline"
-          size="sm"
-        >
-          <ToggleGroupItem value="balls">Balls</ToggleGroupItem>
-          <ToggleGroupItem value="labels">Labels</ToggleGroupItem>
-          <ToggleGroupItem value="full">Full</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-      <div className="settings-row">
-        <span className="settings-label">Color</span>
-        <ToggleGroup
-          type="single"
-          value={colorMode}
-          onValueChange={(value) => value && onColorModeChange(value as ColorMode)}
-          variant="outline"
-          size="sm"
-        >
-          <ToggleGroupItem value="category">Category</ToggleGroupItem>
-          <ToggleGroupItem value="indegree">Indegree</ToggleGroupItem>
-          <ToggleGroupItem value="outdegree">Outdegree</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-      <div className="settings-row">
-        <span className="settings-label">Arrows</span>
-        <ToggleGroup
-          type="single"
-          value={arrowMode}
-          onValueChange={(value) => value && onArrowModeChange(value as ArrowMode)}
-          variant="outline"
-          size="sm"
-        >
-          <ToggleGroupItem value="end">End</ToggleGroupItem>
-          <ToggleGroupItem value="middle">Middle</ToggleGroupItem>
-          <ToggleGroupItem value="none">None</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
-
-      {/* Search filter */}
+      {/* Search bar at top - most important */}
       {onSearchChange && (
-        <div className="filter-section">
-          <div className="filter-section-header">
-            <span className="filter-section-title">Search</span>
-            <span className="filter-section-hint">/</span>
-          </div>
+        <div className="filter-panel-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
           <input
             ref={searchInputRef}
             type="text"
-            className="filter-search-input"
-            placeholder="Filter nodes..."
+            className="filter-panel-search-input"
+            placeholder="Search nodes..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
           />
+          {searchQuery && (
+            <button
+              className="filter-panel-search-clear"
+              onClick={() => onSearchChange('')}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+          <span className="filter-panel-search-hint">/</span>
         </div>
       )}
 
+      {/* Map Mode - EU4 style buttons */}
+      <div className="filter-panel-mapmode">
+        <div className="filter-panel-mapmode-label">Map Mode</div>
+        <div className="filter-panel-mapmode-buttons">
+          {mapModes.map(({ mode, label, icon, color }) => (
+            <button
+              key={mode}
+              className={`mapmode-btn ${colorMode === mode ? 'active' : ''}`}
+              onClick={() => onColorModeChange(mode)}
+              style={{ '--mapmode-color': color } as React.CSSProperties}
+              title={label}
+            >
+              <span className="mapmode-btn-icon">{icon}</span>
+              <span className="mapmode-btn-label">{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* View Settings */}
+      <div className="filter-panel-section">
+        <div className="filter-panel-section-header">
+          <span>View</span>
+        </div>
+        <div className="filter-panel-chips">
+          {(['2D', '3D'] as ViewMode[]).map(mode => (
+            <button
+              key={mode}
+              className={`filter-chip ${viewMode === mode ? 'selected' : ''}`}
+              onClick={() => onViewModeChange(mode)}
+            >
+              <span className="filter-chip-label">{mode}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Display Settings */}
+      <div className="filter-panel-section">
+        <div className="filter-panel-section-header">
+          <span>Display</span>
+        </div>
+        <div className="filter-panel-chips">
+          {(['balls', 'labels', 'full'] as DisplayMode[]).map(mode => (
+            <button
+              key={mode}
+              className={`filter-chip ${displayMode === mode ? 'selected' : ''}`}
+              onClick={() => onDisplayModeChange(mode)}
+            >
+              <span className="filter-chip-label">{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Arrows Settings */}
+      <div className="filter-panel-section">
+        <div className="filter-panel-section-header">
+          <span>Arrows</span>
+        </div>
+        <div className="filter-panel-chips">
+          {(['end', 'middle', 'none'] as ArrowMode[]).map(mode => (
+            <button
+              key={mode}
+              className={`filter-chip ${arrowMode === mode ? 'selected' : ''}`}
+              onClick={() => onArrowModeChange(mode)}
+            >
+              <span className="filter-chip-label">{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Category filter */}
       {categories && selectedCategories && onCategoryToggle && categories.length > 0 && (
-        <div className="filter-section">
-          <div className="filter-section-header">
-            <span className="filter-section-title">Category</span>
-            <span className="filter-section-count">{categories.length}</span>
+        <div className="filter-panel-section">
+          <div className="filter-panel-section-header">
+            <span>Category</span>
+            <span className="filter-panel-section-count">{categories.length}</span>
           </div>
-          <div className="filter-category-list">
+          <div className="filter-panel-chips">
             {categories.map(category => (
               <button
                 key={category.id}
-                className={`filter-category-item ${selectedCategories.has(category.id) ? 'selected' : ''}`}
+                className={`filter-chip ${selectedCategories.has(category.id) ? 'selected' : ''}`}
                 onClick={() => onCategoryToggle(category.id)}
+                style={{ '--chip-color': category.color } as React.CSSProperties}
               >
-                <div className="filter-category-dot" style={{ backgroundColor: category.color }} />
-                <span className="filter-category-name">{category.name}</span>
-                <span className="filter-category-count">{categoryCounts.get(category.id) || 0}</span>
+                <span className="filter-chip-dot" style={{ backgroundColor: category.color }} />
+                <span className="filter-chip-label">{category.name}</span>
+                <span className="filter-chip-count">{categoryCounts.get(category.id) || 0}</span>
               </button>
             ))}
           </div>
@@ -256,45 +302,29 @@ export function SettingsPanel({
 
       {/* Status filter */}
       {selectedStatuses && onStatusToggle && (
-        <div className="filter-section">
-          <div className="filter-section-header">
-            <span className="filter-section-title">Status</span>
-            <span className="filter-section-count">3</span>
+        <div className="filter-panel-section">
+          <div className="filter-panel-section-header">
+            <span>Status</span>
           </div>
-          <div className="filter-status-list">
-            <button
-              className={`filter-status-item ${selectedStatuses.has('active') ? 'selected' : ''}`}
-              onClick={() => onStatusToggle('active')}
-            >
-              <div className="filter-status-dot active" />
-              <span className="filter-status-name">Active</span>
-              <span className="filter-status-count">{statusCounts.active}</span>
-            </button>
-            <button
-              className={`filter-status-item ${selectedStatuses.has('blocked') ? 'selected' : ''}`}
-              onClick={() => onStatusToggle('blocked')}
-            >
-              <div className="filter-status-dot blocked" />
-              <span className="filter-status-name">Blocked</span>
-              <span className="filter-status-count">{statusCounts.blocked}</span>
-            </button>
-            <button
-              className={`filter-status-item ${selectedStatuses.has('done') ? 'selected' : ''}`}
-              onClick={() => onStatusToggle('done')}
-            >
-              <div className="filter-status-dot done" />
-              <span className="filter-status-name">Done</span>
-              <span className="filter-status-count">{statusCounts.done}</span>
-            </button>
+          <div className="filter-panel-chips">
+            {['active', 'blocked', 'done'].map(status => (
+              <button
+                key={status}
+                className={`filter-chip status-${status} ${selectedStatuses?.has(status) ? 'selected' : ''}`}
+                onClick={() => onStatusToggle(status)}
+              >
+                <span className="filter-chip-label">{status.charAt(0).toUpperCase() + status.slice(1)}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}
 
       {/* Blocker rate filter */}
       {onBlockerThresholdChange && maxBlockerCount > 0 && (
-        <div className="filter-section">
-          <div className="filter-section-header">
-            <span className="filter-section-title">Blocker Rate</span>
+        <div className="filter-panel-section">
+          <div className="filter-panel-section-header">
+            <span>Blocker Rate</span>
             <span className="filter-section-value">≥{blockerThreshold}</span>
           </div>
           <div className="filter-slider-container">
@@ -311,46 +341,41 @@ export function SettingsPanel({
               <span>{maxBlockerCount}</span>
             </div>
           </div>
-          <div className="filter-slider-hint">
-            Show nodes blocking ≥{blockerThreshold} others
-          </div>
         </div>
       )}
 
-      {/* Assignee filter section - full list with names and counts */}
+      {/* Assignee filter */}
       {cards && selectedAssignees && onAssigneeToggle && (assignees.length > 0 || unassignedCount > 0) && (
-        <div className="filter-section">
-          <div className="filter-section-header">
-            <span className="filter-section-title">Assignee</span>
-            <span className="filter-section-count">{assignees.length + (unassignedCount > 0 ? 1 : 0)}</span>
+        <div className="filter-panel-section">
+          <div className="filter-panel-section-header">
+            <span>Assignee</span>
+            <span className="filter-panel-section-count">{assignees.length + (unassignedCount > 0 ? 1 : 0)}</span>
           </div>
-          <div className="filter-assignee-list">
+          <div className="filter-panel-assignees">
             {assignees.map(assignee => (
               <button
                 key={assignee}
-                className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
+                className={`filter-assignee ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
                 onClick={() => onAssigneeToggle(assignee)}
               >
-                <Avatar size="sm">
-                  <AvatarFallback>{getInitials(assignee)}</AvatarFallback>
-                </Avatar>
+                <div className="filter-assignee-avatar">
+                  <span>{getInitials(assignee)}</span>
+                </div>
                 <span className="filter-assignee-name">{assignee}</span>
                 <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
               </button>
             ))}
             {unassignedCount > 0 && (
               <button
-                className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
+                className={`filter-assignee ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
                 onClick={() => onAssigneeToggle('__unassigned__')}
               >
-                <Avatar size="sm">
-                  <AvatarFallback>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                      <circle cx="12" cy="8" r="4" />
-                      <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-                    </svg>
-                  </AvatarFallback>
-                </Avatar>
+                <div className="filter-assignee-avatar unassigned">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="8" r="4" />
+                    <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
+                  </svg>
+                </div>
                 <span className="filter-assignee-name">Unassigned</span>
                 <span className="filter-assignee-count">{unassignedCount}</span>
               </button>
