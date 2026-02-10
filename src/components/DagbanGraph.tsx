@@ -115,6 +115,7 @@ function CardDetailPanel({
   onCreateUpstream,
   onLinkDownstream,
   onLinkUpstream,
+  onDelete,
 }: {
   selectedNode: SelectedNodeInfo;
   onClose: () => void;
@@ -123,6 +124,7 @@ function CardDetailPanel({
   onCreateUpstream?: (childNode: GraphNodeData) => void;
   onLinkDownstream?: (sourceNode: GraphNodeData) => void;
   onLinkUpstream?: (targetNode: GraphNodeData) => void;
+  onDelete?: (node: GraphNodeData) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -212,6 +214,14 @@ function CardDetailPanel({
       onCreateUpstream(node);
     }
   }, [saveChanges, onClose, onCreateUpstream, onLinkUpstream, node]);
+
+  // Handle Delete button
+  const handleDelete = useCallback(() => {
+    onClose();
+    if (onDelete) {
+      onDelete(node);
+    }
+  }, [onClose, onDelete, node]);
 
   // Calculate panel position - position to the right of the node, or left if near edge
   const panelWidth = 320;
@@ -333,6 +343,16 @@ function CardDetailPanel({
             </svg>
             <span>Add dep</span>
           </button>
+          <button
+            className="postit-action-btn postit-action-btn-danger"
+            onClick={handleDelete}
+            title="Delete this node"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+            </svg>
+            <span>Delete</span>
+          </button>
         </div>
         <div className="postit-status-badge" style={{ backgroundColor: node.color }}>
           {node.status}
@@ -347,12 +367,10 @@ function NodeContextMenu({
   state,
   onClose,
   onCreateDownstream,
-  onDelete,
 }: {
   state: NodeContextMenuState;
   onClose: () => void;
   onCreateDownstream: (node: GraphNodeData) => void;
-  onDelete: (node: GraphNodeData) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -402,20 +420,6 @@ function NodeContextMenu({
           <path d="M12 5v14M5 12h14" />
         </svg>
         Create downstream task
-      </button>
-      <button
-        className="context-menu-item context-menu-item-danger"
-        onClick={() => {
-          if (state.node) {
-            onDelete(state.node);
-          }
-          onClose();
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-        </svg>
-        Delete node
       </button>
     </div>
   );
@@ -1891,7 +1895,6 @@ export default function DagbanGraph({
         state={nodeContextMenu}
         onClose={closeNodeContextMenu}
         onCreateDownstream={openDownstreamCreation}
-        onDelete={handleDeleteNode}
       />
 
       {/* Card Creation Form */}
@@ -1913,6 +1916,7 @@ export default function DagbanGraph({
           onCreateUpstream={openUpstreamCreation}
           onLinkDownstream={startDownstreamConnection}
           onLinkUpstream={startUpstreamConnection}
+          onDelete={handleDeleteNode}
         />
       )}
 

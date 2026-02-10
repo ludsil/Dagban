@@ -749,6 +749,16 @@ body {
   color: #4ade80;
 }
 
+.postit-action-btn-danger:hover {
+  background-color: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+.postit-action-btn-danger:hover svg {
+  color: #ef4444;
+}
+
 .postit-status-badge {
   font-size: 10px;
   text-transform: uppercase;
