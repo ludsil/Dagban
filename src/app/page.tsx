@@ -39,12 +39,24 @@ export default function Home() {
     });
   }, [graph, setGraph]);
 
-  // Handle card creation
-  const handleCardCreate = useCallback((card: Card) => {
-    setGraph({
+  // Handle card creation (with optional parent for downstream tasks)
+  const handleCardCreate = useCallback((card: Card, parentCardId?: string) => {
+    const newGraph = {
       ...graph,
       cards: [...graph.cards, card],
-    });
+      edges: parentCardId
+        ? [
+            ...graph.edges,
+            {
+              id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              source: parentCardId,
+              target: card.id,
+              progress: 0,
+            },
+          ]
+        : graph.edges,
+    };
+    setGraph(newGraph);
   }, [graph, setGraph]);
 
   return (
