@@ -10,13 +10,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select';
 import { Plus, Link, Trash2, User } from 'lucide-react';
 
@@ -52,7 +51,6 @@ export function CardDetailPanel({
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
   const [assignee, setAssignee] = useState(card.assignee || '');
-  const [showAssigneeInput, setShowAssigneeInput] = useState(false);
   const [shiftHeld, setShiftHeld] = useState(false);
 
   // Track shift key state
@@ -233,6 +231,14 @@ export function CardDetailPanel({
     }
   };
 
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(part => part.charAt(0).toUpperCase())
+      .slice(0, 2)
+      .join('');
+  };
+
   return (
     <div
       ref={panelRef}
@@ -247,51 +253,54 @@ export function CardDetailPanel({
 
       {/* Assignee avatar in top right corner */}
       <div className="postit-assignee-corner">
-        {showAssigneeInput ? (
-          <Select
-            value={assignee || '__unassigned__'}
-            onValueChange={(value) => {
-              setAssignee(value === '__unassigned__' ? '' : value);
-              setShowAssigneeInput(false);
-            }}
-            open={showAssigneeInput}
-            onOpenChange={(open) => !open && setShowAssigneeInput(false)}
+        <Select
+          value={assignee || '__unassigned__'}
+          onValueChange={(value) => {
+            setAssignee(value === '__unassigned__' ? '' : value);
+          }}
+        >
+          <SelectTrigger
+            size="sm"
+            className="h-8 w-8 rounded-full p-0 border-none shadow-none [&>svg]:hidden"
+            aria-label="Assign user"
           >
-            <SelectTrigger className="w-[140px] h-8">
-              <SelectValue placeholder="Unassigned" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__unassigned__">Unassigned</SelectItem>
-              {placeholderUsers.map(user => (
-                <SelectItem key={user.id} value={user.name}>{user.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={`rounded-full ${!assignee ? 'opacity-50' : ''}`}
-                onClick={() => setShowAssigneeInput(true)}
-              >
+            <Avatar size="sm">
+              {assignee ? (
+                <AvatarFallback>{getInitials(assignee)}</AvatarFallback>
+              ) : (
+                <AvatarFallback>
+                  <User className="size-3" />
+                </AvatarFallback>
+              )}
+            </Avatar>
+          </SelectTrigger>
+          <SelectContent align="end" position="popper" className="min-w-[180px]">
+            <SelectItem value="__unassigned__">
+              <span className="flex items-center gap-2">
                 <Avatar size="sm">
                   <AvatarFallback>
-                    {assignee ? (
-                      assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')
-                    ) : (
-                      <User className="size-3" />
-                    )}
+                    <User className="size-3" />
                   </AvatarFallback>
                 </Avatar>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{assignee || 'Assign someone'}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
+                <span>Unassigned</span>
+              </span>
+            </SelectItem>
+            {placeholderUsers.map(user => (
+              <SelectItem key={user.id} value={user.name}>
+                <span className="flex items-center gap-2">
+                  <Avatar size="sm">
+                    {user.avatar ? (
+                      <AvatarImage src={user.avatar} alt={user.name} />
+                    ) : (
+                      <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+                    )}
+                  </Avatar>
+                  <span>{user.name}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Title - large, editable */}
@@ -320,7 +329,7 @@ export function CardDetailPanel({
           <Button
             variant="ghost"
             size="xs"
-            className={shiftHeld ? 'ring-2 ring-primary/50' : ''}
+            className={`postit-action-btn${shiftHeld ? ' shift-active' : ''}`}
             onClick={handleAddTask}
           >
             <Plus className="size-3" />
@@ -329,7 +338,7 @@ export function CardDetailPanel({
           <Button
             variant="ghost"
             size="xs"
-            className={shiftHeld ? 'ring-2 ring-primary/50' : ''}
+            className={`postit-action-btn${shiftHeld ? ' shift-active' : ''}`}
             onClick={handleAddDep}
           >
             <Link className="size-3" />
@@ -352,7 +361,7 @@ export function CardDetailPanel({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="postit-delete-icon"
                 onClick={handleDelete}
               >
                 <Trash2 className="size-3.5" />

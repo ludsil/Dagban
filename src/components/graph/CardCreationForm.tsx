@@ -92,7 +92,7 @@ export function CardCreationForm({
       {/* Header */}
       <div className="postit-creation-header">
         <span>{isDownstream ? 'New Downstream Task' : 'New Root Node'}</span>
-        <Button variant="ghost" size="icon-xs" onClick={onClose}>
+        <Button variant="ghost" size="icon-xs" className="postit-close" onClick={onClose}>
           <X className="size-3.5" />
         </Button>
       </div>
@@ -123,11 +123,12 @@ export function CardCreationForm({
 
       {/* Bottom action bar */}
       <div className="postit-actions">
-        <Button variant="ghost" size="sm" onClick={onClose}>
+        <Button variant="ghost" size="sm" className="postit-cancel-btn" onClick={onClose}>
           Cancel
         </Button>
         <Button
           size="sm"
+          className="postit-create-btn"
           onClick={onSubmit}
           disabled={!titleValue.trim()}
         >

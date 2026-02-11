@@ -1,13 +1,27 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import DagbanGraph from '@/components/DagbanGraph';
 import { sampleGraph } from '@/lib/sample-data';
+import { convertMiserablesToDagban } from '@/lib/miserables-converter';
+import miserablesData from '@/lib/miserables.json';
 import { usePersistedGraph } from '@/lib/storage';
 import type { DagbanGraph as GraphData, Card } from '@/lib/types';
 
-export default function Home() {
-  const [graph, setGraph] = usePersistedGraph(sampleGraph);
+type DatasetMode = 'sample' | 'miserables';
+
+function GraphHost({
+  datasetMode,
+  onDatasetModeChange,
+}: {
+  datasetMode: DatasetMode;
+  onDatasetModeChange: (mode: DatasetMode) => void;
+}) {
+  const miserablesGraph = useMemo(() => convertMiserablesToDagban(miserablesData), []);
+  const initialGraph = datasetMode === 'miserables' ? miserablesGraph : sampleGraph;
+  const projectId = datasetMode === 'miserables' ? 'miserables-temp' : 'default';
+
+  const [graph, setGraph] = usePersistedGraph(initialGraph, projectId);
 
   // Handle edge progress changes
   const handleEdgeProgressChange = useCallback((edgeId: string, progress: number) => {
@@ -96,15 +110,29 @@ export default function Home() {
   }, [graph, setGraph]);
 
   return (
+    <DagbanGraph
+      data={graph}
+      onEdgeProgressChange={handleEdgeProgressChange}
+      onCardChange={handleCardChange}
+      onCategoryChange={handleCategoryChange}
+      onCardCreate={handleCardCreate}
+      onCardDelete={handleCardDelete}
+      onEdgeCreate={handleEdgeCreate}
+      devDatasetMode={datasetMode}
+      onDevDatasetModeChange={onDatasetModeChange}
+    />
+  );
+}
+
+export default function Home() {
+  const [datasetMode, setDatasetMode] = useState<DatasetMode>('sample');
+
+  return (
     <div className="w-screen h-screen">
-      <DagbanGraph
-        data={graph}
-        onEdgeProgressChange={handleEdgeProgressChange}
-        onCardChange={handleCardChange}
-        onCategoryChange={handleCategoryChange}
-        onCardCreate={handleCardCreate}
-        onCardDelete={handleCardDelete}
-        onEdgeCreate={handleEdgeCreate}
+      <GraphHost
+        key={datasetMode}
+        datasetMode={datasetMode}
+        onDatasetModeChange={setDatasetMode}
       />
     </div>
   );

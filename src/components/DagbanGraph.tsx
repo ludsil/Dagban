@@ -42,6 +42,8 @@ const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
   loading: () => <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading graph...</div>
 });
 
+const INITIAL_3D_CAMERA_DISTANCE = 300;
+
 interface Props {
   data: GraphData;
   onEdgeProgressChange?: (edgeId: string, progress: number) => void;
@@ -56,6 +58,8 @@ interface Props {
   projectHeader?: React.ReactNode;
   showSettingsProp?: boolean;
   triggerNewNode?: boolean;
+  devDatasetMode?: 'sample' | 'miserables';
+  onDevDatasetModeChange?: (mode: 'sample' | 'miserables') => void;
 }
 
 // Lazy-loaded three.js modules (only loaded client-side)
@@ -101,10 +105,13 @@ export default function DagbanGraph({
   projectHeader,
   showSettingsProp = true,
   triggerNewNode = false,
+  devDatasetMode,
+  onDevDatasetModeChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
+  const initial3DCameraSetRef = useRef(false);
   // Keep stable graph data and node/link identities to avoid full re-init on updates
   const graphDataRef = useRef<{ nodes: GraphNodeData[]; links: GraphLinkData[] }>({ nodes: [], links: [] });
   const nodeByIdRef = useRef<Map<string, GraphNodeData>>(new Map());
@@ -667,16 +674,35 @@ export default function DagbanGraph({
 
   // Set initial camera distance for 3D mode (more zoomed in than default)
   useEffect(() => {
-    if (viewMode !== '3D') return;
-    const timer = setTimeout(() => {
-      if (graphRef.current) {
-        // Set camera distance to 300 for a more zoomed-in view
+    if (viewMode !== '3D') {
+      initial3DCameraSetRef.current = false;
+      return;
+    }
+    if (!css2DRendererInstance || initial3DCameraSetRef.current) return;
+
+    let rafId: number | null = null;
+    const trySetCamera = () => {
+      const graph = graphRef.current;
+      if (graph?.cameraPosition) {
+        // Set camera distance to INITIAL_3D_CAMERA_DISTANCE for a more zoomed-in view
         // (default is typically around 1000)
-        graphRef.current.cameraPosition({ z: 300 });
+        graph.cameraPosition(
+          { z: INITIAL_3D_CAMERA_DISTANCE },
+          { x: 0, y: 0, z: 0 },
+          0
+        );
+        initial3DCameraSetRef.current = true;
+        return;
       }
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [viewMode]);
+      rafId = requestAnimationFrame(trySetCamera);
+    };
+    rafId = requestAnimationFrame(trySetCamera);
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [viewMode, css2DRendererInstance]);
 
   // Handle undo
   const handleUndo = useCallback(() => {
@@ -1362,6 +1388,8 @@ export default function DagbanGraph({
           onDisplayModeChange={setDisplayMode}
           onColorModeChange={setColorMode}
           onArrowModeChange={setArrowMode}
+          devDatasetMode={devDatasetMode}
+          onDevDatasetModeChange={onDevDatasetModeChange}
           cards={data.cards}
           selectedAssignees={selectedAssignees}
           onAssigneeToggle={handleAssigneeToggle}

@@ -13,6 +13,8 @@ interface SettingsPanelProps {
   onDisplayModeChange: (mode: DisplayMode) => void;
   onColorModeChange: (mode: ColorMode) => void;
   onArrowModeChange: (mode: ArrowMode) => void;
+  devDatasetMode?: 'sample' | 'miserables';
+  onDevDatasetModeChange?: (mode: 'sample' | 'miserables') => void;
   cards?: Card[];
   selectedAssignees?: Set<string>;
   onAssigneeToggle?: (assignee: string) => void;
@@ -37,6 +39,8 @@ export function SettingsPanel({
   onDisplayModeChange,
   onColorModeChange,
   onArrowModeChange,
+  devDatasetMode,
+  onDevDatasetModeChange,
   cards,
   selectedAssignees,
   onAssigneeToggle,
@@ -262,6 +266,25 @@ export function SettingsPanel({
           </button>
         </div>
       </div>
+      {devDatasetMode && onDevDatasetModeChange && (
+        <div className="settings-row">
+          <span className="settings-label">Dataset</span>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn ${devDatasetMode === 'sample' ? 'active' : ''}`}
+              onClick={() => onDevDatasetModeChange('sample')}
+            >
+              Sample
+            </button>
+            <button
+              className={`toggle-btn ${devDatasetMode === 'miserables' ? 'active' : ''}`}
+              onClick={() => onDevDatasetModeChange('miserables')}
+            >
+              Miserables
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Category filter */}
       {categories && selectedCategories && onCategoryToggle && categories.length > 0 && (
