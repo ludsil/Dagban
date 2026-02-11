@@ -1113,8 +1113,11 @@ export default function DagbanGraph({
         arrowY = target.y! - arrowOffset * Math.sin(angle);
       } else {
         // middle
-        arrowX = (source.x + target.x) / 2;
-        arrowY = (source.y! + target.y!) / 2;
+        const midX = (source.x + target.x) / 2;
+        const midY = (source.y! + target.y!) / 2;
+        const forwardOffset = arrowLength / 2;
+        arrowX = midX + forwardOffset * Math.cos(angle);
+        arrowY = midY + forwardOffset * Math.sin(angle);
       }
 
       ctx.beginPath();
@@ -1145,6 +1148,21 @@ export default function DagbanGraph({
     if (!dist) return 1;
     const offset = Math.min(nodeRadius * 0.05, dist);
     return Math.max(0, Math.min(1, (dist - offset) / dist));
+  }, [arrowMode, nodeRadius]);
+
+  const getArrowRelPosMiddle = useCallback((link: GraphLinkData) => {
+    if (arrowMode !== 'middle') return 0.5;
+    const source = link.source as GraphNodeData;
+    const target = link.target as GraphNodeData;
+    if (!source || !target) return 0.5;
+    const dx = (target.x ?? 0) - (source.x ?? 0);
+    const dy = (target.y ?? 0) - (source.y ?? 0);
+    const dz = (target.z ?? 0) - (source.z ?? 0);
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (!dist) return 0.5;
+    const arrowLength = Math.max(4, nodeRadius * 0.75);
+    const offset = Math.min(arrowLength / 2, dist);
+    return Math.max(0, Math.min(1, (dist / 2 + offset) / dist));
   }, [arrowMode, nodeRadius]);
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
@@ -1455,7 +1473,7 @@ export default function DagbanGraph({
           linkColor={() => 'rgba(255, 255, 255, 0.4)'}
           linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
           linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
-          linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : 0.5}
+          linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : arrowMode === 'middle' ? getArrowRelPosMiddle : 0.5}
           nodeOpacity={1}
         />
       ) : (
