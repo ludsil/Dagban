@@ -400,6 +400,15 @@ export default function DagbanGraph({
 
   // Reconcile dagban data into stable graph data without recreating nodes/links.
   const applyPendingGraphUpdates = useCallback(() => {
+    if (displayMode !== 'balls' && pendingLabelUpdatesRef.current.size > 0) {
+      graphDataRef.current.nodes.forEach(node => {
+        if (pendingLabelUpdatesRef.current.has(node.id)) {
+          updateNodeLabelElement(node, displayMode);
+        }
+      });
+      pendingLabelUpdatesRef.current.clear();
+    }
+
     if (!graphReady || !graphRef.current || typeof graphRef.current.graphData !== 'function') {
       return;
     }
@@ -411,15 +420,6 @@ export default function DagbanGraph({
     } else if (pendingVisualUpdateRef.current && typeof graphRef.current.refresh === 'function') {
       graphRef.current.refresh();
       pendingVisualUpdateRef.current = false;
-    }
-
-    if (displayMode !== 'balls' && pendingLabelUpdatesRef.current.size > 0) {
-      graphDataRef.current.nodes.forEach(node => {
-        if (pendingLabelUpdatesRef.current.has(node.id)) {
-          updateNodeLabelElement(node, displayMode);
-        }
-      });
-      pendingLabelUpdatesRef.current.clear();
     }
   }, [graphReady, displayMode, updateNodeLabelElement]);
 
@@ -650,13 +650,13 @@ export default function DagbanGraph({
 
   // Ensure node labels refresh when display mode changes
   useEffect(() => {
-    if (!graphReady || !graphRef.current || typeof graphRef.current.refresh !== 'function') return;
-
     if (displayMode !== 'balls') {
       graphDataView.nodes.forEach(node => updateNodeLabelElement(node, displayMode));
     }
-    graphRef.current.refresh();
-  }, [displayMode, graphDataView.nodes, updateNodeLabelElement, graphReady]);
+    if (graphRef.current && typeof graphRef.current.refresh === 'function') {
+      graphRef.current.refresh();
+    }
+  }, [displayMode, graphDataView.nodes, updateNodeLabelElement]);
 
   // Resize handling
   useEffect(() => {
