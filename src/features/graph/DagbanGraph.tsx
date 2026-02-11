@@ -2,9 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Category } from '@/lib/types';
+import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Category, User, Traverser } from '@/lib/types';
 import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } from '@/lib/colors';
-import { getAvatarConfig, drawAvatar, getAvatarCSSStyles, getAvatarHTMLContent } from '@/lib/avatar';
+import {
+  getAvatarConfig,
+  drawAvatar,
+  drawAvatarCircle,
+  drawAvatarInitials,
+  drawAvatarPlaceholder,
+  getAvatarCSSStyles,
+  getAvatarHTMLContent,
+  getInitials,
+} from '@/lib/avatar';
 
 // Import extracted components
 import {
@@ -15,6 +24,8 @@ import {
   KeyboardShortcutsHelp,
   Header,
   SettingsPanel,
+  UserAvatar,
+  UserStack,
   // Types
   GraphNodeData,
   GraphLinkData,
@@ -46,7 +57,6 @@ const INITIAL_3D_CAMERA_DISTANCE = 300;
 
 interface Props {
   data: GraphData;
-  onEdgeProgressChange?: (edgeId: string, progress: number) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
   onCategoryAdd?: (category: Category) => void;
@@ -54,6 +64,10 @@ interface Props {
   onCardCreate?: (card: Card, parentCardId?: string, childCardId?: string) => void;
   onCardDelete?: (cardId: string) => void;
   onEdgeCreate?: (sourceId: string, targetId: string) => void;
+  onUserAdd?: (name: string) => void;
+  onTraverserCreate?: (traverser: Traverser) => void;
+  onTraverserUpdate?: (traverserId: string, updates: Partial<Traverser>) => void;
+  onTraverserDelete?: (traverserId: string) => void;
   onUndo?: () => void;
   projectHeader?: React.ReactNode;
   showSettingsProp?: boolean;
@@ -82,6 +96,31 @@ function generateId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+function generateTraverserId(): string {
+  return `traverser-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function projectPointToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) {
+    const dist = Math.hypot(px - ax, py - ay);
+    return { t: 0, x: ax, y: ay, distance: dist };
+  }
+
+  let t = ((px - ax) * dx + (py - ay) * dy) / lengthSq;
+  t = clamp(t, 0, 1);
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+  const dist = Math.hypot(px - projX, py - projY);
+  return { t, x: projX, y: projY, distance: dist };
+}
+
 // Dim a hex color by reducing its saturation and adding transparency
 function dimColor(hex: string): string {
   // Handle rgba format
@@ -101,6 +140,10 @@ export default function DagbanGraph({
   onCardCreate,
   onCardDelete,
   onEdgeCreate,
+  onUserAdd,
+  onTraverserCreate,
+  onTraverserUpdate,
+  onTraverserDelete,
   onUndo,
   projectHeader,
   showSettingsProp = true,
@@ -116,6 +159,7 @@ export default function DagbanGraph({
   const graphDataRef = useRef<{ nodes: GraphNodeData[]; links: GraphLinkData[] }>({ nodes: [], links: [] });
   const nodeByIdRef = useRef<Map<string, GraphNodeData>>(new Map());
   const linkByIdRef = useRef<Map<string, GraphLinkData>>(new Map());
+  const graphStructureSignatureRef = useRef<string>('');
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
@@ -199,6 +243,18 @@ export default function DagbanGraph({
   });
   const dragConnectAnimationRef = useRef<number | null>(null);
 
+  const [draggingTraverserId, setDraggingTraverserId] = useState<string | null>(null);
+  const draggingTraverserRef = useRef<string | null>(null);
+  const [renderTick, setRenderTick] = useState(0);
+  const renderRafRef = useRef<number | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<{
+    traverserId: string | null;
+    edgeId: string | null;
+    targetNodeId: string;
+    initiatorUserId: string | null;
+    selectedEdgeIds: Set<string>;
+  } | null>(null);
+
   // Undo stack for local undo functionality
   const undoStackRef = useRef<UndoAction[]>([]);
 
@@ -208,11 +264,23 @@ export default function DagbanGraph({
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [blockerThreshold, setBlockerThreshold] = useState(0);
+  const [burntAgeThreshold, setBurntAgeThreshold] = useState(0);
+  const [draggingUserId, setDraggingUserId] = useState<string | null>(null);
+
+  const cardById = useMemo(() => new Map(data.cards.map(card => [card.id, card])), [data.cards]);
+  const edgeById = useMemo(() => new Map(data.edges.map(edge => [edge.id, edge])), [data.edges]);
+  const traverserByEdgeId = useMemo(() => new Map((data.traversers || []).map(traverser => [traverser.edgeId, traverser])), [data.traversers]);
+  const traverserById = useMemo(() => new Map((data.traversers || []).map(traverser => [traverser.id, traverser])), [data.traversers]);
+  const userById = useMemo(() => new Map((data.users || []).map(user => [user.id, user])), [data.users]);
+  const getAssigneeName = useCallback((assigneeId?: string) => {
+    if (!assigneeId) return '';
+    return userById.get(assigneeId)?.name || assigneeId;
+  }, [userById]);
 
   // Show toast notification
   const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
     setToast({ visible: true, message, type, action });
-  }, []);
+  }, [getAssigneeName]);
 
   // Hide toast
   const hideToast = useCallback(() => {
@@ -230,6 +298,23 @@ export default function DagbanGraph({
       }
       return next;
     });
+  }, []);
+
+  const handleAddUser = useCallback(() => {
+    if (!onUserAdd) return;
+    const name = prompt('Add user name');
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onUserAdd(trimmed);
+  }, [onUserAdd]);
+
+  const handleUserDragStart = useCallback((userId: string) => {
+    setDraggingUserId(userId);
+  }, []);
+
+  const handleUserDragEnd = useCallback(() => {
+    setDraggingUserId(null);
   }, []);
 
   // Handle category filter toggle
@@ -265,6 +350,7 @@ export default function DagbanGraph({
     setSelectedStatuses(new Set());
     setSearchQuery('');
     setBlockerThreshold(0);
+    setBurntAgeThreshold(0);
   }, []);
 
   // Load three.js on mount
@@ -317,6 +403,37 @@ export default function DagbanGraph({
     return counts;
   }, [data.edges]);
 
+  const cardStatusById = useMemo(() => {
+    const map = new Map<string, 'blocked' | 'active' | 'done'>();
+    data.cards.forEach(card => {
+      map.set(card.id, getCardStatus(card, data.edges, data.cards));
+    });
+    return map;
+  }, [data.cards, data.edges]);
+
+  const eligibleTraverserEdgeIds = useMemo(() => {
+    const eligible = new Set<string>();
+    data.edges.forEach(edge => {
+      const status = cardStatusById.get(edge.target);
+      if (status !== 'active') return;
+      if (traverserByEdgeId.has(edge.id)) return;
+      eligible.add(edge.id);
+    });
+    return eligible;
+  }, [data.edges, cardStatusById, traverserByEdgeId]);
+
+  const rootActiveNodeIds = useMemo(() => {
+    const ids = new Set<string>();
+    data.cards.forEach(card => {
+      const status = cardStatusById.get(card.id);
+      const indegree = indegrees.get(card.id) || 0;
+      if (indegree === 0 && status === 'active') {
+        ids.add(card.id);
+      }
+    });
+    return ids;
+  }, [data.cards, cardStatusById, indegrees]);
+
   // Check if a card matches the current filters
   const cardMatchesFilter = useCallback((card: Card, status: 'blocked' | 'active' | 'done'): boolean => {
     // Check search query first
@@ -352,8 +469,17 @@ export default function DagbanGraph({
       if (blockerCount < blockerThreshold) return false;
     }
 
+    // Hide burnt cards older than threshold
+    if (burntAgeThreshold > 0 && card.burntAt) {
+      const burntAt = Date.parse(card.burntAt);
+      if (!Number.isNaN(burntAt)) {
+        const ageDays = (Date.now() - burntAt) / (1000 * 60 * 60 * 24);
+        if (ageDays > burntAgeThreshold) return false;
+      }
+    }
+
     return true;
-  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts]);
+  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts, burntAgeThreshold]);
 
   const getOrCreateLabelEntry = useCallback((nodeId: string) => {
     const cache = labelCacheRef.current;
@@ -382,7 +508,7 @@ export default function DagbanGraph({
     if (mode === 'full') {
       const avatarSize = 16;
       const avatarStyles = getAvatarCSSStyles(avatarSize);
-      const avatarContent = getAvatarHTMLContent(node.card.assignee, 10);
+      const avatarContent = getAvatarHTMLContent(getAssigneeName(node.card.assignee), 10);
       nodeEl.innerHTML = `
         <div style="display: flex; align-items: center; gap: 5px; flex-direction: row;">
           <span>${node.title}</span>
@@ -396,7 +522,7 @@ export default function DagbanGraph({
 
     nodeEl.textContent = '';
     return entry;
-  }, [getOrCreateLabelEntry]);
+  }, [getOrCreateLabelEntry, getAssigneeName]);
 
   // Reconcile dagban data into stable graph data without recreating nodes/links.
   const applyPendingGraphUpdates = useCallback(() => {
@@ -457,6 +583,10 @@ export default function DagbanGraph({
         color = getGradientColor('outdegree', degree, maxOutdegree);
       } else {
         color = categoryColor;
+      }
+
+      if (status === 'done') {
+        color = getCardColor(card, status, data.categories);
       }
 
       // Dim the color if node doesn't match filter
@@ -550,7 +680,6 @@ export default function DagbanGraph({
         link = {
           source: edge.source,
           target: edge.target,
-          progress: edge.progress,
           edge,
         };
         linkById.set(edge.id, link);
@@ -570,11 +699,6 @@ export default function DagbanGraph({
       if (linkTargetId !== edge.target) {
         linkUpdates.target = edge.target;
         structuralChanged = true;
-      }
-
-      if (link.progress !== edge.progress) {
-        linkUpdates.progress = edge.progress;
-        visualChanged = true;
       }
 
       if (link.edge !== edge) {
@@ -608,14 +732,21 @@ export default function DagbanGraph({
       .map(edge => linkById.get(edge.id))
       .filter(Boolean) as GraphLinkData[];
 
-    graphDataRef.current = { nodes, links };
-    setGraphDataView(graphDataRef.current);
-    if (structuralChanged || !hasSeededGraphRef.current) {
-      setGraphDataForForce(graphDataRef.current);
+    const nextGraphData = { nodes, links };
+    const nextSignature = `${nodes.map(node => node.id).join('|')}::${links.map(link => link.edge.id).join('|')}`;
+    const signatureChanged = nextSignature !== graphStructureSignatureRef.current;
+    if (signatureChanged) {
+      graphStructureSignatureRef.current = nextSignature;
+    }
+
+    graphDataRef.current = nextGraphData;
+    if (signatureChanged || !hasSeededGraphRef.current) {
+      setGraphDataView(nextGraphData);
+      setGraphDataForForce(nextGraphData);
       hasSeededGraphRef.current = true;
     }
 
-    if (structuralChanged) {
+    if (structuralChanged || signatureChanged) {
       pendingStructuralUpdateRef.current = true;
     }
     if (visualChanged) {
@@ -657,6 +788,12 @@ export default function DagbanGraph({
       graphRef.current.refresh();
     }
   }, [displayMode, graphDataView.nodes, updateNodeLabelElement]);
+
+  useEffect(() => {
+    if (graphRef.current && typeof graphRef.current.refresh === 'function') {
+      graphRef.current.refresh();
+    }
+  }, [draggingUserId, pendingSelection?.edgeId, pendingSelection?.targetNodeId]);
 
   // Resize handling
   useEffect(() => {
@@ -826,49 +963,6 @@ export default function DagbanGraph({
     cancelConnectionMode();
   }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, showToast, cancelConnectionMode]);
 
-  // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if typing in an input or textarea
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-
-      // Escape cancels connection mode
-      if (e.key === 'Escape' && connectionMode.active) {
-        e.preventDefault();
-        cancelConnectionMode();
-        showToast('Connection cancelled', 'info');
-        return;
-      }
-
-      // Skip if command palette is open (it handles its own keys)
-      if (commandPalette.visible) return;
-
-      // Cmd+Z / Ctrl+Z - Undo
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-      }
-
-      // Cmd+K / Ctrl+K - Command palette
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setCommandPalette({ visible: true, query: '' });
-      }
-
-      // ? - Show keyboard shortcuts help
-      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        setShowShortcutsHelp(prev => !prev);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoverTooltip.nodeId, commandPalette.visible, connectionMode.active, graphDataView.nodes, handleDeleteNode, handleUndo, cancelConnectionMode, showToast]);
-
   // Open card creation form for new root node
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
     // Center on screen
@@ -968,11 +1062,506 @@ export default function DagbanGraph({
 
   // Node radius
   const NODE_RADIUS = nodeRadius;
+  const TRAVERSER_RADIUS = 9;
+  const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
+  const FUSE_COLOR = 'rgba(220, 78, 35, 0.95)'; // burning coal
+  const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)'; // dark gray
+  const SELECTION_THRESHOLD = 0.985;
+
+  const getGraphCoords = useCallback((clientX: number, clientY: number) => {
+    const graph = graphRef.current;
+    if (!graph || typeof graph.screen2GraphCoords !== 'function') {
+      return null;
+    }
+    const canvas = typeof graph.canvas === 'function' ? graph.canvas() : null;
+    if (!canvas) {
+      return graph.screen2GraphCoords(clientX, clientY) as { x: number; y: number };
+    }
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width ? canvas.width / rect.width : 1;
+    const scaleY = rect.height ? canvas.height / rect.height : 1;
+    const localX = (clientX - rect.left) * scaleX;
+    const localY = (clientY - rect.top) * scaleY;
+    return graph.screen2GraphCoords(localX, localY) as { x: number; y: number };
+  }, []);
+
+  const getZoomScale = useCallback(() => {
+    if (!graphRef.current || typeof graphRef.current.zoom !== 'function') {
+      return 1;
+    }
+    return graphRef.current.zoom() as number;
+  }, []);
+
+  const getScreenCoords = useCallback((x: number, y: number) => {
+    const graph = graphRef.current;
+    if (!graph || typeof graph.graph2ScreenCoords !== 'function') {
+      return null;
+    }
+    const coords = graph.graph2ScreenCoords(x, y) as { x: number; y: number } | null;
+    if (!coords) return null;
+    const canvas = typeof graph.canvas === 'function' ? graph.canvas() : null;
+    if (!canvas) return coords;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width ? canvas.width / rect.width : 1;
+    const scaleY = rect.height ? canvas.height / rect.height : 1;
+    const isAbsolute =
+      coords.x >= rect.left &&
+      coords.x <= rect.right &&
+      coords.y >= rect.top &&
+      coords.y <= rect.bottom;
+
+    if (isAbsolute) {
+      return {
+        x: coords.x - rect.left,
+        y: coords.y - rect.top,
+      };
+    }
+
+    const isDevicePixels = coords.x > rect.width || coords.y > rect.height;
+    if (isDevicePixels && scaleX && scaleY) {
+      return {
+        x: coords.x / scaleX,
+        y: coords.y / scaleY,
+      };
+    }
+
+    return coords;
+  }, []);
+
+  const getEdgeNodes = useCallback((edgeId: string) => {
+    const link = linkByIdRef.current.get(edgeId);
+    if (!link) return null;
+    const sourceNode = typeof link.source === 'string'
+      ? nodeByIdRef.current.get(link.source)
+      : link.source;
+    const targetNode = typeof link.target === 'string'
+      ? nodeByIdRef.current.get(link.target)
+      : link.target;
+    if (!sourceNode || !targetNode) return null;
+    if (sourceNode.x === undefined || sourceNode.y === undefined || targetNode.x === undefined || targetNode.y === undefined) {
+      return null;
+    }
+    return { sourceNode, targetNode };
+  }, []);
+
+  const findClosestEdge = useCallback((
+    point: { x: number; y: number },
+    allowedEdgeIds?: Set<string>,
+    maxDistanceOverride?: number
+  ) => {
+    const zoom = getZoomScale();
+    const maxDistance = (maxDistanceOverride ?? 12) / zoom;
+    let closest: { edgeId: string; position: number; distance: number } | null = null;
+
+    for (const edge of data.edges) {
+      if (allowedEdgeIds && !allowedEdgeIds.has(edge.id)) continue;
+      const edgeNodes = getEdgeNodes(edge.id);
+      if (!edgeNodes) continue;
+      const { sourceNode, targetNode } = edgeNodes;
+      const projection = projectPointToSegment(
+        point.x,
+        point.y,
+        sourceNode.x!,
+        sourceNode.y!,
+        targetNode.x!,
+        targetNode.y!
+      );
+      if (projection.distance > maxDistance) continue;
+      if (!closest || projection.distance < closest.distance) {
+        closest = { edgeId: edge.id, position: projection.t, distance: projection.distance };
+      }
+    }
+
+    return closest;
+  }, [data.edges, getEdgeNodes, getZoomScale]);
+
+  const findClosestRootNode = useCallback((point: { x: number; y: number }) => {
+    if (rootActiveNodeIds.size === 0) return null;
+    const zoom = getZoomScale();
+    const maxDistance = (NODE_RADIUS * 2) / zoom;
+    let closest: { nodeId: string; distance: number } | null = null;
+
+    for (const node of graphDataView.nodes as GraphNodeData[]) {
+      if (!rootActiveNodeIds.has(node.id)) continue;
+      if (node.x === undefined || node.y === undefined) continue;
+      const dist = Math.hypot(point.x - node.x, point.y - node.y);
+      if (dist > maxDistance) continue;
+      if (!closest || dist < closest.distance) {
+        closest = { nodeId: node.id, distance: dist };
+      }
+    }
+
+    return closest;
+  }, [graphDataView.nodes, rootActiveNodeIds, getZoomScale, nodeRadius]);
+
+  const findTraverserHit = useCallback((point: { x: number; y: number }) => {
+    const zoom = getZoomScale();
+    const hitDistance = TRAVERSER_HIT_RADIUS / zoom;
+    for (const traverser of data.traversers || []) {
+      const edgeNodes = getEdgeNodes(traverser.edgeId);
+      if (!edgeNodes) continue;
+      const { sourceNode, targetNode } = edgeNodes;
+      const tx = sourceNode.x! + (targetNode.x! - sourceNode.x!) * traverser.position;
+      const ty = sourceNode.y! + (targetNode.y! - sourceNode.y!) * traverser.position;
+      const dist = Math.hypot(point.x - tx, point.y - ty);
+      if (dist <= hitDistance) {
+        return { traverserId: traverser.id };
+      }
+    }
+    return null;
+  }, [data.traversers, getEdgeNodes, getZoomScale, TRAVERSER_HIT_RADIUS]);
+
+  const getPreselectedEdges = useCallback((targetNodeId: string) => {
+    const preselected = new Set<string>();
+    data.edges.forEach(edge => {
+      if (edge.source !== targetNodeId) return;
+      if (traverserByEdgeId.has(edge.id)) return;
+      const targetCard = cardById.get(edge.target);
+      if (targetCard?.assignee) {
+        preselected.add(edge.id);
+      }
+    });
+    return preselected;
+  }, [data.edges, traverserByEdgeId, cardById]);
+
+  const beginPendingSelection = useCallback((traverser: Traverser, targetNodeId: string) => {
+    setPendingSelection(prev => {
+      if (prev && prev.traverserId === traverser.id) return prev;
+      return {
+        traverserId: traverser.id,
+        edgeId: traverser.edgeId,
+        targetNodeId,
+        initiatorUserId: traverser.userId,
+        selectedEdgeIds: getPreselectedEdges(targetNodeId),
+      };
+    });
+  }, [getPreselectedEdges]);
+
+  const beginRootSelection = useCallback((targetNodeId: string, initiatorUserId: string) => {
+    setPendingSelection(prev => {
+      if (prev) return prev;
+      return {
+        traverserId: null,
+        edgeId: null,
+        targetNodeId,
+        initiatorUserId,
+        selectedEdgeIds: getPreselectedEdges(targetNodeId),
+      };
+    });
+  }, [getPreselectedEdges]);
+
+  const clearPendingSelection = useCallback((traverserId: string) => {
+    setPendingSelection(prev => {
+      if (!prev || prev.traverserId !== traverserId) return prev;
+      return null;
+    });
+  }, []);
+
+  const updateTraverserPosition = useCallback((traverser: Traverser, nextPosition: number) => {
+    if (!onTraverserUpdate) return;
+    onTraverserUpdate(traverser.id, {
+      position: clamp(nextPosition, 0, 1),
+      updatedAt: new Date().toISOString(),
+    });
+  }, [onTraverserUpdate]);
+
+  const bumpRenderTick = useCallback(() => {
+    if (renderRafRef.current !== null) return;
+    renderRafRef.current = requestAnimationFrame(() => {
+      renderRafRef.current = null;
+      setRenderTick(prev => prev + 1);
+    });
+  }, []);
+
+  const createTraverserForEdge = useCallback((edgeId: string, userId: string, position: number) => {
+    const now = new Date().toISOString();
+    return {
+      id: generateTraverserId(),
+      edgeId,
+      userId,
+      position: clamp(position, 0, 1),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }, []);
+
+  const handleUserDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (event.dataTransfer.types.includes('application/dagban-user')) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  const handleUserDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const userId = event.dataTransfer.getData('application/dagban-user');
+    if (!userId || !onTraverserCreate) return;
+    event.preventDefault();
+
+    const coords = getGraphCoords(event.clientX, event.clientY);
+    if (!coords) return;
+    const rootCandidate = findClosestRootNode(coords);
+    if (rootCandidate) {
+      beginRootSelection(rootCandidate.nodeId, userId);
+      setDraggingUserId(null);
+      showToast('Select next edges, then confirm', 'info');
+      return;
+    }
+
+    if (eligibleTraverserEdgeIds.size === 0) {
+      showToast('No available edges yet. Drop on a root node to start.', 'info');
+      return;
+    }
+
+    const closestAny = findClosestEdge(coords, undefined, 24);
+    if (!closestAny) {
+      showToast('Drop on an available edge to add a traverser', 'warning');
+      return;
+    }
+    if (traverserByEdgeId.has(closestAny.edgeId)) {
+      showToast('That edge already has a traverser', 'warning');
+      return;
+    }
+    if (!eligibleTraverserEdgeIds.has(closestAny.edgeId)) {
+      showToast('That node is blocked or already complete', 'warning');
+      return;
+    }
+
+    const traverser = createTraverserForEdge(closestAny.edgeId, userId, closestAny.position);
+    onTraverserCreate(traverser);
+    setDraggingUserId(null);
+
+    if (closestAny.position >= SELECTION_THRESHOLD) {
+      const edge = edgeById.get(closestAny.edgeId);
+      if (edge) {
+        beginPendingSelection(traverser, edge.target);
+      }
+    }
+  }, [
+    onTraverserCreate,
+    getGraphCoords,
+    findClosestEdge,
+    traverserByEdgeId,
+    createTraverserForEdge,
+    beginPendingSelection,
+    edgeById,
+    showToast,
+    SELECTION_THRESHOLD,
+    eligibleTraverserEdgeIds,
+    findClosestRootNode,
+    beginRootSelection,
+  ]);
+
+  const handleTraverserPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (viewMode !== '2D') return;
+    const coords = getGraphCoords(event.clientX, event.clientY);
+    if (!coords) return;
+    const hit = findTraverserHit(coords);
+    if (!hit) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingTraverserId(hit.traverserId);
+    draggingTraverserRef.current = hit.traverserId;
+  }, [viewMode, getGraphCoords, findTraverserHit]);
+
+  const handleTraverserOverlayPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, traverserId: string) => {
+    if (viewMode !== '2D') return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingTraverserId(traverserId);
+    draggingTraverserRef.current = traverserId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (!draggingTraverserId) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeId = draggingTraverserRef.current;
+      if (!activeId) return;
+      const traverser = traverserById.get(activeId);
+      if (!traverser) return;
+      const coords = getGraphCoords(event.clientX, event.clientY);
+      if (!coords) return;
+      const edgeNodes = getEdgeNodes(traverser.edgeId);
+      if (!edgeNodes) return;
+      const { sourceNode, targetNode } = edgeNodes;
+      const projection = projectPointToSegment(
+        coords.x,
+        coords.y,
+        sourceNode.x!,
+        sourceNode.y!,
+        targetNode.x!,
+        targetNode.y!
+      );
+
+      updateTraverserPosition(traverser, projection.t);
+
+      if (projection.t >= SELECTION_THRESHOLD) {
+        beginPendingSelection(traverser, targetNode.id);
+      } else {
+        clearPendingSelection(traverser.id);
+      }
+    };
+
+    const handlePointerUp = () => {
+      setDraggingTraverserId(null);
+      draggingTraverserRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [
+    draggingTraverserId,
+    traverserById,
+    getGraphCoords,
+    getEdgeNodes,
+    updateTraverserPosition,
+    beginPendingSelection,
+    clearPendingSelection,
+    SELECTION_THRESHOLD,
+  ]);
+
+  const toggleSelectionEdge = useCallback((edgeId: string) => {
+    setPendingSelection(prev => {
+      if (!prev) return prev;
+      const nextSelected = new Set(prev.selectedEdgeIds);
+      if (nextSelected.has(edgeId)) {
+        nextSelected.delete(edgeId);
+      } else {
+        nextSelected.add(edgeId);
+      }
+      return { ...prev, selectedEdgeIds: nextSelected };
+    });
+  }, []);
+
+  const confirmPendingSelection = useCallback(() => {
+    if (!pendingSelection) return;
+    const traverser = pendingSelection.traverserId
+      ? traverserById.get(pendingSelection.traverserId)
+      : null;
+    const initiatorUserId = pendingSelection.initiatorUserId || traverser?.userId || null;
+    if (!initiatorUserId) {
+      setPendingSelection(null);
+      showToast('Missing user for traversal', 'warning');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    if (onCardChange) {
+      onCardChange(pendingSelection.targetNodeId, { burntAt: now });
+    }
+
+    // TODO: emit downstream-start events for assignees when this node is burnt.
+    if (onTraverserCreate) {
+      pendingSelection.selectedEdgeIds.forEach(edgeId => {
+        if (traverserByEdgeId.has(edgeId)) return;
+        const edge = edgeById.get(edgeId);
+        if (!edge) return;
+        const targetCard = cardById.get(edge.target);
+        const userId = targetCard?.assignee || initiatorUserId;
+        onTraverserCreate(createTraverserForEdge(edge.id, userId, 0));
+      });
+    }
+
+    if (traverser && onTraverserDelete) {
+      onTraverserDelete(traverser.id);
+    }
+
+    setPendingSelection(null);
+    showToast('Node burnt', 'success');
+  }, [
+    pendingSelection,
+    traverserById,
+    onCardChange,
+    onTraverserCreate,
+    onTraverserDelete,
+    edgeById,
+    cardById,
+    traverserByEdgeId,
+    createTraverserForEdge,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (pendingSelection) return;
+    const readyTraverser = (data.traversers || []).find(traverser => traverser.position >= SELECTION_THRESHOLD);
+    if (!readyTraverser) return;
+    const edge = edgeById.get(readyTraverser.edgeId);
+    if (!edge) return;
+    beginPendingSelection(readyTraverser, edge.target);
+  }, [pendingSelection, data.traversers, edgeById, beginPendingSelection, SELECTION_THRESHOLD]);
+
+  // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if typing in an input or textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      if (pendingSelection && e.key === 'Enter') {
+        e.preventDefault();
+        confirmPendingSelection();
+        return;
+      }
+
+      // Escape cancels connection mode
+      if (e.key === 'Escape' && connectionMode.active) {
+        e.preventDefault();
+        cancelConnectionMode();
+        showToast('Connection cancelled', 'info');
+        return;
+      }
+
+      // Skip if command palette is open (it handles its own keys)
+      if (commandPalette.visible) return;
+
+      // Cmd+Z / Ctrl+Z - Undo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+
+      // Cmd+K / Ctrl+K - Command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPalette({ visible: true, query: '' });
+      }
+
+      // ? - Show keyboard shortcuts help
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setShowShortcutsHelp(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    hoverTooltip.nodeId,
+    commandPalette.visible,
+    connectionMode.active,
+    graphDataView.nodes,
+    pendingSelection,
+    confirmPendingSelection,
+    handleDeleteNode,
+    handleUndo,
+    cancelConnectionMode,
+    showToast,
+  ]);
 
   // Custom node rendering for 2D - matches text-nodes example exactly
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
+    const isPreviewBurnt = pendingSelection?.targetNodeId === node.id;
+    const isRootCandidate = Boolean(draggingUserId) && rootActiveNodeIds.has(node.id);
+    const drawColor = isPreviewBurnt ? BURNT_COLOR : node.color;
 
     // Check if this is the source node in connection mode
     const isConnectionSource = connectionMode.active && connectionMode.sourceNode?.id === node.id;
@@ -1035,8 +1624,16 @@ export default function DagbanGraph({
       // Balls mode: just draw the colored ball
       ctx.beginPath();
       ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-      ctx.fillStyle = node.color;
+      ctx.fillStyle = drawColor;
       ctx.fill();
+
+      if (isRootCandidate) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
+      }
 
       // Store dimensions for pointer area
       nodeBckgDimensionsRef.current.set(node.id, [NODE_RADIUS * 2, NODE_RADIUS * 2]);
@@ -1057,7 +1654,7 @@ export default function DagbanGraph({
       // Draw ball behind the label (matches 3D sphere + label)
       ctx.beginPath();
       ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-      ctx.fillStyle = node.color;
+      ctx.fillStyle = drawColor;
       ctx.fill();
 
       // Draw dark background (matches html-nodes example)
@@ -1067,7 +1664,7 @@ export default function DagbanGraph({
       // Draw text (centered, or left-aligned if full mode with avatar)
       ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = node.color;
+      ctx.fillStyle = drawColor;
 
       if (displayMode === 'full') {
         // Text on left side
@@ -1075,34 +1672,86 @@ export default function DagbanGraph({
 
         // Assignee avatar on right side using standardized utility
         const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
-        drawAvatar(ctx, node.card.assignee, avatarX, y, fontSize, globalScale);
+        drawAvatar(ctx, getAssigneeName(node.card.assignee), avatarX, y, fontSize, globalScale);
       } else {
         ctx.fillText(label, x, y);
+      }
+
+      if (isRootCandidate) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
       }
 
       // Store dimensions for pointer area
       nodeBckgDimensionsRef.current.set(node.id, bckgDimensions);
     }
-  }, [displayMode, nodeRadius, connectionMode.active, connectionMode.sourceNode?.id, dragConnect.active, dragConnect.progress, dragConnect.sourceNode?.id, dragConnect.targetNode?.id]);
+  }, [
+    displayMode,
+    nodeRadius,
+    connectionMode.active,
+    connectionMode.sourceNode?.id,
+    dragConnect.active,
+    dragConnect.progress,
+    dragConnect.sourceNode?.id,
+    dragConnect.targetNode?.id,
+    getAssigneeName,
+    pendingSelection?.targetNodeId,
+    BURNT_COLOR,
+    draggingUserId,
+    rootActiveNodeIds,
+  ]);
 
-  // Custom link rendering for 2D - uniform line with small arrow in middle
+  // Custom link rendering for 2D - supports traversers ("fuses") and burnt edges
   const linkCanvasObject = useCallback((link: GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const source = link.source as GraphNodeData;
     const target = link.target as GraphNodeData;
 
-    if (!source.x || !target.x) return;
+    if (source.x === undefined || source.y === undefined || target.x === undefined || target.y === undefined) return;
 
-    // Draw uniform line from source to target
+    const targetCard = cardById.get(link.edge.target);
+    const isPreviewBurnt = pendingSelection?.edgeId === link.edge.id;
+    const isBurnt = Boolean(targetCard?.burntAt) || isPreviewBurnt;
+    const baseStroke = isBurnt ? BURNT_COLOR : 'rgba(255, 255, 255, 0.3)';
+    const isEligible = Boolean(draggingUserId) && eligibleTraverserEdgeIds.has(link.edge.id);
+
+    // Draw base line from source to target
     ctx.beginPath();
-    ctx.moveTo(source.x, source.y!);
-    ctx.lineTo(target.x, target.y!);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 1 / globalScale;
+    ctx.moveTo(source.x, source.y);
+    ctx.lineTo(target.x, target.y);
+    ctx.strokeStyle = baseStroke;
+    ctx.lineWidth = (isBurnt ? 1.6 : 1) / globalScale;
     ctx.stroke();
+
+    if (isEligible && !isBurnt) {
+      ctx.beginPath();
+      ctx.moveTo(source.x, source.y);
+      ctx.lineTo(target.x, target.y);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+      ctx.lineWidth = Math.max(3.5 / globalScale, 1.8);
+      ctx.stroke();
+    }
+
+    const traverser = traverserByEdgeId.get(link.edge.id);
+    if (traverser && !isBurnt) {
+      const pos = clamp(traverser.position, 0, 1);
+      const tx = source.x + (target.x - source.x) * pos;
+      const ty = source.y + (target.y - source.y) * pos;
+
+      // Draw burning segment behind the traverser
+      ctx.beginPath();
+      ctx.moveTo(source.x, source.y);
+      ctx.lineTo(tx, ty);
+      ctx.strokeStyle = FUSE_COLOR;
+      ctx.lineWidth = Math.max(2 / globalScale, 1);
+      ctx.stroke();
+    }
 
     // Draw arrow based on arrowMode
     if (arrowMode !== 'none') {
-      const angle = Math.atan2(target.y! - source.y!, target.x - source.x);
+      const angle = Math.atan2(target.y - source.y, target.x - source.x);
       const arrowLength = Math.max(4, NODE_RADIUS * 0.75);
       const arrowWidth = Math.PI / 6;
 
@@ -1110,11 +1759,11 @@ export default function DagbanGraph({
       if (arrowMode === 'end') {
         const arrowOffset = NODE_RADIUS;
         arrowX = target.x - arrowOffset * Math.cos(angle);
-        arrowY = target.y! - arrowOffset * Math.sin(angle);
+        arrowY = target.y - arrowOffset * Math.sin(angle);
       } else {
         // middle
         const midX = (source.x + target.x) / 2;
-        const midY = (source.y! + target.y!) / 2;
+        const midY = (source.y + target.y) / 2;
         const forwardOffset = arrowLength / 2;
         arrowX = midX + forwardOffset * Math.cos(angle);
         arrowY = midY + forwardOffset * Math.sin(angle);
@@ -1131,10 +1780,22 @@ export default function DagbanGraph({
         arrowY - arrowLength * Math.sin(angle + arrowWidth)
       );
       ctx.closePath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fillStyle = isBurnt ? 'rgba(148, 163, 184, 0.6)' : 'rgba(255, 255, 255, 0.5)';
       ctx.fill();
     }
-  }, [arrowMode, nodeRadius]);
+  }, [
+    arrowMode,
+    nodeRadius,
+    cardById,
+    traverserByEdgeId,
+    userById,
+    FUSE_COLOR,
+    BURNT_COLOR,
+    TRAVERSER_RADIUS,
+    pendingSelection?.targetNodeId,
+    draggingUserId,
+    eligibleTraverserEdgeIds,
+  ]);
 
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
     if (arrowMode !== 'end') return 0.5;
@@ -1178,6 +1839,9 @@ export default function DagbanGraph({
     return entry.obj;
   }, [displayMode, updateNodeLabelElement]);
 
+  // 3D TODO: mirror traversers/fuse rendering with linkThreeObject or sprites + burn coloring.
+  // Suggested approach: use linkThreeObject to draw a tube/line segment for the fuse,
+  // and a Sprite or CSS2DObject avatar at the interpolated traverser position (update on tick/zoom).
   // No custom linkThreeObject needed - use built-in arrow rendering for 3D
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1214,12 +1878,12 @@ export default function DagbanGraph({
         title: node.title,
         nodeId: node.id,
         color: node.color,
-        assignee: node.card.assignee || null,
+        assignee: getAssigneeName(node.card.assignee) || null,
       });
     } else {
       setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
     }
-  }, []);
+  }, [getAssigneeName]);
 
   // Track mouse position for tooltip
   useEffect(() => {
@@ -1240,6 +1904,15 @@ export default function DagbanGraph({
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
     };
+  }, [hoverTooltip.visible]);
+
+  useEffect(() => {
+    if (!hoverTooltip.visible) {
+      const canvas = graphRef.current?.canvas?.();
+      if (canvas) {
+        canvas.classList.remove('clickable');
+      }
+    }
   }, [hoverTooltip.visible]);
 
   // Handle background click - close panel and cancel connection mode
@@ -1397,87 +2070,226 @@ export default function DagbanGraph({
     onBackgroundClick: handleBackgroundClick,
     onNodeDrag: handleNodeDrag,
     onNodeDragEnd: handleNodeDragEnd,
+    onZoom: bumpRenderTick,
+    onZoomEnd: bumpRenderTick,
+    onEngineTick: bumpRenderTick,
     nodeColor: (node: GraphNodeData) => node.color,
+    showPointerCursor: (obj: unknown) => Boolean(obj),
   };
+
+  const pendingOutgoingEdges = pendingSelection
+    ? data.edges.filter(edge => edge.source === pendingSelection.targetNodeId)
+    : [];
+
+  const selectionTargets = (() => {
+    if (!pendingSelection || viewMode !== '2D') return [];
+
+    return pendingOutgoingEdges
+      .map(edge => {
+        const edgeNodes = getEdgeNodes(edge.id);
+        if (!edgeNodes) return null;
+        const { sourceNode, targetNode } = edgeNodes;
+        const markerX = sourceNode.x! + (targetNode.x! - sourceNode.x!) * 0.18;
+        const markerY = sourceNode.y! + (targetNode.y! - sourceNode.y!) * 0.18;
+        const screen = getScreenCoords(markerX, markerY);
+        if (!screen) return null;
+        const targetCard = cardById.get(edge.target);
+        const targetUser = targetCard?.assignee ? userById.get(targetCard.assignee) : null;
+        return {
+          edgeId: edge.id,
+          x: screen.x,
+          y: screen.y,
+          title: targetCard?.title || 'Untitled',
+          assigneeName: targetUser?.name || '',
+          assigneeId: targetCard?.assignee || '',
+        };
+      })
+      .filter(Boolean) as Array<{
+        edgeId: string;
+        x: number;
+        y: number;
+        title: string;
+        assigneeName: string;
+        assigneeId: string;
+      }>;
+  })();
+
+  const selectionAnchor = (() => {
+    if (!pendingSelection || viewMode !== '2D') return null;
+    const node = nodeByIdRef.current.get(pendingSelection.targetNodeId);
+    if (!node || node.x === undefined || node.y === undefined) return null;
+    return getScreenCoords(node.x, node.y);
+  })();
+
+  const traverserOverlays = useMemo(() => {
+    if (viewMode !== '2D') return [];
+    return (data.traversers || [])
+      .map(traverser => {
+        const edgeNodes = getEdgeNodes(traverser.edgeId);
+        if (!edgeNodes) return null;
+        const { sourceNode, targetNode } = edgeNodes;
+        const pos = clamp(traverser.position, 0, 1);
+        const tx = sourceNode.x! + (targetNode.x! - sourceNode.x!) * pos;
+        const ty = sourceNode.y! + (targetNode.y! - sourceNode.y!) * pos;
+        const screen = getScreenCoords(tx, ty);
+        if (!screen) return null;
+        const user = userById.get(traverser.userId) || null;
+        return {
+          id: traverser.id,
+          x: screen.x,
+          y: screen.y,
+          user,
+        };
+      })
+      .filter(Boolean) as Array<{ id: string; x: number; y: number; user: User | null }>;
+  }, [data.traversers, viewMode, renderTick, getEdgeNodes, userById, getScreenCoords]);
 
   return (
     <div
       ref={containerRef}
-      className="w-full h-full bg-[#000000] relative"
+      className="graph-shell"
+      onDragOver={handleUserDragOver}
+      onDrop={handleUserDrop}
+      onPointerDown={handleTraverserPointerDown}
     >
-      {projectHeader || (
-        <Header
-          onLogoClick={() => setShowSettings(!showSettings)}
-          onNewRootNode={openRootNodeCreation}
+      <div className="graph-hud-left">
+        {projectHeader || (
+          <Header
+            onLogoClick={() => setShowSettings(!showSettings)}
+            onNewRootNode={openRootNodeCreation}
+          />
+        )}
+      </div>
+      <div className="graph-hud-right">
+        <UserStack
+          users={data.users}
+          selectedUserIds={selectedAssignees}
+          onUserToggle={handleAssigneeToggle}
+          onAddUser={handleAddUser}
+          onUserDragStart={handleUserDragStart}
+          onUserDragEnd={handleUserDragEnd}
         />
-      )}
-      {showSettings && (
-        <SettingsPanel
-          viewMode={viewMode}
-          displayMode={displayMode}
-          nodeRadius={nodeRadius}
-          onNodeRadiusChange={setNodeRadius}
-          colorMode={colorMode}
-          arrowMode={arrowMode}
-          onViewModeChange={setViewMode}
-          onDisplayModeChange={setDisplayMode}
-          onColorModeChange={setColorMode}
-          onArrowModeChange={setArrowMode}
-          devDatasetMode={devDatasetMode}
-          onDevDatasetModeChange={onDevDatasetModeChange}
-          cards={data.cards}
-          selectedAssignees={selectedAssignees}
-          onAssigneeToggle={handleAssigneeToggle}
-          categories={data.categories}
-          edges={data.edges}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedCategories={selectedCategories}
-          onCategoryToggle={handleCategoryToggle}
-          selectedStatuses={selectedStatuses}
-          onStatusToggle={handleStatusToggle}
-          blockerThreshold={blockerThreshold}
-          onBlockerThresholdChange={setBlockerThreshold}
-        />
-      )}
+        {showSettings && (
+          <SettingsPanel
+            viewMode={viewMode}
+            displayMode={displayMode}
+            nodeRadius={nodeRadius}
+            onNodeRadiusChange={setNodeRadius}
+            colorMode={colorMode}
+            arrowMode={arrowMode}
+            onViewModeChange={setViewMode}
+            onDisplayModeChange={setDisplayMode}
+            onColorModeChange={setColorMode}
+            onArrowModeChange={setArrowMode}
+            devDatasetMode={devDatasetMode}
+            onDevDatasetModeChange={onDevDatasetModeChange}
+            cards={data.cards}
+            users={data.users}
+            selectedAssignees={selectedAssignees}
+            onAssigneeToggle={handleAssigneeToggle}
+            categories={data.categories}
+            edges={data.edges}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            selectedCategories={selectedCategories}
+            onCategoryToggle={handleCategoryToggle}
+            selectedStatuses={selectedStatuses}
+            onStatusToggle={handleStatusToggle}
+            blockerThreshold={blockerThreshold}
+            onBlockerThresholdChange={setBlockerThreshold}
+            burntAgeThreshold={burntAgeThreshold}
+            onBurntAgeThresholdChange={setBurntAgeThreshold}
+          />
+        )}
+      </div>
 
 
-      {viewMode === '2D' ? (
-        <FG2D
-          {...commonProps}
-          nodeCanvasObject={nodeCanvasObject}
-          nodePointerAreaPaint={(node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
-            ctx.fillStyle = color;
-            const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
-            if (bckgDimensions) {
-              ctx.fillRect(
-                (node.x ?? 0) - bckgDimensions[0] / 2,
-                (node.y ?? 0) - bckgDimensions[1] / 2,
-                bckgDimensions[0],
-                bckgDimensions[1]
-              );
-            }
-          }}
-          linkCanvasObject={linkCanvasObject}
-          linkColor={() => 'rgba(255,255,255,0.2)'}
-        />
-      ) : css2DRendererInstance ? (
-        <FG3D
-          {...commonProps}
-          extraRenderers={[css2DRendererInstance]}
-          nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
-          nodeThreeObjectExtend={true}
-          nodeRelSize={nodeRadius}
-          linkWidth={1}
-          linkOpacity={0.6}
-          linkColor={() => 'rgba(255, 255, 255, 0.4)'}
-          linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
-          linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
-          linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : arrowMode === 'middle' ? getArrowRelPosMiddle : 0.5}
-          nodeOpacity={1}
-        />
-      ) : (
-        <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
+      <div className="graph-canvas">
+        {viewMode === '2D' ? (
+          <FG2D
+            {...commonProps}
+            nodeCanvasObject={nodeCanvasObject}
+            nodePointerAreaPaint={(node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
+              ctx.fillStyle = color;
+              const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
+              if (bckgDimensions) {
+                ctx.fillRect(
+                  (node.x ?? 0) - bckgDimensions[0] / 2,
+                  (node.y ?? 0) - bckgDimensions[1] / 2,
+                  bckgDimensions[0],
+                  bckgDimensions[1]
+                );
+              }
+            }}
+            linkCanvasObject={linkCanvasObject}
+            linkColor={() => 'rgba(255,255,255,0.2)'}
+          />
+        ) : css2DRendererInstance ? (
+          <FG3D
+            {...commonProps}
+            extraRenderers={[css2DRendererInstance]}
+            nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
+            nodeThreeObjectExtend={true}
+            nodeRelSize={nodeRadius}
+            linkWidth={1}
+            linkOpacity={0.6}
+            linkColor={() => 'rgba(255, 255, 255, 0.4)'}
+            linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
+            linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
+            linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : arrowMode === 'middle' ? getArrowRelPosMiddle : 0.5}
+            nodeOpacity={1}
+          />
+        ) : (
+          <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
+        )}
+      </div>
+
+      {viewMode === '2D' && traverserOverlays.length > 0 && (
+        <div className="traverser-overlay-layer">
+          {traverserOverlays.map(traverser => (
+            <button
+              key={traverser.id}
+              type="button"
+              className={`traverser-overlay ${draggingTraverserId === traverser.id ? 'dragging' : ''}`}
+              style={{ left: `${traverser.x}px`, top: `${traverser.y}px` }}
+              onPointerDown={(event) => handleTraverserOverlayPointerDown(event, traverser.id)}
+              title={traverser.user?.name || 'Traverser'}
+            >
+              <UserAvatar user={traverser.user} size="sm" className="traverser-overlay-avatar" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {pendingSelection && viewMode === '2D' && (
+        <div className="traverser-selection-layer">
+          {selectionTargets.map(target => (
+            <button
+              key={target.edgeId}
+              type="button"
+              className={`traverser-selection ${pendingSelection.selectedEdgeIds.has(target.edgeId) ? 'selected' : ''}`}
+              style={{ left: `${target.x}px`, top: `${target.y}px` }}
+              onClick={() => toggleSelectionEdge(target.edgeId)}
+            >
+              <span className="traverser-selection-dot" />
+              <span className="traverser-selection-title">{target.title}</span>
+              {target.assigneeName && (
+                <span className="traverser-selection-assignee">{target.assigneeName}</span>
+              )}
+            </button>
+          ))}
+          {selectionAnchor && (
+            <div
+              className="traverser-selection-actions"
+              style={{ left: `${selectionAnchor.x}px`, top: `${selectionAnchor.y}px` }}
+            >
+              <button type="button" onClick={confirmPendingSelection}>
+                Confirm next steps
+              </button>
+              <span>Drag back to undo</span>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Card Creation Form */}
@@ -1496,6 +2308,7 @@ export default function DagbanGraph({
           selectedNode={selectedNode}
           onClose={() => setSelectedNode(null)}
           onCardChange={onCardChange}
+          users={data.users}
           onCreateDownstream={openDownstreamCreation}
           onCreateUpstream={openUpstreamCreation}
           onLinkDownstream={startDownstreamConnection}

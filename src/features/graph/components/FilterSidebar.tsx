@@ -3,8 +3,8 @@
 import { useMemo, useState } from 'react';
 import { Card } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ChevronLeft, User } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
+import { UserAvatar } from './UserAvatar';
 
 interface FilterSidebarProps {
   cards: Card[];
@@ -50,15 +50,6 @@ export function FilterSidebar({
   }, [cards]);
 
   const hasFilters = selectedAssignees.size > 0;
-
-  // Get initials from name
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(part => part.charAt(0).toUpperCase())
-      .slice(0, 2)
-      .join('');
-  };
 
   if (assignees.length === 0 && unassignedCount === cards.length) {
     // No assignees to filter by
@@ -109,9 +100,7 @@ export function FilterSidebar({
                   className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
                   onClick={() => onAssigneeToggle(assignee)}
                 >
-                  <Avatar size="sm">
-                    <AvatarFallback>{getInitials(assignee)}</AvatarFallback>
-                  </Avatar>
+                  <UserAvatar name={assignee} size="sm" />
                   <span className="filter-assignee-name">{assignee}</span>
                   <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
                 </button>
@@ -121,11 +110,7 @@ export function FilterSidebar({
                   className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
                   onClick={() => onAssigneeToggle('__unassigned__')}
                 >
-                  <Avatar size="sm">
-                    <AvatarFallback>
-                      <User className="size-3" />
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar size="sm" showPlaceholderIcon />
                   <span className="filter-assignee-name">Unassigned</span>
                   <span className="filter-assignee-count">{unassignedCount}</span>
                 </button>

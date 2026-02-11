@@ -1,5 +1,5 @@
 // Project management types and storage utilities
-import { DagbanGraph } from './types';
+import { DagbanGraph, placeholderUsers } from './types';
 
 export interface Project {
   id: string;
@@ -124,6 +124,8 @@ export function getEmptyGraph(): DagbanGraph {
   const now = new Date().toISOString();
   const rootCardId = `card-root-${now}`;
   return {
+    users: placeholderUsers,
+    traversers: [],
     categories: [
       { id: 'default', name: 'General', color: '#3b82f6' },
     ],

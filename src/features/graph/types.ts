@@ -30,7 +30,6 @@ export interface GraphNodeData {
 export interface GraphLinkData {
   source: string | GraphNodeData;
   target: string | GraphNodeData;
-  progress: number;
   edge: Edge;
 }
 

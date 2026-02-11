@@ -1,7 +1,9 @@
-import { DagbanGraph } from './types';
+import { DagbanGraph, placeholderUsers } from './types';
 
 // Sample data for development
 export const sampleGraph: DagbanGraph = {
+  users: placeholderUsers,
+  traversers: [],
   categories: [
     { id: 'design', name: 'Design', color: '#8b5cf6' },      // purple
     { id: 'frontend', name: 'Frontend', color: '#3b82f6' },   // blue
@@ -14,7 +16,7 @@ export const sampleGraph: DagbanGraph = {
       title: 'Create wireframes',
       description: 'Design initial wireframes for the app',
       categoryId: 'design',
-      assignee: 'Alice Chen',
+      assignee: 'alice',
       createdAt: '2024-01-01',
       updatedAt: '2024-01-01',
     },
@@ -23,7 +25,7 @@ export const sampleGraph: DagbanGraph = {
       title: 'Build UI components',
       description: 'Create reusable React components',
       categoryId: 'frontend',
-      assignee: 'Bob Smith',
+      assignee: 'bob',
       createdAt: '2024-01-02',
       updatedAt: '2024-01-02',
     },
@@ -32,7 +34,7 @@ export const sampleGraph: DagbanGraph = {
       title: 'Design API',
       description: 'Define REST API endpoints',
       categoryId: 'backend',
-      assignee: 'Charlie Davis',
+      assignee: 'charlie',
       createdAt: '2024-01-01',
       updatedAt: '2024-01-01',
     },
@@ -62,10 +64,10 @@ export const sampleGraph: DagbanGraph = {
     },
   ],
   edges: [
-    { id: 'e1', source: 'wireframes', target: 'ui-components', progress: 100 },
-    { id: 'e2', source: 'api-design', target: 'api-impl', progress: 75 },
-    { id: 'e3', source: 'ui-components', target: 'integration', progress: 30 },
-    { id: 'e4', source: 'api-impl', target: 'integration', progress: 0 },
-    { id: 'e5', source: 'integration', target: 'deploy', progress: 0 },
+    { id: 'e1', source: 'wireframes', target: 'ui-components' },
+    { id: 'e2', source: 'api-design', target: 'api-impl' },
+    { id: 'e3', source: 'ui-components', target: 'integration' },
+    { id: 'e4', source: 'api-impl', target: 'integration' },
+    { id: 'e5', source: 'integration', target: 'deploy' },
   ],
 };

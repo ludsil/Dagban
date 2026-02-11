@@ -43,14 +43,19 @@ export function drawAvatarCircle(
   x: number,
   y: number,
   radius: number,
-  globalScale: number
+  globalScale: number,
+  options?: {
+    fillStyle?: string;
+    strokeStyle?: string;
+    lineWidth?: number;
+  }
 ): void {
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, 2 * Math.PI);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.fillStyle = options?.fillStyle ?? 'rgba(255, 255, 255, 0.15)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-  ctx.lineWidth = 1 / globalScale;
+  ctx.strokeStyle = options?.strokeStyle ?? 'rgba(255, 255, 255, 0.35)';
+  ctx.lineWidth = options?.lineWidth ?? 1 / globalScale;
   ctx.stroke();
 }
 

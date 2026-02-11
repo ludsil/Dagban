@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, placeholderUsers } from '@/lib/types';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { Card, User } from '@/lib/types';
 import { SelectedNodeInfo, GraphNodeData } from '../types';
 import { Kbd } from '@/components/ui/kbd';
 import {
@@ -10,19 +10,20 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { UserAvatar } from './UserAvatar';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { Plus, Link, Trash2, User } from 'lucide-react';
+import { Plus, Link, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
   onClose: () => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
+  users?: User[];
   onCreateDownstream?: (parentNode: GraphNodeData) => void;
   onCreateUpstream?: (childNode: GraphNodeData) => void;
   onLinkDownstream?: (sourceNode: GraphNodeData) => void;
@@ -34,6 +35,7 @@ export function CardDetailPanel({
   selectedNode,
   onClose,
   onCardChange,
+  users = [],
   onCreateDownstream,
   onCreateUpstream,
   onLinkDownstream,
@@ -52,6 +54,7 @@ export function CardDetailPanel({
   const [description, setDescription] = useState(card.description || '');
   const [assignee, setAssignee] = useState(card.assignee || '');
   const [shiftHeld, setShiftHeld] = useState(false);
+  const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
 
   // Track shift key state
   useEffect(() => {
@@ -231,13 +234,8 @@ export function CardDetailPanel({
     }
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(part => part.charAt(0).toUpperCase())
-      .slice(0, 2)
-      .join('');
-  };
+  const assigneeUser = assignee ? userById.get(assignee) : undefined;
+  const assigneeLabel = assigneeUser?.name || assignee;
 
   return (
     <div
@@ -264,37 +262,19 @@ export function CardDetailPanel({
             className="h-8 w-8 rounded-full p-0 border-none shadow-none [&>svg]:hidden"
             aria-label="Assign user"
           >
-            <Avatar size="sm">
-              {assignee ? (
-                <AvatarFallback>{getInitials(assignee)}</AvatarFallback>
-              ) : (
-                <AvatarFallback>
-                  <User className="size-3" />
-                </AvatarFallback>
-              )}
-            </Avatar>
+            <UserAvatar user={assigneeUser} name={assigneeLabel} size="sm" />
           </SelectTrigger>
           <SelectContent align="end" position="popper" className="min-w-[180px]">
             <SelectItem value="__unassigned__">
               <span className="flex items-center gap-2">
-                <Avatar size="sm">
-                  <AvatarFallback>
-                    <User className="size-3" />
-                  </AvatarFallback>
-                </Avatar>
+                <UserAvatar size="sm" showPlaceholderIcon />
                 <span>Unassigned</span>
               </span>
             </SelectItem>
-            {placeholderUsers.map(user => (
-              <SelectItem key={user.id} value={user.name}>
+            {users.map(user => (
+              <SelectItem key={user.id} value={user.id}>
                 <span className="flex items-center gap-2">
-                  <Avatar size="sm">
-                    {user.avatar ? (
-                      <AvatarImage src={user.avatar} alt={user.name} />
-                    ) : (
-                      <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-                    )}
-                  </Avatar>
+                  <UserAvatar user={user} size="sm" />
                   <span>{user.name}</span>
                 </span>
               </SelectItem>

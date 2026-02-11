@@ -105,21 +105,216 @@ html, body {
 
 /* Settings panel styling */
 .settings-panel {
-  position: absolute;
-  top: 16px;
-  right: 16px;
   background-color: rgba(20, 20, 20, 0.95);
   border-radius: 6px;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  z-index: 1000;
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   min-width: 200px;
+}
+
+.graph-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+  overflow: hidden;
+}
+
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.graph-hud-left,
+.graph-hud-right {
+  position: absolute;
+  top: 16px;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-hud-left {
+  left: 16px;
+}
+
+.graph-hud-right {
+  right: 16px;
+  align-items: flex-start;
+}
+
+.graph-hud-right .settings-panel {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.settings-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-top-row .settings-search {
+  flex: 1;
+}
+
+.user-stack {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.user-stack-item {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(12, 12, 12, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -10px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  z-index: calc(10 - var(--stack-index));
+}
+
+.user-stack-item:first-child {
+  margin-left: 0;
+}
+
+.user-stack-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.user-stack:hover .user-stack-item {
+  margin-left: 4px;
+}
+
+.user-stack-item.active {
+  border-color: rgba(74, 222, 128, 0.8);
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.25);
+}
+
+.user-stack-item.user-stack-add {
+  border-style: dashed;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.traverser-overlay-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 900;
+}
+
+.traverser-overlay {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: grab;
+}
+
+.traverser-overlay.dragging {
+  cursor: grabbing;
+}
+
+.traverser-overlay-avatar {
+  width: 16px !important;
+  height: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.traverser-overlay-avatar [data-slot="avatar-fallback"] {
+  font-size: 8px;
+}
+
+.traverser-selection-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 900;
+}
+
+.traverser-selection {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(20, 20, 20, 0.85);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  transition: all 0.15s ease;
+}
+
+.traverser-selection:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+.traverser-selection.selected {
+  border-color: rgba(249, 115, 22, 0.9);
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+  color: #fff;
+}
+
+.traverser-selection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(249, 115, 22, 0.9);
+}
+
+.traverser-selection-title {
+  font-weight: 600;
+}
+
+.traverser-selection-assignee {
+  opacity: 0.7;
+}
+
+.traverser-selection-actions {
+  position: absolute;
+  transform: translate(-50%, -160%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.traverser-selection-actions button {
+  background: rgba(249, 115, 22, 0.9);
+  color: #111;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.traverser-selection-actions span {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .settings-row {
@@ -283,16 +478,12 @@ html, body {
 
 /* Header panel styling - top left corner */
 .header-panel {
-  position: absolute;
-  top: 16px;
-  left: 16px;
   background-color: rgba(20, 20, 20, 0.95);
   border-radius: 6px;
   padding: 4px 8px;
   display: flex;
   align-items: center;
   gap: 6px;
-  z-index: 1000;
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }

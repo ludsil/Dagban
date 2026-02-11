@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, Category } from '@/lib/types';
+import { UserAvatar } from './UserAvatar';
 import { ColorMode } from '../types';
 
 interface FilterPanelProps {
@@ -81,15 +82,6 @@ export function FilterPanel({
     selectedAssignees.size > 0 ||
     selectedStatuses.size > 0 ||
     searchQuery.length > 0;
-
-  // Get initials from name
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(part => part.charAt(0).toUpperCase())
-      .slice(0, 2)
-      .join('');
-  };
 
   // Handle Cmd+K to focus search
   useEffect(() => {
@@ -306,7 +298,7 @@ export function FilterPanel({
                         onClick={() => onAssigneeToggle(assignee)}
                       >
                         <div className="filter-assignee-avatar">
-                          <span>{getInitials(assignee)}</span>
+                          <UserAvatar name={assignee} size="sm" />
                         </div>
                         <span className="filter-assignee-name">{assignee}</span>
                         <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
@@ -318,10 +310,7 @@ export function FilterPanel({
                         onClick={() => onAssigneeToggle('__unassigned__')}
                       >
                         <div className="filter-assignee-avatar unassigned">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                            <circle cx="12" cy="8" r="4" />
-                            <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-                          </svg>
+                          <UserAvatar size="sm" showPlaceholderIcon />
                         </div>
                         <span className="filter-assignee-name">Unassigned</span>
                         <span className="filter-assignee-count">{unassignedCount}</span>

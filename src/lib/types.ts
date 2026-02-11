@@ -5,6 +5,7 @@ export interface User {
   id: string;
   name: string;
   avatar?: string; // URL to avatar image (optional)
+  color?: string;
 }
 
 // Placeholder users for development
@@ -44,16 +45,25 @@ export interface Card {
   title: string;
   description?: string;
   categoryId: string;
-  assignee?: string;
+  assignee?: string; // user id
   createdAt: string;
   updatedAt: string;
+  burntAt?: string;
 }
 
 export interface Edge {
   id: string;
   source: string; // card id
   target: string; // card id (unlocked by source)
-  progress: number; // 0-100, the "fuse" progress
+}
+
+export interface Traverser {
+  id: string;
+  edgeId: string;
+  userId: string;
+  position: number; // 0..1 along the edge
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type CardStatus = 'blocked' | 'active' | 'done';
@@ -62,30 +72,27 @@ export interface DagbanGraph {
   cards: Card[];
   edges: Edge[];
   categories: Category[];
+  users: User[];
+  traversers: Traverser[];
 }
 
 // Computed state for a card based on graph
 export function getCardStatus(card: Card, edges: Edge[], _cards: Card[]): CardStatus {
-  // Find all edges where this card is the target (dependencies)
-  const incomingEdges = edges.filter(e => e.target === card.id);
-
-  // If any incoming edge is not complete (progress < 100), card is blocked
-  const hasIncompleteIncoming = incomingEdges.some(e => e.progress < 100);
-  if (hasIncompleteIncoming) {
-    return 'blocked';
-  }
-
-  // Find all edges where this card is the source (what it unlocks)
-  const outgoingEdges = edges.filter(e => e.source === card.id);
-
-  // If all outgoing edges are complete (progress = 100), card is done
-  const allOutgoingComplete = outgoingEdges.length > 0 &&
-    outgoingEdges.every(e => e.progress >= 100);
-  if (allOutgoingComplete) {
+  if (card.burntAt) {
     return 'done';
   }
 
-  // Otherwise active
+  const cardById = new Map(_cards.map(c => [c.id, c]));
+  const incomingEdges = edges.filter(e => e.target === card.id);
+  const hasBlockingIncoming = incomingEdges.some(edge => {
+    const source = cardById.get(edge.source);
+    return !source?.burntAt;
+  });
+
+  if (hasBlockingIncoming) {
+    return 'blocked';
+  }
+
   return 'active';
 }
 
@@ -101,7 +108,7 @@ export function getCardColor(
 
   switch (status) {
     case 'done':
-      return '#9ca3af'; // gray-400
+      return '#111827'; // gray-900 (burnt)
     case 'blocked':
       return fadeColor(baseColor, 0.4); // 40% opacity effect
     case 'active':
