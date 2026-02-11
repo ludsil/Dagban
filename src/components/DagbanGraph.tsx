@@ -1324,7 +1324,7 @@ export default function DagbanGraph({
         // Start animation loop
         const animate = () => {
           const elapsed = performance.now() - now;
-          const progress = Math.min(elapsed / 1500, 1); // 1.5 seconds
+          const progress = Math.min(elapsed / 1000, 1); // 1.0 seconds
 
           if (progress >= 1) {
             // Connection complete
