@@ -105,8 +105,10 @@ export default function DagbanGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
-  // Cache node positions to avoid reading graphRef during render
-  const cachedPositionsRef = useRef<Map<string, { x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null }>>(new Map());
+  // Keep stable graph data and node/link identities to avoid full re-init on updates
+  const graphDataRef = useRef<{ nodes: GraphNodeData[]; links: GraphLinkData[] }>({ nodes: [], links: [] });
+  const nodeByIdRef = useRef<Map<string, GraphNodeData>>(new Map());
+  const linkByIdRef = useRef<Map<string, GraphLinkData>>(new Map());
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
@@ -116,6 +118,17 @@ export default function DagbanGraph({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
+  const [graphReady, setGraphReady] = useState(false);
+  const pendingStructuralUpdateRef = useRef(false);
+  const pendingVisualUpdateRef = useRef(false);
+  const pendingLabelUpdatesRef = useRef<Set<string>>(new Set());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const labelCacheRef = useRef<Map<string, { el: HTMLDivElement; obj: any }>>(new Map());
+  const nodeBckgDimensionsRef = useRef<Map<string, [number, number]>>(new Map());
+  const initialGraphData = useMemo(() => ({ nodes: [] as GraphNodeData[], links: [] as GraphLinkData[] }), []);
+  const [graphDataView, setGraphDataView] = useState<{ nodes: GraphNodeData[]; links: GraphLinkData[] }>(initialGraphData);
+  const hasSeededGraphRef = useRef(false);
+  const [graphDataForForce, setGraphDataForForce] = useState(initialGraphData);
 
   // Card creation form state
   const [cardCreation, setCardCreation] = useState<CardCreationState>({
@@ -255,6 +268,26 @@ export default function DagbanGraph({
     });
   }, []);
 
+  // Track when the graph API is available (react-force-graph ref is ready)
+  useEffect(() => {
+    if (graphReady) return;
+
+    let rafId: number | null = null;
+    const checkReady = () => {
+      if (graphRef.current && typeof graphRef.current.graphData === 'function') {
+        setGraphReady(true);
+        return;
+      }
+      rafId = requestAnimationFrame(checkReady);
+    };
+    rafId = requestAnimationFrame(checkReady);
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [graphReady]);
+
   // Compute degree maps for color modes
   const { indegrees, outdegrees, maxIndegree, maxOutdegree } = useMemo(() => {
     const indegrees = computeIndegrees(data.edges);
@@ -314,16 +347,82 @@ export default function DagbanGraph({
     return true;
   }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts]);
 
-  // Convert dagban data to force-graph format
-  // CRITICAL: Preserve node positions when data changes to avoid graph reset
-  // D3 simulation only initializes positions for nodes where x/y is NaN,
-  // so we must copy existing positions to new node objects.
-  // We use cachedPositionsRef (populated by effect after render) to avoid reading graphRef during render.
-  // Reading the cached positions ref is intentional - we need previous render's positions.
-  /* eslint-disable react-hooks/refs */
-  const graphData = useMemo(() => {
-    // Use cached positions from previous render (intentional ref read - see comment above)
-    const positionMap = cachedPositionsRef.current;
+  const getOrCreateLabelEntry = useCallback((nodeId: string) => {
+    const cache = labelCacheRef.current;
+    let entry = cache.get(nodeId);
+    if (!entry) {
+      entry = { el: document.createElement('div'), obj: null };
+      cache.set(nodeId, entry);
+    }
+    return entry;
+  }, []);
+
+  const updateNodeLabelElement = useCallback((node: GraphNodeData, mode: DisplayMode) => {
+    const entry = getOrCreateLabelEntry(node.id);
+    const nodeEl = entry.el;
+    nodeEl.className = 'node-label';
+    nodeEl.style.color = node.color;
+    nodeEl.style.display = 'flex';
+    nodeEl.style.alignItems = 'center';
+    nodeEl.style.gap = '4px';
+
+    if (mode === 'labels') {
+      nodeEl.textContent = node.title;
+      return entry;
+    }
+
+    if (mode === 'full') {
+      const avatarSize = 16;
+      const avatarStyles = getAvatarCSSStyles(avatarSize);
+      const avatarContent = getAvatarHTMLContent(node.card.assignee, 10);
+      nodeEl.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 5px; flex-direction: row;">
+          <span>${node.title}</span>
+          <div style="${avatarStyles}">
+            ${avatarContent}
+          </div>
+        </div>
+      `;
+      return entry;
+    }
+
+    nodeEl.textContent = '';
+    return entry;
+  }, [getOrCreateLabelEntry]);
+
+  // Reconcile dagban data into stable graph data without recreating nodes/links.
+  const applyPendingGraphUpdates = useCallback(() => {
+    if (!graphReady || !graphRef.current || typeof graphRef.current.graphData !== 'function') {
+      return;
+    }
+
+    if (pendingStructuralUpdateRef.current) {
+      graphRef.current.graphData(graphDataRef.current);
+      pendingStructuralUpdateRef.current = false;
+      pendingVisualUpdateRef.current = false;
+    } else if (pendingVisualUpdateRef.current && typeof graphRef.current.refresh === 'function') {
+      graphRef.current.refresh();
+      pendingVisualUpdateRef.current = false;
+    }
+
+    if (displayMode !== 'balls' && pendingLabelUpdatesRef.current.size > 0) {
+      graphDataRef.current.nodes.forEach(node => {
+        if (pendingLabelUpdatesRef.current.has(node.id)) {
+          updateNodeLabelElement(node, displayMode);
+        }
+      });
+      pendingLabelUpdatesRef.current.clear();
+    }
+  }, [graphReady, displayMode, updateNodeLabelElement]);
+
+  // Reconcile Dagban data into the stable graph data store.
+  useEffect(() => {
+    const nodeById = nodeByIdRef.current;
+    const linkById = linkByIdRef.current;
+
+    let structuralChanged = false;
+    let visualChanged = false;
+    const labelChangedNodeIds: string[] = [];
 
     // Check if any filters are active
     const hasActiveFilters = selectedAssignees.size > 0 ||
@@ -331,64 +430,225 @@ export default function DagbanGraph({
       selectedStatuses.size > 0 ||
       searchQuery.length > 0;
 
-    return {
-      nodes: data.cards.map(card => {
-        const status = getCardStatus(card, data.edges, data.cards);
-        const categoryColor = getCardColor(card, status, data.categories);
-        const matchesFilter = cardMatchesFilter(card, status);
+    const seenNodeIds = new Set<string>();
 
-        // Compute color based on colorMode
-        let color: string;
-        if (colorMode === 'indegree') {
-          const degree = indegrees.get(card.id) || 0;
-          color = getGradientColor('indegree', degree, maxIndegree);
-        } else if (colorMode === 'outdegree') {
-          const degree = outdegrees.get(card.id) || 0;
-          color = getGradientColor('outdegree', degree, maxOutdegree);
-        } else {
-          color = categoryColor;
-        }
+    for (const card of data.cards) {
+      seenNodeIds.add(card.id);
 
-        // Dim the color if node doesn't match filter
-        if (!matchesFilter && hasActiveFilters) {
-          // Apply dimming by reducing opacity in the color
-          color = dimColor(color);
-        }
+      const status = getCardStatus(card, data.edges, data.cards);
+      const categoryColor = getCardColor(card, status, data.categories);
+      const matchesFilter = cardMatchesFilter(card, status);
 
-        // Get existing position data if available
-        const existing = positionMap.get(card.id);
+      // Compute color based on colorMode
+      let color: string;
+      if (colorMode === 'indegree') {
+        const degree = indegrees.get(card.id) || 0;
+        color = getGradientColor('indegree', degree, maxIndegree);
+      } else if (colorMode === 'outdegree') {
+        const degree = outdegrees.get(card.id) || 0;
+        color = getGradientColor('outdegree', degree, maxOutdegree);
+      } else {
+        color = categoryColor;
+      }
 
-        return {
+      // Dim the color if node doesn't match filter
+      if (!matchesFilter && hasActiveFilters) {
+        color = dimColor(color);
+      }
+
+      let node = nodeById.get(card.id);
+      if (!node) {
+        node = {
           id: card.id,
           title: card.title,
           color,
           status,
           card,
           matchesFilter,
-          // PRESERVE existing positions if available - this prevents graph reset
-          ...(existing && {
-            x: existing.x,
-            y: existing.y,
-            vx: existing.vx,
-            vy: existing.vy,
-            fx: existing.fx,
-            fy: existing.fy,
-          }),
         };
-      }),
-      links: data.edges.map(edge => ({
-        source: edge.source,
-        target: edge.target,
-        progress: edge.progress,
-        edge,
-      })),
-    };
-  }, [data, colorMode, indegrees, outdegrees, maxIndegree, maxOutdegree, cardMatchesFilter, selectedAssignees.size, selectedCategories.size, selectedStatuses.size, searchQuery]);
-  /* eslint-enable react-hooks/refs */
+        nodeById.set(card.id, node);
+        structuralChanged = true;
+        continue;
+      }
 
-  // NOTE: Position preservation is now handled directly in the graphData useMemo above.
-  // By copying x, y, vx, vy, fx, fy from existing nodes, D3 simulation preserves
-  // their positions instead of re-initializing them randomly.
+      const updates: Partial<GraphNodeData> = {};
+      let shouldUpdateLabel = false;
+      let didUpdate = false;
+
+      if (node.title !== card.title) {
+        updates.title = card.title;
+        visualChanged = true;
+        shouldUpdateLabel = true;
+      }
+
+      if (node.color !== color) {
+        updates.color = color;
+        visualChanged = true;
+        if (displayMode !== 'balls') {
+          shouldUpdateLabel = true;
+        }
+      }
+
+      if (node.status !== status) {
+        updates.status = status;
+      }
+
+      if (node.matchesFilter !== matchesFilter) {
+        updates.matchesFilter = matchesFilter;
+        visualChanged = true;
+      }
+
+      if (node.card !== card) {
+        const assigneeChanged = node.card.assignee !== card.assignee;
+        updates.card = card;
+        if (displayMode === 'full' && assigneeChanged) {
+          visualChanged = true;
+          shouldUpdateLabel = true;
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        try {
+          Object.assign(node, updates);
+          didUpdate = true;
+        } catch {
+          const replacement: GraphNodeData = { ...node, ...updates };
+          nodeById.set(replacement.id, replacement);
+          node = replacement;
+          structuralChanged = true;
+          didUpdate = true;
+        }
+      }
+
+      if (didUpdate && shouldUpdateLabel) {
+        labelChangedNodeIds.push(node.id);
+      }
+    }
+
+    for (const [nodeId] of nodeById) {
+      if (!seenNodeIds.has(nodeId)) {
+        nodeById.delete(nodeId);
+        labelCacheRef.current.delete(nodeId);
+        nodeBckgDimensionsRef.current.delete(nodeId);
+        structuralChanged = true;
+      }
+    }
+
+    const seenEdgeIds = new Set<string>();
+    for (const edge of data.edges) {
+      seenEdgeIds.add(edge.id);
+      let link = linkById.get(edge.id);
+      if (!link) {
+        link = {
+          source: edge.source,
+          target: edge.target,
+          progress: edge.progress,
+          edge,
+        };
+        linkById.set(edge.id, link);
+        structuralChanged = true;
+        continue;
+      }
+
+      const linkSourceId = typeof link.source === 'string' ? link.source : link.source.id;
+      const linkTargetId = typeof link.target === 'string' ? link.target : link.target.id;
+      const linkUpdates: Partial<GraphLinkData> = {};
+
+      if (linkSourceId !== edge.source) {
+        linkUpdates.source = edge.source;
+        structuralChanged = true;
+      }
+
+      if (linkTargetId !== edge.target) {
+        linkUpdates.target = edge.target;
+        structuralChanged = true;
+      }
+
+      if (link.progress !== edge.progress) {
+        linkUpdates.progress = edge.progress;
+        visualChanged = true;
+      }
+
+      if (link.edge !== edge) {
+        linkUpdates.edge = edge;
+      }
+
+      if (Object.keys(linkUpdates).length > 0) {
+        try {
+          Object.assign(link, linkUpdates);
+        } catch {
+          const replacement: GraphLinkData = { ...link, ...linkUpdates };
+          linkById.set(edge.id, replacement);
+          link = replacement;
+          structuralChanged = true;
+        }
+      }
+    }
+
+    for (const [edgeId] of linkById) {
+      if (!seenEdgeIds.has(edgeId)) {
+        linkById.delete(edgeId);
+        structuralChanged = true;
+      }
+    }
+
+    const nodes = data.cards
+      .map(card => nodeById.get(card.id))
+      .filter(Boolean) as GraphNodeData[];
+
+    const links = data.edges
+      .map(edge => linkById.get(edge.id))
+      .filter(Boolean) as GraphLinkData[];
+
+    graphDataRef.current = { nodes, links };
+    setGraphDataView(graphDataRef.current);
+    if (structuralChanged || !hasSeededGraphRef.current) {
+      setGraphDataForForce(graphDataRef.current);
+      hasSeededGraphRef.current = true;
+    }
+
+    if (structuralChanged) {
+      pendingStructuralUpdateRef.current = true;
+    }
+    if (visualChanged) {
+      pendingVisualUpdateRef.current = true;
+    }
+    if (labelChangedNodeIds.length > 0) {
+      labelChangedNodeIds.forEach(nodeId => pendingLabelUpdatesRef.current.add(nodeId));
+    }
+
+    applyPendingGraphUpdates();
+  }, [
+    data.cards,
+    data.edges,
+    data.categories,
+    colorMode,
+    indegrees,
+    outdegrees,
+    maxIndegree,
+    maxOutdegree,
+    cardMatchesFilter,
+    selectedAssignees,
+    selectedCategories,
+    selectedStatuses,
+    searchQuery,
+    displayMode,
+    applyPendingGraphUpdates,
+  ]);
+
+  useEffect(() => {
+    applyPendingGraphUpdates();
+  }, [applyPendingGraphUpdates, graphReady]);
+
+  // Ensure node labels refresh when display mode changes
+  useEffect(() => {
+    if (!graphReady || !graphRef.current || typeof graphRef.current.refresh !== 'function') return;
+
+    if (displayMode !== 'balls') {
+      graphDataView.nodes.forEach(node => updateNodeLabelElement(node, displayMode));
+    }
+    graphRef.current.refresh();
+  }, [displayMode, graphDataView.nodes, updateNodeLabelElement, graphReady]);
 
   // Resize handling
   useEffect(() => {
@@ -417,25 +677,6 @@ export default function DagbanGraph({
     }, 100);
     return () => clearTimeout(timer);
   }, [viewMode]);
-
-  // Sync node positions to cache after render (so we can read from cache during next render)
-  useEffect(() => {
-    const nodes = graphRef.current?.graphData?.()?.nodes as GraphNodeData[] | undefined;
-    if (nodes) {
-      const newPositions = new Map<string, { x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null }>();
-      nodes.forEach(n => {
-        newPositions.set(n.id, {
-          x: n.x,
-          y: n.y,
-          vx: n.vx,
-          vy: n.vy,
-          fx: n.fx,
-          fy: n.fy
-        });
-      });
-      cachedPositionsRef.current = newPositions;
-    }
-  });
 
   // Handle undo
   const handleUndo = useCallback(() => {
@@ -599,7 +840,7 @@ export default function DagbanGraph({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoverTooltip.nodeId, commandPalette.visible, connectionMode.active, graphData.nodes, handleDeleteNode, handleUndo, cancelConnectionMode, showToast]);
+  }, [hoverTooltip.nodeId, commandPalette.visible, connectionMode.active, graphDataView.nodes, handleDeleteNode, handleUndo, cancelConnectionMode, showToast]);
 
   // Open card creation form for new root node
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
@@ -674,13 +915,15 @@ export default function DagbanGraph({
 
   // Handle card creation submission
   const handleCardCreation = useCallback(() => {
-    if (!cardCreation.title.trim() || !onCardCreate) return;
+    const titleValue = typeof cardCreation.title === 'string' ? cardCreation.title : '';
+    if (!titleValue.trim() || !onCardCreate) return;
+    const descriptionValue = typeof cardCreation.description === 'string' ? cardCreation.description : '';
 
     const now = new Date().toISOString();
     const newCard: Card = {
       id: generateId(),
-      title: cardCreation.title.trim(),
-      description: cardCreation.description.trim() || undefined,
+      title: titleValue.trim(),
+      description: descriptionValue.trim() || undefined,
       categoryId: data.categories.length > 0 ? data.categories[0].id : '',
       createdAt: now,
       updatedAt: now,
@@ -769,7 +1012,7 @@ export default function DagbanGraph({
       ctx.fill();
 
       // Store dimensions for pointer area
-      (node as GraphNodeData & { __bckgDimensions?: [number, number] }).__bckgDimensions = [NODE_RADIUS * 2, NODE_RADIUS * 2];
+      nodeBckgDimensionsRef.current.set(node.id, [NODE_RADIUS * 2, NODE_RADIUS * 2]);
     } else {
       // Labels/Full mode: text IS the node (like text-nodes example)
       const label = node.title;
@@ -783,6 +1026,12 @@ export default function DagbanGraph({
       const totalWidth = textWidth + avatarSpace;
 
       const bckgDimensions: [number, number] = [totalWidth + avatarConfig.padding * 2, fontSize * 1.2];
+
+      // Draw ball behind the label (matches 3D sphere + label)
+      ctx.beginPath();
+      ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+      ctx.fillStyle = node.color;
+      ctx.fill();
 
       // Draw dark background (matches html-nodes example)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -805,7 +1054,7 @@ export default function DagbanGraph({
       }
 
       // Store dimensions for pointer area
-      (node as GraphNodeData & { __bckgDimensions?: [number, number] }).__bckgDimensions = bckgDimensions;
+      nodeBckgDimensionsRef.current.set(node.id, bckgDimensions);
     }
   }, [displayMode, connectionMode.active, connectionMode.sourceNode?.id, dragConnect.active, dragConnect.progress, dragConnect.sourceNode?.id, dragConnect.targetNode?.id]);
 
@@ -863,33 +1112,12 @@ export default function DagbanGraph({
       return undefined; // Use default sphere
     }
 
-    const nodeEl = document.createElement('div');
-    nodeEl.className = 'node-label';
-    nodeEl.style.color = node.color;
-    nodeEl.style.display = 'flex';
-    nodeEl.style.alignItems = 'center';
-    nodeEl.style.gap = '4px';
-
-    if (displayMode === 'labels') {
-      nodeEl.textContent = node.title;
-    } else if (displayMode === 'full') {
-      // Create container for full mode: text + assignee avatar using standardized utilities
-      const avatarSize = 16;
-      const avatarStyles = getAvatarCSSStyles(avatarSize);
-      const avatarContent = getAvatarHTMLContent(node.card.assignee, 10);
-
-      nodeEl.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 5px; flex-direction: row;">
-          <span>${node.title}</span>
-          <div style="${avatarStyles}">
-            ${avatarContent}
-          </div>
-        </div>
-      `;
+    const entry = updateNodeLabelElement(node, displayMode);
+    if (!entry.obj) {
+      entry.obj = new CSS2DObject(entry.el);
     }
-
-    return new CSS2DObject(nodeEl);
-  }, [displayMode]);
+    return entry.obj;
+  }, [displayMode, updateNodeLabelElement]);
 
   // No custom linkThreeObject needed - use built-in arrow rendering for 3D
 
@@ -972,9 +1200,13 @@ export default function DagbanGraph({
   const handleNodeDragEnd = useCallback((node: GraphNodeData) => {
     // Remove fixed position constraints so node can participate in layout
     // Note: force-graph uses undefined (not delete) to unfix
-    node.fx = undefined;
-    node.fy = undefined;
-    node.fz = undefined;
+    try {
+      node.fx = undefined;
+      node.fy = undefined;
+      node.fz = undefined;
+    } catch {
+      // If node is read-only, skip unfixing to avoid runtime errors
+    }
 
     // Cancel any drag-to-connect animation
     if (dragConnectAnimationRef.current) {
@@ -1021,7 +1253,7 @@ export default function DagbanGraph({
     const TOUCH_DISTANCE = NODE_RADIUS * 3; // Distance to consider "touching"
     let touchingNode: GraphNodeData | null = null;
 
-    for (const otherNode of graphData.nodes as GraphNodeData[]) {
+    for (const otherNode of graphDataView.nodes as GraphNodeData[]) {
       if (otherNode.id === node.id) continue;
       if (!otherNode.x || !otherNode.y) continue;
 
@@ -1091,14 +1323,14 @@ export default function DagbanGraph({
         });
       }
     }
-  }, [graphData.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect]);
+  }, [graphDataView.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect]);
 
   // Common props for both 2D and 3D graphs
   const commonProps = {
     ref: graphRef,
     width: dimensions.width,
     height: dimensions.height,
-    graphData: graphData,
+    graphData: graphDataForForce,
     backgroundColor: "#000000",
     nodeLabel: () => '', // Disable default tooltip, using custom one
     onNodeClick: handleNodeClick,
@@ -1151,9 +1383,9 @@ export default function DagbanGraph({
         <FG2D
           {...commonProps}
           nodeCanvasObject={nodeCanvasObject}
-          nodePointerAreaPaint={(node: GraphNodeData & { __bckgDimensions?: [number, number] }, color: string, ctx: CanvasRenderingContext2D) => {
+          nodePointerAreaPaint={(node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
             ctx.fillStyle = color;
-            const bckgDimensions = node.__bckgDimensions;
+            const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
             if (bckgDimensions) {
               ctx.fillRect(
                 (node.x ?? 0) - bckgDimensions[0] / 2,
@@ -1239,7 +1471,7 @@ export default function DagbanGraph({
       {/* Command Palette */}
       <CommandPalette
         state={commandPalette}
-        nodes={graphData.nodes}
+        nodes={graphDataView.nodes}
         onClose={() => setCommandPalette({ visible: false, query: '' })}
         onSelectNode={handleCommandPaletteSelectNode}
         onQueryChange={(query) => setCommandPalette(prev => ({ ...prev, query }))}

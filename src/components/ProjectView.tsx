@@ -144,8 +144,9 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
     }
   }, [project, router]);
 
+  const emptyGraph = useMemo(() => getEmptyGraph(), [projectId]);
   // Use persisted graph with project-specific storage
-  const [graph, setGraph] = usePersistedGraph(getEmptyGraph(), projectId);
+  const [graph, setGraph] = usePersistedGraph(emptyGraph, projectId);
 
   // Handle edge progress changes
   const handleEdgeProgressChange = useCallback((edgeId: string, progress: number) => {

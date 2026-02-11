@@ -116,8 +116,14 @@ export function usePersistedGraph(
       graphRef.current = saved;
       // Notify subscribers
       listenersRef.current.forEach(cb => cb());
+      return;
     }
-  }, [projectId]);
+
+    // No saved graph; seed storage with fallback so the graph isn't empty.
+    graphRef.current = fallback;
+    listenersRef.current.forEach(cb => cb());
+    saveGraph(fallback, projectId);
+  }, [projectId, fallback]);
 
   const graph = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 

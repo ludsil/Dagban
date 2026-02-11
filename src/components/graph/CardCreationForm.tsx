@@ -53,6 +53,9 @@ export function CardCreationForm({
 
   if (!state.visible) return null;
 
+  const titleValue = typeof state.title === 'string' ? state.title : '';
+  const descriptionValue = typeof state.description === 'string' ? state.description : '';
+
   // Calculate position - center on screen for root nodes, or near click for downstream
   let left = state.x;
   let top = state.y;
@@ -98,12 +101,12 @@ export function CardCreationForm({
       <Textarea
         ref={titleRef}
         className="postit-title border-none shadow-none resize-none min-h-0 p-0 text-lg font-semibold focus-visible:ring-0"
-        value={state.title}
+        value={titleValue}
         onChange={(e) => onTitleChange(e.target.value)}
         placeholder="Title..."
         rows={1}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && state.title.trim()) {
+          if (e.key === 'Enter' && !e.shiftKey && titleValue.trim()) {
             e.preventDefault();
             onSubmit();
           }
@@ -113,7 +116,7 @@ export function CardCreationForm({
       {/* Description */}
       <Textarea
         className="postit-content border-none shadow-none resize-none min-h-[80px] p-0 focus-visible:ring-0"
-        value={state.description}
+        value={descriptionValue}
         onChange={(e) => onDescriptionChange(e.target.value)}
         placeholder="Add notes..."
       />
@@ -126,7 +129,7 @@ export function CardCreationForm({
         <Button
           size="sm"
           onClick={onSubmit}
-          disabled={!state.title.trim()}
+          disabled={!titleValue.trim()}
         >
           Create
         </Button>

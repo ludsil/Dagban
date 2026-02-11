@@ -121,11 +121,22 @@ export function deleteProject(projectId: string): boolean {
  * Get the default empty graph for a new project
  */
 export function getEmptyGraph(): DagbanGraph {
+  const now = new Date().toISOString();
+  const rootCardId = `card-root-${now}`;
   return {
     categories: [
       { id: 'default', name: 'General', color: '#3b82f6' },
     ],
-    cards: [],
+    cards: [
+      {
+        id: rootCardId,
+        title: 'Start here',
+        description: 'Add notes or connect tasks from this root node.',
+        categoryId: 'default',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
     edges: [],
   };
 }
