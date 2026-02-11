@@ -11,6 +11,8 @@ interface SettingsPanelProps {
   arrowMode: ArrowMode;
   onViewModeChange: (mode: ViewMode) => void;
   onDisplayModeChange: (mode: DisplayMode) => void;
+  nodeRadius: number;
+  onNodeRadiusChange: (radius: number) => void;
   onColorModeChange: (mode: ColorMode) => void;
   onArrowModeChange: (mode: ArrowMode) => void;
   devDatasetMode?: 'sample' | 'miserables';
@@ -37,6 +39,8 @@ export function SettingsPanel({
   arrowMode,
   onViewModeChange,
   onDisplayModeChange,
+  nodeRadius,
+  onNodeRadiusChange,
   onColorModeChange,
   onArrowModeChange,
   devDatasetMode,
@@ -216,6 +220,20 @@ export function SettingsPanel({
           >
             Full
           </button>
+        </div>
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">Node Size</span>
+        <div className="toggle-group">
+          {[4, 5, 6, 7, 8].map(size => (
+            <button
+              key={size}
+              className={`toggle-btn ${nodeRadius === size ? 'active' : ''}`}
+              onClick={() => onNodeRadiusChange(size)}
+            >
+              {size}
+            </button>
+          ))}
         </div>
       </div>
       <div className="settings-row">

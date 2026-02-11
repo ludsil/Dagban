@@ -119,6 +119,7 @@ export default function DagbanGraph({
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
+  const [nodeRadius, setNodeRadius] = useState(8);
   const [colorMode, setColorMode] = useState<ColorMode>('category');
   const [arrowMode, setArrowMode] = useState<ArrowMode>('end');
   const [showSettings, setShowSettings] = useState(showSettingsProp);
@@ -966,7 +967,7 @@ export default function DagbanGraph({
   }, [cardCreation, data.categories, onCardCreate, closeCardCreation]);
 
   // Node radius
-  const NODE_RADIUS = 8;
+  const NODE_RADIUS = nodeRadius;
 
   // Custom node rendering for 2D - matches text-nodes example exactly
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -1082,7 +1083,7 @@ export default function DagbanGraph({
       // Store dimensions for pointer area
       nodeBckgDimensionsRef.current.set(node.id, bckgDimensions);
     }
-  }, [displayMode, connectionMode.active, connectionMode.sourceNode?.id, dragConnect.active, dragConnect.progress, dragConnect.sourceNode?.id, dragConnect.targetNode?.id]);
+  }, [displayMode, nodeRadius, connectionMode.active, connectionMode.sourceNode?.id, dragConnect.active, dragConnect.progress, dragConnect.sourceNode?.id, dragConnect.targetNode?.id]);
 
   // Custom link rendering for 2D - uniform line with small arrow in middle
   const linkCanvasObject = useCallback((link: GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -1102,12 +1103,12 @@ export default function DagbanGraph({
     // Draw arrow based on arrowMode
     if (arrowMode !== 'none') {
       const angle = Math.atan2(target.y! - source.y!, target.x - source.x);
-      const arrowLength = 4;
+      const arrowLength = Math.max(4, NODE_RADIUS * 0.75);
       const arrowWidth = Math.PI / 6;
 
       let arrowX: number, arrowY: number;
       if (arrowMode === 'end') {
-        const arrowOffset = 8;
+        const arrowOffset = NODE_RADIUS;
         arrowX = target.x - arrowOffset * Math.cos(angle);
         arrowY = target.y! - arrowOffset * Math.sin(angle);
       } else {
@@ -1130,7 +1131,21 @@ export default function DagbanGraph({
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.fill();
     }
-  }, [arrowMode]);
+  }, [arrowMode, nodeRadius]);
+
+  const getArrowRelPos = useCallback((link: GraphLinkData) => {
+    if (arrowMode !== 'end') return 0.5;
+    const source = link.source as GraphNodeData;
+    const target = link.target as GraphNodeData;
+    if (!source || !target) return 1;
+    const dx = (target.x ?? 0) - (source.x ?? 0);
+    const dy = (target.y ?? 0) - (source.y ?? 0);
+    const dz = (target.z ?? 0) - (source.z ?? 0);
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (!dist) return 1;
+    const offset = Math.min(nodeRadius * 0.05, dist);
+    return Math.max(0, Math.min(1, (dist - offset) / dist));
+  }, [arrowMode, nodeRadius]);
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
   const nodeThreeObject = useCallback((node: GraphNodeData) => {
@@ -1349,7 +1364,7 @@ export default function DagbanGraph({
         });
       }
     }
-  }, [graphDataView.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect]);
+  }, [graphDataView.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect, nodeRadius]);
 
   // Common props for both 2D and 3D graphs
   const commonProps = {
@@ -1382,6 +1397,8 @@ export default function DagbanGraph({
         <SettingsPanel
           viewMode={viewMode}
           displayMode={displayMode}
+          nodeRadius={nodeRadius}
+          onNodeRadiusChange={setNodeRadius}
           colorMode={colorMode}
           arrowMode={arrowMode}
           onViewModeChange={setViewMode}
@@ -1432,12 +1449,13 @@ export default function DagbanGraph({
           extraRenderers={[css2DRendererInstance]}
           nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
           nodeThreeObjectExtend={true}
+          nodeRelSize={nodeRadius}
           linkWidth={1}
           linkOpacity={0.6}
           linkColor={() => 'rgba(255, 255, 255, 0.4)'}
-          linkDirectionalArrowLength={arrowMode !== 'none' ? 4 : 0}
+          linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
           linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
-          linkDirectionalArrowRelPos={arrowMode === 'end' ? 1 : 0.5}
+          linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : 0.5}
           nodeOpacity={1}
         />
       ) : (
