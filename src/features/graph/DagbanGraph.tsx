@@ -227,6 +227,8 @@ export default function DagbanGraph({
 
   const [renderTick, setRenderTick] = useState(0);
   const renderRafRef = useRef<number | null>(null);
+  const [fuseAnimationTime, setFuseAnimationTime] = useState(0);
+  const fuseAnimationRef = useRef<number | null>(null);
   const [edgeStartPicker, setEdgeStartPicker] = useState<{
     edgeId: string;
     x: number;
@@ -830,6 +832,31 @@ export default function DagbanGraph({
     applyPendingGraphUpdates();
   }, [applyPendingGraphUpdates, graphReady]);
 
+  const hasActiveFuses = useMemo(() => (data.traversers?.length ?? 0) > 0, [data.traversers]);
+
+  useEffect(() => {
+    if (viewMode !== '2D' || !hasActiveFuses) {
+      if (fuseAnimationRef.current) {
+        cancelAnimationFrame(fuseAnimationRef.current);
+        fuseAnimationRef.current = null;
+      }
+      return;
+    }
+
+    const animate = (time: number) => {
+      setFuseAnimationTime(time);
+      fuseAnimationRef.current = requestAnimationFrame(animate);
+    };
+
+    fuseAnimationRef.current = requestAnimationFrame(animate);
+    return () => {
+      if (fuseAnimationRef.current) {
+        cancelAnimationFrame(fuseAnimationRef.current);
+        fuseAnimationRef.current = null;
+      }
+    };
+  }, [viewMode, hasActiveFuses]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -1160,6 +1187,13 @@ export default function DagbanGraph({
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
   const FUSE_COLOR = 'rgba(220, 78, 35, 0.95)'; // burning coal
+  const FUSE_GRADIENT_STOPS = useMemo(() => ([
+    { stop: 0, color: '#560D07' },   // deep red
+    { stop: 0.45, color: '#D70C00' }, // orange-red
+    { stop: 0.78, color: '#FEDB00' }, // yellow
+    { stop: 1, color: '#560D07' },   // loop
+  ]), []);
+  const fuseGradientPhase = useMemo(() => (fuseAnimationTime * 0.00018) % 1, [fuseAnimationTime]);
   const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)'; // dark gray
   const PENDING_RING_COLOR = 'rgba(148, 163, 184, 0.8)';
   const ROOT_RING_RADIUS = NODE_RADIUS + 10;
@@ -1302,6 +1336,54 @@ export default function DagbanGraph({
     if (theta < 0) theta += Math.PI * 2;
     return clamp(theta / (Math.PI * 2), 0, 1);
   }, [ROOT_START_ANGLE]);
+
+  const getShiftedGradientStops = useCallback((phase: number) => {
+    const epsilon = 0.0001;
+    const stops = FUSE_GRADIENT_STOPS;
+    let startIndex = stops.findIndex(stop => stop.stop >= phase);
+    if (startIndex === -1) startIndex = 0;
+    const rotated = [...stops.slice(startIndex), ...stops.slice(0, startIndex)].map(stop => {
+      let shifted = stop.stop - phase;
+      if (shifted < 0) shifted += 1;
+      return { stop: shifted, color: stop.color };
+    });
+    const output: Array<{ stop: number; color: string }> = [];
+    const first = rotated[0];
+    const last = rotated[rotated.length - 1];
+    if (first.stop > epsilon) {
+      output.push({ stop: 0, color: last.color });
+    }
+    output.push(...rotated);
+    if (last.stop < 1 - epsilon) {
+      output.push({ stop: 1, color: first.color });
+    }
+    return output;
+  }, [FUSE_GRADIENT_STOPS]);
+
+  const getFuseGradient = useCallback((
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ) => {
+    const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+    const shiftedStops = getShiftedGradientStops(fuseGradientPhase);
+    shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+    return gradient;
+  }, [getShiftedGradientStops, fuseGradientPhase]);
+
+  const getFuseRingGradient = useCallback((ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => {
+    const conicFactory = (ctx as CanvasRenderingContext2D & {
+      createConicGradient?: (startAngle: number, x: number, y: number) => CanvasGradient;
+    }).createConicGradient;
+    if (typeof conicFactory !== 'function') {
+      return FUSE_COLOR;
+    }
+    const gradient = conicFactory.call(ctx, -Math.PI / 2 + fuseGradientPhase * Math.PI * 2, centerX, centerY);
+    FUSE_GRADIENT_STOPS.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+    return gradient;
+  }, [FUSE_COLOR, FUSE_GRADIENT_STOPS, fuseGradientPhase]);
 
 
   const bumpRenderTick = useCallback(() => {
@@ -1552,7 +1634,7 @@ export default function DagbanGraph({
         if (rootProgress > 0) {
           ctx.beginPath();
           ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
-          ctx.strokeStyle = FUSE_COLOR;
+          ctx.strokeStyle = getFuseRingGradient(ctx, x, y);
           ctx.lineWidth = Math.max(2 / globalScale, 1);
           ctx.stroke();
         }
@@ -1658,7 +1740,7 @@ export default function DagbanGraph({
         if (rootProgress > 0) {
           ctx.beginPath();
           ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
-          ctx.strokeStyle = FUSE_COLOR;
+          ctx.strokeStyle = getFuseRingGradient(ctx, x, y);
           ctx.lineWidth = Math.max(2 / globalScale, 1);
           ctx.stroke();
         }
@@ -1722,6 +1804,7 @@ export default function DagbanGraph({
     pendingBurn?.targetNodeId,
     previewBurn?.targetNodeId,
     FUSE_COLOR,
+    getFuseRingGradient,
     PENDING_RING_COLOR,
     BURNT_COLOR,
     draggingUserId,
@@ -1774,7 +1857,7 @@ export default function DagbanGraph({
       ctx.beginPath();
       ctx.moveTo(render.startX, render.startY);
       ctx.lineTo(render.x, render.y);
-      ctx.strokeStyle = FUSE_COLOR;
+      ctx.strokeStyle = getFuseGradient(ctx, render.startX, render.startY, render.x, render.y);
       ctx.lineWidth = Math.max(2 / globalScale, 1);
       ctx.stroke();
     }
@@ -1819,7 +1902,7 @@ export default function DagbanGraph({
     cardById,
     traverserByEdgeId,
     userById,
-    FUSE_COLOR,
+    getFuseGradient,
     BURNT_COLOR,
     TRAVERSER_RADIUS,
     draggingUserId,

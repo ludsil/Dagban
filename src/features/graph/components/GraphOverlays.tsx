@@ -1,6 +1,6 @@
 'use client';
 
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent, CSSProperties } from 'react';
 import type { User } from '@/lib/types';
 import type { ConnectionModeState, EdgeContextMenuState, GraphNodeData, HoverTooltipState, ViewMode } from '../types';
 import type { PendingBurnState, TraverserOverlay } from '../hooks/useTraverserSystem';
@@ -90,7 +90,17 @@ export function GraphOverlays({
               title={traverser.user?.name || 'Traverser'}
             >
               <UserAvatar user={traverser.user} size="sm" className="traverser-overlay-avatar" />
-              {traverser.isRoot && <span className="traverser-root-arrow" aria-hidden="true" />}
+              {traverser.isRoot && traverser.tangentAngle !== undefined && (
+                <span
+                  className="traverser-root-arrow"
+                  style={
+                    {
+                      '--root-arrow-angle': `${(traverser.tangentAngle * 180) / Math.PI}deg`,
+                    } as CSSProperties
+                  }
+                  aria-hidden="true"
+                />
+              )}
             </button>
           ))}
         </div>
