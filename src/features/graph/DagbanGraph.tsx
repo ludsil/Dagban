@@ -100,6 +100,8 @@ function generateTraverserId(): string {
   return `traverser-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+const ROOT_TRAVERSER_PREFIX = 'root:';
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -257,6 +259,15 @@ export default function DagbanGraph({
     edgeId: string;
     targetNodeId: string;
   } | null>(null);
+  const [detachedDrag, setDetachedDrag] = useState<{
+    traverserId: string;
+    x: number;
+    y: number;
+    candidateEdgeId: string | null;
+    candidatePosition: number | null;
+    candidateRootNodeId?: string | null;
+    candidateRootPosition?: number | null;
+  } | null>(null);
   const [edgeStartPicker, setEdgeStartPicker] = useState<{
     edgeId: string;
     x: number;
@@ -269,19 +280,34 @@ export default function DagbanGraph({
   const undoStackRef = useRef<UndoAction[]>([]);
 
   // Filter state
+  const BURNT_AGE_MAX = 30;
   const [selectedAssignees, setSelectedAssignees] = useState<Set<string>>(new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [blockerThreshold, setBlockerThreshold] = useState(0);
-  const [burntAgeThreshold, setBurntAgeThreshold] = useState(0);
+  const [burntAgeThreshold, setBurntAgeThreshold] = useState(BURNT_AGE_MAX);
   const [draggingUserId, setDraggingUserId] = useState<string | null>(null);
 
   const cardById = useMemo(() => new Map(data.cards.map(card => [card.id, card])), [data.cards]);
+
+  const isBurntNodeId = useCallback((nodeId: string) => {
+    return Boolean(cardById.get(nodeId)?.burntAt);
+  }, [cardById]);
   const edgeById = useMemo(() => new Map(data.edges.map(edge => [edge.id, edge])), [data.edges]);
   const traverserByEdgeId = useMemo(() => new Map((data.traversers || []).map(traverser => [traverser.edgeId, traverser])), [data.traversers]);
   const traverserById = useMemo(() => new Map((data.traversers || []).map(traverser => [traverser.id, traverser])), [data.traversers]);
   const userById = useMemo(() => new Map((data.users || []).map(user => [user.id, user])), [data.users]);
+  const rootTraverserByNodeId = useMemo(() => {
+    const map = new Map<string, Traverser>();
+    (data.traversers || []).forEach(traverser => {
+      if (!traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) return;
+      const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+      if (!nodeId) return;
+      map.set(nodeId, traverser);
+    });
+    return map;
+  }, [data.traversers]);
   const getAssigneeName = useCallback((assigneeId?: string) => {
     if (!assigneeId) return '';
     return userById.get(assigneeId)?.name || assigneeId;
@@ -482,17 +508,20 @@ export default function DagbanGraph({
       if (blockerCount < blockerThreshold) return false;
     }
 
-    // Hide burnt cards older than threshold
-    if (burntAgeThreshold > 0 && card.burntAt) {
-      const burntAt = Date.parse(card.burntAt);
-      if (!Number.isNaN(burntAt)) {
-        const ageDays = (Date.now() - burntAt) / (1000 * 60 * 60 * 24);
-        if (ageDays > burntAgeThreshold) return false;
+    // Burnt age filter: 0 hides all burnt, max shows all burnt
+    if (card.burntAt) {
+      if (burntAgeThreshold === 0) return false;
+      if (burntAgeThreshold < BURNT_AGE_MAX) {
+        const burntAt = Date.parse(card.burntAt);
+        if (!Number.isNaN(burntAt)) {
+          const ageDays = (Date.now() - burntAt) / (1000 * 60 * 60 * 24);
+          if (ageDays > burntAgeThreshold) return false;
+        }
       }
     }
 
     return true;
-  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts, burntAgeThreshold]);
+  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts, burntAgeThreshold, BURNT_AGE_MAX]);
 
   const getOrCreateLabelEntry = useCallback((nodeId: string) => {
     const cache = labelCacheRef.current;
@@ -917,13 +946,17 @@ export default function DagbanGraph({
 
   // Start upstream connection mode - selected node becomes target, pick source
   const startUpstreamConnection = useCallback((targetNode: GraphNodeData) => {
+    if (isBurntNodeId(targetNode.id)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
     setConnectionMode({
       active: true,
       sourceNode: targetNode, // Store the target node here, we'll swap in completeConnection
       direction: 'upstream',
     });
     showToast(`Click a node to make it upstream of "${targetNode.title}"`, 'info');
-  }, [showToast]);
+  }, [isBurntNodeId, showToast]);
 
   // Cancel connection mode
   const cancelConnectionMode = useCallback(() => {
@@ -958,6 +991,11 @@ export default function DagbanGraph({
       return;
     }
 
+    if (isBurntNodeId(targetId)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
+
     // Check if edge already exists
     const edgeExists = data.edges.some(
       e => e.source === sourceId && e.target === targetId
@@ -974,7 +1012,7 @@ export default function DagbanGraph({
     const targetNode = data.cards.find(c => c.id === targetId);
     showToast(`Connected "${sourceNode?.title}" -> "${targetNode?.title}"`, 'success');
     cancelConnectionMode();
-  }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, showToast, cancelConnectionMode]);
+  }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, isBurntNodeId, showToast, cancelConnectionMode]);
 
   // Open card creation form for new root node
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
@@ -1028,6 +1066,10 @@ export default function DagbanGraph({
 
   // Open card creation form for upstream dependency
   const openUpstreamCreation = useCallback((childNode: GraphNodeData) => {
+    if (isBurntNodeId(childNode.id)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
     const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
     const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
 
@@ -1040,7 +1082,7 @@ export default function DagbanGraph({
       parentNodeId: null,
       childNodeId: childNode.id,
     });
-  }, []);
+  }, [isBurntNodeId, showToast]);
 
   // Close card creation form
   const closeCardCreation = useCallback(() => {
@@ -1052,6 +1094,11 @@ export default function DagbanGraph({
     const titleValue = typeof cardCreation.title === 'string' ? cardCreation.title : '';
     if (!titleValue.trim() || !onCardCreate) return;
     const descriptionValue = typeof cardCreation.description === 'string' ? cardCreation.description : '';
+
+    if (cardCreation.childNodeId && isBurntNodeId(cardCreation.childNodeId)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
 
     const now = new Date().toISOString();
     const newCard: Card = {
@@ -1071,7 +1118,7 @@ export default function DagbanGraph({
     );
 
     closeCardCreation();
-  }, [cardCreation, data.categories, onCardCreate, closeCardCreation]);
+  }, [cardCreation, data.categories, onCardCreate, closeCardCreation, isBurntNodeId, showToast]);
 
   // Node radius
   const NODE_RADIUS = nodeRadius;
@@ -1081,6 +1128,8 @@ export default function DagbanGraph({
   const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)'; // dark gray
   const PENDING_RING_COLOR = 'rgba(148, 163, 184, 0.8)';
   const SELECTION_THRESHOLD = 0.97; // position threshold to trigger burn confirmation
+  const DETACH_DISTANCE = NODE_RADIUS * 1.4;
+  const ROOT_RING_RADIUS = NODE_RADIUS + 10;
 
   const getGraphCoords = useCallback((clientX: number, clientY: number) => {
     const graph = graphRef.current;
@@ -1194,6 +1243,33 @@ export default function DagbanGraph({
     return { x, y, startX, startY, clampedT, offsetT };
   }, [NODE_RADIUS]);
 
+  const ROOT_START_ANGLE = -Math.PI / 2;
+
+  const getRootTraverserPoint = useCallback((
+    node: GraphNodeData,
+    position: number
+  ) => {
+    const cx = node.x ?? 0;
+    const cy = node.y ?? 0;
+    const angle = ROOT_START_ANGLE + clamp(position, 0, 1) * Math.PI * 2;
+    return {
+      x: cx + Math.cos(angle) * ROOT_RING_RADIUS,
+      y: cy + Math.sin(angle) * ROOT_RING_RADIUS,
+      angle,
+      startAngle: ROOT_START_ANGLE,
+      radius: ROOT_RING_RADIUS,
+    };
+  }, [ROOT_RING_RADIUS, ROOT_START_ANGLE]);
+
+  const getRootPositionFromCoords = useCallback((node: GraphNodeData, point: { x: number; y: number }) => {
+    const dx = point.x - (node.x ?? 0);
+    const dy = point.y - (node.y ?? 0);
+    const angle = Math.atan2(dy, dx);
+    let theta = angle - ROOT_START_ANGLE;
+    if (theta < 0) theta += Math.PI * 2;
+    return clamp(theta / (Math.PI * 2), 0, 1);
+  }, [ROOT_START_ANGLE]);
+
   const findClosestEdge = useCallback((
     point: { x: number; y: number },
     allowedEdgeIds?: Set<string>,
@@ -1229,39 +1305,56 @@ export default function DagbanGraph({
     if (rootActiveNodeIds.size === 0) return null;
     const zoom = getZoomScale();
     const rootSnapMultiplier = displayMode === 'balls' ? 2 : 3.2;
-    const maxDistance = (NODE_RADIUS * rootSnapMultiplier) / zoom;
+    const baseRadius = Math.max(ROOT_RING_RADIUS, NODE_RADIUS * rootSnapMultiplier);
+    const maxDistance = baseRadius / zoom;
+    const ringTolerance = (NODE_RADIUS * 0.9) / zoom;
+    const nodeTolerance = (NODE_RADIUS * 1.5) / zoom;
     let closest: { nodeId: string; distance: number } | null = null;
 
     for (const node of graphDataView.nodes as GraphNodeData[]) {
       if (!rootActiveNodeIds.has(node.id)) continue;
       if (node.x === undefined || node.y === undefined) continue;
       const dist = Math.hypot(point.x - node.x, point.y - node.y);
-      if (dist > maxDistance) continue;
-      if (!closest || dist < closest.distance) {
-        closest = { nodeId: node.id, distance: dist };
+      if (dist > maxDistance + ringTolerance) continue;
+      const ringDistance = Math.abs(dist - ROOT_RING_RADIUS);
+      if (ringDistance > ringTolerance && dist > nodeTolerance) continue;
+      const metric = ringDistance <= ringTolerance ? ringDistance : dist;
+      if (!closest || metric < closest.distance) {
+        closest = { nodeId: node.id, distance: metric };
       }
     }
 
     return closest;
-  }, [graphDataView.nodes, rootActiveNodeIds, getZoomScale, nodeRadius, displayMode]);
+  }, [graphDataView.nodes, rootActiveNodeIds, getZoomScale, nodeRadius, displayMode, ROOT_RING_RADIUS]);
 
   const findTraverserHit = useCallback((point: { x: number; y: number }) => {
     const zoom = getZoomScale();
     const hitDistance = TRAVERSER_HIT_RADIUS / zoom;
     for (const traverser of data.traversers || []) {
-      const edgeNodes = getEdgeNodes(traverser.edgeId);
-      if (!edgeNodes) continue;
-      const { sourceNode, targetNode } = edgeNodes;
-      const render = getTraverserRenderPoint(sourceNode, targetNode, traverser.position);
-      const tx = render.x;
-      const ty = render.y;
+      let tx = 0;
+      let ty = 0;
+      if (traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) {
+        const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+        const node = nodeByIdRef.current.get(nodeId);
+        if (!node || node.x === undefined || node.y === undefined) continue;
+        const render = getRootTraverserPoint(node, traverser.position);
+        tx = render.x;
+        ty = render.y;
+      } else {
+        const edgeNodes = getEdgeNodes(traverser.edgeId);
+        if (!edgeNodes) continue;
+        const { sourceNode, targetNode } = edgeNodes;
+        const render = getTraverserRenderPoint(sourceNode, targetNode, traverser.position);
+        tx = render.x;
+        ty = render.y;
+      }
       const dist = Math.hypot(point.x - tx, point.y - ty);
       if (dist <= hitDistance) {
         return { traverserId: traverser.id };
       }
     }
     return null;
-  }, [data.traversers, getEdgeNodes, getZoomScale, TRAVERSER_HIT_RADIUS, getTraverserRenderPoint]);
+  }, [data.traversers, getEdgeNodes, getZoomScale, TRAVERSER_HIT_RADIUS, getTraverserRenderPoint, getRootTraverserPoint]);
 
   const beginPendingBurn = useCallback((
     targetNodeId: string,
@@ -1308,6 +1401,18 @@ export default function DagbanGraph({
     return {
       id: generateTraverserId(),
       edgeId,
+      userId,
+      position: clamp(position, 0, 1),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }, []);
+
+  const createTraverserForRoot = useCallback((nodeId: string, userId: string, position: number) => {
+    const now = new Date().toISOString();
+    return {
+      id: generateTraverserId(),
+      edgeId: `${ROOT_TRAVERSER_PREFIX}${nodeId}`,
       userId,
       position: clamp(position, 0, 1),
       createdAt: now,
@@ -1382,16 +1487,20 @@ export default function DagbanGraph({
     if (!coords) return;
     const rootCandidate = findClosestRootNode(coords);
     if (rootCandidate) {
-      const rect = containerRef.current?.getBoundingClientRect();
-      const anchor = rect
-        ? { x: event.clientX - rect.left, y: event.clientY - rect.top }
-        : { x: event.clientX, y: event.clientY };
-      beginPendingBurn(rootCandidate.nodeId, null, userId, anchor);
-      setPreviewBurn({ edgeId: '', targetNodeId: rootCandidate.nodeId });
-      suppressNextBackgroundClick();
+      if (!onTraverserCreate) return;
+      const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${rootCandidate.nodeId}`;
+      if (traverserByEdgeId.has(rootEdgeId)) {
+        showToast('Root already has active progress', 'info');
+        setDraggingUserId(null);
+        return;
+      }
+      const node = nodeByIdRef.current.get(rootCandidate.nodeId);
+      const position = node ? getRootPositionFromCoords(node, coords) : 0;
+      const traverser = createTraverserForRoot(rootCandidate.nodeId, userId, position);
+      onTraverserCreate(traverser);
       setEdgeStartPicker(null);
       setDraggingUserId(null);
-      showToast('Confirm task completion', 'info');
+      showToast('Root progress started', 'success');
       return;
     }
 
@@ -1435,7 +1544,9 @@ export default function DagbanGraph({
     findClosestEdge,
     traverserByEdgeId,
     createTraverserForEdge,
+    createTraverserForRoot,
     beginPendingBurn,
+    getRootPositionFromCoords,
     edgeById,
     showToast,
     SELECTION_THRESHOLD,
@@ -1489,9 +1600,12 @@ export default function DagbanGraph({
     if (previewBurn) {
       setPreviewBurn(null);
     }
+    if (detachedDrag) {
+      setDetachedDrag(null);
+    }
     setDraggingTraverserId(hit.traverserId);
     draggingTraverserRef.current = hit.traverserId;
-  }, [viewMode, getGraphCoords, findTraverserHit, pendingBurn, cancelPendingBurn, previewBurn]);
+  }, [viewMode, getGraphCoords, findTraverserHit, pendingBurn, cancelPendingBurn, previewBurn, detachedDrag]);
 
   const handleTraverserOverlayPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, traverserId: string) => {
     if (viewMode !== '2D') return;
@@ -1504,10 +1618,13 @@ export default function DagbanGraph({
     if (previewBurn) {
       setPreviewBurn(null);
     }
+    if (detachedDrag) {
+      setDetachedDrag(null);
+    }
     setDraggingTraverserId(traverserId);
     draggingTraverserRef.current = traverserId;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [viewMode, pendingBurn, cancelPendingBurn, previewBurn]);
+  }, [viewMode, pendingBurn, cancelPendingBurn, previewBurn, detachedDrag]);
 
   useEffect(() => {
     if (!draggingTraverserId) return;
@@ -1519,6 +1636,129 @@ export default function DagbanGraph({
       if (!traverser) return;
       const coords = getGraphCoords(event.clientX, event.clientY);
       if (!coords) return;
+      const isRootTraverser = traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX);
+
+      if (isRootTraverser) {
+        const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+        const node = nodeByIdRef.current.get(nodeId);
+        if (!node || node.x === undefined || node.y === undefined) return;
+        const dx = coords.x - node.x;
+        const dy = coords.y - node.y;
+        const dist = Math.hypot(dx, dy);
+        const detachDelta = Math.abs(dist - ROOT_RING_RADIUS);
+
+        if ((detachedDrag && detachedDrag.traverserId === traverser.id) || detachDelta > DETACH_DISTANCE) {
+          if (pendingBurn) {
+            setPendingBurn(null);
+          }
+          if (previewBurn) {
+            setPreviewBurn(null);
+          }
+          const allowedEdgeIds = new Set(eligibleTraverserEdgeIds);
+          const candidate = findClosestEdge(coords, allowedEdgeIds, 18);
+          const rootCandidate = findClosestRootNode(coords);
+          let rootCandidateId: string | null = null;
+          let rootCandidatePosition: number | null = null;
+          if (rootCandidate) {
+            const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${rootCandidate.nodeId}`;
+            const existingRoot = traverserByEdgeId.get(rootEdgeId);
+            if (!existingRoot || existingRoot.id === traverser.id) {
+              const rootNode = nodeByIdRef.current.get(rootCandidate.nodeId);
+              if (rootNode) {
+                rootCandidateId = rootCandidate.nodeId;
+                rootCandidatePosition = getRootPositionFromCoords(rootNode, coords);
+              }
+            }
+          }
+          if (rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance))) {
+            const rootNode = nodeByIdRef.current.get(rootCandidateId);
+            if (rootNode) {
+              const render = getRootTraverserPoint(rootNode, rootCandidatePosition ?? 0);
+              setDetachedDrag({
+                traverserId: traverser.id,
+                x: render.x,
+                y: render.y,
+                candidateEdgeId: null,
+                candidatePosition: null,
+                candidateRootNodeId: rootCandidateId,
+                candidateRootPosition: rootCandidatePosition ?? 0,
+              });
+            } else {
+              setDetachedDrag({
+                traverserId: traverser.id,
+                x: coords.x,
+                y: coords.y,
+                candidateEdgeId: null,
+                candidatePosition: null,
+                candidateRootNodeId: null,
+                candidateRootPosition: null,
+              });
+            }
+          } else if (candidate) {
+            const candidateNodes = getEdgeNodes(candidate.edgeId);
+            if (candidateNodes) {
+              const render = getTraverserRenderPoint(candidateNodes.sourceNode, candidateNodes.targetNode, candidate.position);
+              setDetachedDrag({
+                traverserId: traverser.id,
+                x: render.x,
+                y: render.y,
+                candidateEdgeId: candidate.edgeId,
+                candidatePosition: candidate.position,
+                candidateRootNodeId: null,
+                candidateRootPosition: null,
+              });
+            } else {
+              setDetachedDrag({
+                traverserId: traverser.id,
+                x: coords.x,
+                y: coords.y,
+                candidateEdgeId: null,
+                candidatePosition: null,
+                candidateRootNodeId: null,
+                candidateRootPosition: null,
+              });
+            }
+          } else {
+            setDetachedDrag({
+              traverserId: traverser.id,
+              x: coords.x,
+              y: coords.y,
+              candidateEdgeId: null,
+              candidatePosition: null,
+              candidateRootNodeId: null,
+              candidateRootPosition: null,
+            });
+          }
+          return;
+        }
+
+        if (detachedDrag && detachedDrag.traverserId === traverser.id) {
+          setDetachedDrag(null);
+        }
+
+        let position = getRootPositionFromCoords(node, coords);
+        const currentPosition = traverser.position ?? 0;
+        if (Math.abs(position - currentPosition) > 0.5) {
+          position = currentPosition;
+        }
+        updateTraverserPosition(traverser, position);
+        lastDragStateRef.current = { t: position, targetNodeId: node.id };
+
+        if (position >= SELECTION_THRESHOLD) {
+          setPreviewBurn(prev => {
+            if (prev && prev.edgeId === traverser.edgeId && prev.targetNodeId === node.id) {
+              return prev;
+            }
+            return { edgeId: traverser.edgeId, targetNodeId: node.id };
+          });
+        } else if (previewBurn?.edgeId === traverser.edgeId) {
+          setPreviewBurn(null);
+        }
+        if (pendingBurn?.traverserId === traverser.id && position < SELECTION_THRESHOLD) {
+          setPendingBurn(null);
+        }
+        return;
+      }
       const edgeNodes = getEdgeNodes(traverser.edgeId);
       if (!edgeNodes) return;
       const { sourceNode, targetNode } = edgeNodes;
@@ -1530,6 +1770,98 @@ export default function DagbanGraph({
         targetNode.x!,
         targetNode.y!
       );
+
+      const allowedEdgeIds = new Set(eligibleTraverserEdgeIds);
+      allowedEdgeIds.add(traverser.edgeId);
+
+      if ((detachedDrag && detachedDrag.traverserId === traverser.id) || projection.distance > DETACH_DISTANCE) {
+        if (pendingBurn) {
+          setPendingBurn(null);
+        }
+        if (previewBurn) {
+          setPreviewBurn(null);
+        }
+        const candidate = findClosestEdge(coords, allowedEdgeIds, 18);
+        const rootCandidate = findClosestRootNode(coords);
+        let rootCandidateId: string | null = null;
+        let rootCandidatePosition: number | null = null;
+        if (rootCandidate) {
+          const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${rootCandidate.nodeId}`;
+          const existingRoot = traverserByEdgeId.get(rootEdgeId);
+          if (!existingRoot || existingRoot.id === traverser.id) {
+            const rootNode = nodeByIdRef.current.get(rootCandidate.nodeId);
+            if (rootNode) {
+              rootCandidateId = rootCandidate.nodeId;
+              rootCandidatePosition = getRootPositionFromCoords(rootNode, coords);
+            }
+          }
+        }
+
+        if (rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance))) {
+          const rootNode = nodeByIdRef.current.get(rootCandidateId);
+          if (rootNode) {
+            const render = getRootTraverserPoint(rootNode, rootCandidatePosition ?? 0);
+            setDetachedDrag({
+              traverserId: traverser.id,
+              x: render.x,
+              y: render.y,
+              candidateEdgeId: null,
+              candidatePosition: null,
+              candidateRootNodeId: rootCandidateId,
+              candidateRootPosition: rootCandidatePosition ?? 0,
+            });
+          } else {
+            setDetachedDrag({
+              traverserId: traverser.id,
+              x: coords.x,
+              y: coords.y,
+              candidateEdgeId: null,
+              candidatePosition: null,
+              candidateRootNodeId: null,
+              candidateRootPosition: null,
+            });
+          }
+        } else if (candidate) {
+          const candidateNodes = getEdgeNodes(candidate.edgeId);
+          if (candidateNodes) {
+            const render = getTraverserRenderPoint(candidateNodes.sourceNode, candidateNodes.targetNode, candidate.position);
+            setDetachedDrag({
+              traverserId: traverser.id,
+              x: render.x,
+              y: render.y,
+              candidateEdgeId: candidate.edgeId,
+              candidatePosition: candidate.position,
+              candidateRootNodeId: null,
+              candidateRootPosition: null,
+            });
+          } else {
+            setDetachedDrag({
+              traverserId: traverser.id,
+              x: coords.x,
+              y: coords.y,
+              candidateEdgeId: null,
+              candidatePosition: null,
+              candidateRootNodeId: null,
+              candidateRootPosition: null,
+            });
+          }
+        } else {
+          setDetachedDrag({
+            traverserId: traverser.id,
+            x: coords.x,
+            y: coords.y,
+            candidateEdgeId: null,
+            candidatePosition: null,
+            candidateRootNodeId: null,
+            candidateRootPosition: null,
+          });
+        }
+        return;
+      }
+
+      if (detachedDrag && detachedDrag.traverserId === traverser.id) {
+        setDetachedDrag(null);
+      }
 
       updateTraverserPosition(traverser, projection.t);
       lastDragStateRef.current = { t: projection.t, targetNodeId: targetNode.id };
@@ -1553,7 +1885,37 @@ export default function DagbanGraph({
       if (activeId) {
         const traverser = traverserById.get(activeId);
         const lastDrag = lastDragStateRef.current;
-        if (traverser && lastDrag && lastDrag.t >= SELECTION_THRESHOLD) {
+        if (traverser && detachedDrag && detachedDrag.traverserId === activeId) {
+          if (detachedDrag.candidateRootNodeId) {
+            const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${detachedDrag.candidateRootNodeId}`;
+            const existing = traverserByEdgeId.get(rootEdgeId);
+            if (existing && existing.id !== traverser.id) {
+              showToast('Root already has active progress', 'warning');
+            } else if (onTraverserUpdate) {
+              onTraverserUpdate(traverser.id, {
+                edgeId: rootEdgeId,
+                position: clamp(detachedDrag.candidateRootPosition ?? 0, 0, 1),
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          } else if (detachedDrag.candidateEdgeId) {
+            const existing = traverserByEdgeId.get(detachedDrag.candidateEdgeId);
+            if (existing && existing.id !== traverser.id) {
+              showToast('That edge already has a traverser', 'warning');
+            } else if (onTraverserUpdate) {
+              onTraverserUpdate(traverser.id, {
+                edgeId: detachedDrag.candidateEdgeId,
+                position: clamp(detachedDrag.candidatePosition ?? 0, 0, 1),
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          } else if (onTraverserDelete) {
+            onTraverserDelete(traverser.id);
+            showToast('Traverser removed', 'info');
+          }
+          setDetachedDrag(null);
+          setPreviewBurn(null);
+        } else if (traverser && lastDrag && lastDrag.t >= SELECTION_THRESHOLD) {
           beginPendingBurn(lastDrag.targetNodeId, traverser, traverser.userId);
           setPreviewBurn({ edgeId: traverser.edgeId, targetNodeId: lastDrag.targetNodeId });
           suppressNextBackgroundClick();
@@ -1584,6 +1946,19 @@ export default function DagbanGraph({
     suppressNextBackgroundClick,
     pendingBurn?.traverserId,
     SELECTION_THRESHOLD,
+    DETACH_DISTANCE,
+    ROOT_RING_RADIUS,
+    detachedDrag,
+    findClosestEdge,
+    findClosestRootNode,
+    eligibleTraverserEdgeIds,
+    getTraverserRenderPoint,
+    getRootTraverserPoint,
+    getRootPositionFromCoords,
+    onTraverserUpdate,
+    onTraverserDelete,
+    traverserByEdgeId,
+    showToast,
   ]);
 
   // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
@@ -1672,19 +2047,43 @@ export default function DagbanGraph({
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
-    const isRootCandidate = Boolean(draggingUserId) && rootActiveNodeIds.has(node.id);
+    const isRootCandidate =
+      (Boolean(draggingUserId) && rootActiveNodeIds.has(node.id)) ||
+      (detachedDrag?.candidateRootNodeId === node.id);
     const isPendingBurn = pendingBurn?.targetNodeId === node.id;
     const isPreviewBurnt = previewBurn?.targetNodeId === node.id || isPendingBurn;
     const drawColor = isPreviewBurnt ? BURNT_COLOR : node.color;
+    const rootTraverser = rootTraverserByNodeId.get(node.id);
+    const rootProgress = rootTraverser ? clamp(rootTraverser.position, 0, 1) : null;
 
     // Check if this is the source node in connection mode
     const isConnectionSource = connectionMode.active && connectionMode.sourceNode?.id === node.id;
 
     // Check if this node is part of a drag-to-connect animation
-    const isDragConnectTarget = dragConnect.active && dragConnect.targetNode?.id === node.id;
+    const isDragConnectTarget =
+      dragConnect.active &&
+      dragConnect.targetNode?.id === node.id &&
+      !isBurntNodeId(node.id);
     const isDragConnectSource = dragConnect.active && dragConnect.sourceNode?.id === node.id;
 
     if (displayMode === 'balls') {
+      if (rootTraverser && rootProgress !== null) {
+        const startAngle = -Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = Math.max(1.2 / globalScale, 0.6);
+        ctx.stroke();
+
+        if (rootProgress > 0) {
+          ctx.beginPath();
+          ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
+          ctx.strokeStyle = FUSE_COLOR;
+          ctx.lineWidth = Math.max(2 / globalScale, 1);
+          ctx.stroke();
+        }
+      }
+
       // Draw glow effect for connection source
       if (isConnectionSource) {
         ctx.beginPath();
@@ -1751,7 +2150,7 @@ export default function DagbanGraph({
 
       if (isRootCandidate) {
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
         ctx.lineWidth = 2 / globalScale;
         ctx.stroke();
@@ -1774,6 +2173,23 @@ export default function DagbanGraph({
       const bckgDimensions: [number, number] = [totalWidth + avatarConfig.padding * 2, fontSize * 1.2];
 
       // Draw ball behind the label (matches 3D sphere + label)
+      if (rootTraverser && rootProgress !== null) {
+        const startAngle = -Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = Math.max(1.2 / globalScale, 0.6);
+        ctx.stroke();
+
+        if (rootProgress > 0) {
+          ctx.beginPath();
+          ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
+          ctx.strokeStyle = FUSE_COLOR;
+          ctx.lineWidth = Math.max(2 / globalScale, 1);
+          ctx.stroke();
+        }
+      }
+
       ctx.beginPath();
       ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
       ctx.fillStyle = drawColor;
@@ -1809,7 +2225,7 @@ export default function DagbanGraph({
 
       if (isRootCandidate) {
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
         ctx.lineWidth = 2 / globalScale;
         ctx.stroke();
@@ -1828,6 +2244,7 @@ export default function DagbanGraph({
     dragConnect.sourceNode?.id,
     dragConnect.targetNode?.id,
     getAssigneeName,
+    isBurntNodeId,
     pendingBurn?.targetNodeId,
     previewBurn?.targetNodeId,
     FUSE_COLOR,
@@ -1835,6 +2252,9 @@ export default function DagbanGraph({
     BURNT_COLOR,
     draggingUserId,
     rootActiveNodeIds,
+    rootTraverserByNodeId,
+    ROOT_RING_RADIUS,
+    detachedDrag?.candidateRootNodeId,
   ]);
 
   // Custom link rendering for 2D - supports traversers ("fuses") and burnt edges
@@ -1849,6 +2269,7 @@ export default function DagbanGraph({
     const isBurnt = Boolean(targetCard?.burntAt) || isPreviewBurnt;
     const baseStroke = isBurnt ? BURNT_COLOR : 'rgba(255, 255, 255, 0.3)';
     const isEligible = Boolean(draggingUserId) && eligibleTraverserEdgeIds.has(link.edge.id);
+    const isCandidateEdge = detachedDrag?.candidateEdgeId === link.edge.id;
 
     // Draw base line from source to target
     ctx.beginPath();
@@ -1858,7 +2279,7 @@ export default function DagbanGraph({
     ctx.lineWidth = (isBurnt ? 1.6 : 1) / globalScale;
     ctx.stroke();
 
-    if (isEligible && !isBurnt) {
+    if ((isEligible || isCandidateEdge) && !isBurnt) {
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
       ctx.lineTo(target.x, target.y);
@@ -1929,6 +2350,7 @@ export default function DagbanGraph({
     pendingBurn?.targetNodeId,
     eligibleTraverserEdgeIds,
     getTraverserRenderPoint,
+    detachedDrag?.candidateEdgeId,
   ]);
 
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
@@ -2142,6 +2564,11 @@ export default function DagbanGraph({
       return;
     }
 
+    if (isBurntNodeId(targetNode.id)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
+
     // Check if edge already exists
     const edgeExists = data.edges.some(
       e => e.source === sourceNode.id && e.target === targetNode.id
@@ -2154,7 +2581,7 @@ export default function DagbanGraph({
     // Create the edge (source -> target, so target becomes downstream)
     onEdgeCreate(sourceNode.id, targetNode.id);
     showToast(`Connected "${sourceNode.title}" -> "${targetNode.title}"`, 'success');
-  }, [onEdgeCreate, data.edges, showToast]);
+  }, [onEdgeCreate, data.edges, isBurntNodeId, showToast]);
 
   // Handle node drag - detect when dragged node touches another node
   const handleNodeDrag = useCallback((node: GraphNodeData) => {
@@ -2167,6 +2594,7 @@ export default function DagbanGraph({
     for (const otherNode of graphDataView.nodes as GraphNodeData[]) {
       if (otherNode.id === node.id) continue;
       if (!otherNode.x || !otherNode.y) continue;
+      if (isBurntNodeId(otherNode.id)) continue;
 
       const dx = node.x - otherNode.x;
       const dy = node.y - otherNode.y;
@@ -2234,7 +2662,7 @@ export default function DagbanGraph({
         });
       }
     }
-  }, [graphDataView.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect, nodeRadius]);
+  }, [graphDataView.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect, nodeRadius, isBurntNodeId]);
 
   // Common props for both 2D and 3D graphs
   const commonProps = {
@@ -2269,12 +2697,29 @@ export default function DagbanGraph({
     if (viewMode !== '2D') return [];
     return (data.traversers || [])
       .map(traverser => {
-        const edgeNodes = getEdgeNodes(traverser.edgeId);
-        if (!edgeNodes) return null;
-        const { sourceNode, targetNode } = edgeNodes;
-        const pos = clamp(traverser.position, 0, 1);
-        const render = getTraverserRenderPoint(sourceNode, targetNode, pos);
-        const screen = getScreenCoords(render.x, render.y);
+        let renderPoint: { x: number; y: number } | null = null;
+        if (traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) {
+          const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+          const node = nodeByIdRef.current.get(nodeId);
+          if (!node || node.x === undefined || node.y === undefined) return null;
+          const pos = clamp(traverser.position, 0, 1);
+          const render = getRootTraverserPoint(node, pos);
+          renderPoint = { x: render.x, y: render.y };
+        } else {
+          const edgeNodes = getEdgeNodes(traverser.edgeId);
+          if (!edgeNodes) return null;
+          const { sourceNode, targetNode } = edgeNodes;
+          const pos = clamp(traverser.position, 0, 1);
+          const render = getTraverserRenderPoint(sourceNode, targetNode, pos);
+          renderPoint = { x: render.x, y: render.y };
+        }
+
+        const override =
+          detachedDrag && detachedDrag.traverserId === traverser.id
+            ? { x: detachedDrag.x, y: detachedDrag.y }
+            : renderPoint;
+        if (!override) return null;
+        const screen = getScreenCoords(override.x, override.y);
         if (!screen) return null;
         const user = userById.get(traverser.userId) || null;
         return {
@@ -2282,10 +2727,21 @@ export default function DagbanGraph({
           x: screen.x,
           y: screen.y,
           user,
+          isRoot: traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX),
         };
       })
-      .filter(Boolean) as Array<{ id: string; x: number; y: number; user: User | null }>;
-  }, [data.traversers, viewMode, renderTick, getEdgeNodes, userById, getScreenCoords, getTraverserRenderPoint]);
+      .filter(Boolean) as Array<{ id: string; x: number; y: number; user: User | null; isRoot: boolean }>;
+  }, [
+    data.traversers,
+    viewMode,
+    renderTick,
+    getEdgeNodes,
+    userById,
+    getScreenCoords,
+    getTraverserRenderPoint,
+    getRootTraverserPoint,
+    detachedDrag,
+  ]);
 
   return (
     <div
@@ -2342,6 +2798,7 @@ export default function DagbanGraph({
             onBlockerThresholdChange={setBlockerThreshold}
             burntAgeThreshold={burntAgeThreshold}
             onBurntAgeThresholdChange={setBurntAgeThreshold}
+            burntAgeMax={BURNT_AGE_MAX}
           />
         )}
       </div>
@@ -2393,12 +2850,13 @@ export default function DagbanGraph({
             <button
               key={traverser.id}
               type="button"
-              className={`traverser-overlay ${draggingTraverserId === traverser.id ? 'dragging' : ''}`}
+              className={`traverser-overlay ${draggingTraverserId === traverser.id ? 'dragging' : ''} ${traverser.isRoot ? 'root' : ''}`}
               style={{ left: `${traverser.x}px`, top: `${traverser.y}px` }}
               onPointerDown={(event) => handleTraverserOverlayPointerDown(event, traverser.id)}
               title={traverser.user?.name || 'Traverser'}
             >
               <UserAvatar user={traverser.user} size="sm" className="traverser-overlay-avatar" />
+              {traverser.isRoot && <span className="traverser-root-arrow" aria-hidden="true" />}
             </button>
           ))}
         </div>

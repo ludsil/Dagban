@@ -34,6 +34,7 @@ interface SettingsPanelProps {
   onBlockerThresholdChange?: (threshold: number) => void;
   burntAgeThreshold?: number;
   onBurntAgeThresholdChange?: (threshold: number) => void;
+  burntAgeMax?: number;
 }
 
 export function SettingsPanel({
@@ -65,6 +66,7 @@ export function SettingsPanel({
   onBlockerThresholdChange,
   burntAgeThreshold = 0,
   onBurntAgeThresholdChange,
+  burntAgeMax = 30,
 }: SettingsPanelProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -397,7 +399,11 @@ export function SettingsPanel({
             <span className="filter-section-title">Burnt Age</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span className="filter-section-value">
-                {burntAgeThreshold === 0 ? 'Off' : `>${burntAgeThreshold}d`}
+                {burntAgeThreshold === 0
+                  ? 'Hide'
+                  : burntAgeThreshold >= burntAgeMax
+                    ? 'All'
+                    : `${burntAgeThreshold}d`}
               </span>
               <svg className={`filter-section-toggle ${collapsedSections.has('burnt') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M6 9l6 6 6-6" />
@@ -410,18 +416,20 @@ export function SettingsPanel({
                 type="range"
                 className="filter-slider"
                 min={0}
-                max={30}
+                max={burntAgeMax}
                 value={burntAgeThreshold}
                 onChange={(e) => onBurntAgeThresholdChange(parseInt(e.target.value))}
               />
               <div className="filter-slider-labels">
-                <span>Off</span>
-                <span>30d</span>
+                <span>Hide</span>
+                <span>All</span>
               </div>
               <div className="filter-slider-hint">
                 {burntAgeThreshold === 0
-                  ? 'Show all burnt nodes'
-                  : `Hide burnt nodes older than ${burntAgeThreshold} days`}
+                  ? 'Hide all burnt nodes'
+                  : burntAgeThreshold >= burntAgeMax
+                    ? 'Show all burnt nodes'
+                    : `Show burnt nodes from last ${burntAgeThreshold} days`}
               </div>
             </div>
           </div>

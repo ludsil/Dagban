@@ -228,6 +228,10 @@ html, body {
   cursor: grab;
 }
 
+.traverser-overlay.root {
+  position: absolute;
+}
+
 .traverser-overlay.dragging {
   cursor: grabbing;
 }
@@ -241,6 +245,27 @@ html, body {
 
 .traverser-overlay-avatar [data-slot="avatar-fallback"] {
   font-size: 8px;
+}
+
+.traverser-root-arrow {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+
+.traverser-root-arrow::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid rgba(255, 255, 255, 0.9);
+  border-right: 2px solid rgba(255, 255, 255, 0.9);
+  transform: rotate(45deg);
 }
 
 .burn-confirm {

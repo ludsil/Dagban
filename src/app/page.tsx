@@ -19,8 +19,12 @@ function GraphHost({
   onDatasetModeChange: (mode: DatasetMode) => void;
 }) {
   const miserablesGraph = useMemo(() => convertMiserablesToDagban(miserablesData), []);
-  const initialGraph = datasetMode === 'miserables' ? miserablesGraph : sampleGraph;
-  const projectId = datasetMode === 'miserables' ? 'miserables-temp' : 'default';
+  const initialGraph = datasetMode === 'miserables'
+    ? miserablesGraph
+    : sampleGraph;
+  const projectId = datasetMode === 'miserables'
+    ? 'miserables-temp'
+    : 'default';
 
   const [graph, setGraph] = usePersistedGraph(initialGraph, projectId);
 

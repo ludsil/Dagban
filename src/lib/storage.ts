@@ -4,6 +4,7 @@ import { DagbanGraph, placeholderUsers } from './types';
 
 const STORAGE_VERSION = 1;
 const DEFAULT_PROJECT_ID = 'default';
+const ROOT_TRAVERSER_PREFIX = 'root:';
 
 interface StorageEnvelope {
   version: number;
@@ -50,9 +51,18 @@ function normalizeGraph(graph: DagbanGraph): DagbanGraph {
   }
 
   const edgeIds = new Set(graph.edges.map(edge => edge.id));
+  const cardIds = new Set(graph.cards.map(card => card.id));
   const userIds = new Set(users.map(user => user.id));
   const normalizedTraversers = traversers
-    .filter(traverser => edgeIds.has(traverser.edgeId) && userIds.has(traverser.userId))
+    .filter(traverser => {
+      if (!userIds.has(traverser.userId)) return false;
+      if (edgeIds.has(traverser.edgeId)) return true;
+      if (traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) {
+        const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+        return Boolean(nodeId && cardIds.has(nodeId));
+      }
+      return false;
+    })
     .map(traverser => ({
       ...traverser,
       position: typeof traverser.position === 'number'
