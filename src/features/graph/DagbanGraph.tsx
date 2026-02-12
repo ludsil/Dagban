@@ -247,13 +247,23 @@ export default function DagbanGraph({
   const draggingTraverserRef = useRef<string | null>(null);
   const [renderTick, setRenderTick] = useState(0);
   const renderRafRef = useRef<number | null>(null);
-  const [pendingSelection, setPendingSelection] = useState<{
+  const [pendingBurn, setPendingBurn] = useState<{
     traverserId: string | null;
-    edgeId: string | null;
     targetNodeId: string;
     initiatorUserId: string | null;
-    selectedEdgeIds: Set<string>;
+    anchor?: { x: number; y: number };
   } | null>(null);
+  const [previewBurn, setPreviewBurn] = useState<{
+    edgeId: string;
+    targetNodeId: string;
+  } | null>(null);
+  const [edgeStartPicker, setEdgeStartPicker] = useState<{
+    edgeId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const lastDragStateRef = useRef<{ t: number; targetNodeId: string } | null>(null);
+  const suppressBackgroundClickRef = useRef(false);
 
   // Undo stack for local undo functionality
   const undoStackRef = useRef<UndoAction[]>([]);
@@ -311,6 +321,9 @@ export default function DagbanGraph({
 
   const handleUserDragStart = useCallback((userId: string) => {
     setDraggingUserId(userId);
+    setEdgeStartPicker(null);
+    setPendingBurn(null);
+    setPreviewBurn(null);
   }, []);
 
   const handleUserDragEnd = useCallback(() => {
@@ -793,7 +806,7 @@ export default function DagbanGraph({
     if (graphRef.current && typeof graphRef.current.refresh === 'function') {
       graphRef.current.refresh();
     }
-  }, [draggingUserId, pendingSelection?.edgeId, pendingSelection?.targetNodeId]);
+  }, [draggingUserId, pendingBurn?.targetNodeId]);
 
   // Resize handling
   useEffect(() => {
@@ -1066,7 +1079,8 @@ export default function DagbanGraph({
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
   const FUSE_COLOR = 'rgba(220, 78, 35, 0.95)'; // burning coal
   const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)'; // dark gray
-  const SELECTION_THRESHOLD = 0.985;
+  const PENDING_RING_COLOR = 'rgba(148, 163, 184, 0.8)';
+  const SELECTION_THRESHOLD = 0.97; // position threshold to trigger burn confirmation
 
   const getGraphCoords = useCallback((clientX: number, clientY: number) => {
     const graph = graphRef.current;
@@ -1144,6 +1158,42 @@ export default function DagbanGraph({
     return { sourceNode, targetNode };
   }, []);
 
+  const getTraverserRenderPoint = useCallback((
+    sourceNode: GraphNodeData,
+    targetNode: GraphNodeData,
+    position: number
+  ) => {
+    const sx = sourceNode.x ?? 0;
+    const sy = sourceNode.y ?? 0;
+    const tx = targetNode.x ?? 0;
+    const ty = targetNode.y ?? 0;
+    const dx = tx - sx;
+    const dy = ty - sy;
+    const dist = Math.hypot(dx, dy);
+    if (!dist) {
+      return {
+        x: sx,
+        y: sy,
+        startX: sx,
+        startY: sy,
+        clampedT: position,
+        offsetT: 0,
+      };
+    }
+
+    const ux = dx / dist;
+    const uy = dy / dist;
+    const safeOffset = Math.min(NODE_RADIUS, dist * 0.45);
+    const offsetT = safeOffset / dist;
+    const clampedT = clamp(position, offsetT, 1 - offsetT);
+    const startX = sx + ux * safeOffset;
+    const startY = sy + uy * safeOffset;
+    const x = sx + dx * clampedT;
+    const y = sy + dy * clampedT;
+
+    return { x, y, startX, startY, clampedT, offsetT };
+  }, [NODE_RADIUS]);
+
   const findClosestEdge = useCallback((
     point: { x: number; y: number },
     allowedEdgeIds?: Set<string>,
@@ -1178,7 +1228,8 @@ export default function DagbanGraph({
   const findClosestRootNode = useCallback((point: { x: number; y: number }) => {
     if (rootActiveNodeIds.size === 0) return null;
     const zoom = getZoomScale();
-    const maxDistance = (NODE_RADIUS * 2) / zoom;
+    const rootSnapMultiplier = displayMode === 'balls' ? 2 : 3.2;
+    const maxDistance = (NODE_RADIUS * rootSnapMultiplier) / zoom;
     let closest: { nodeId: string; distance: number } | null = null;
 
     for (const node of graphDataView.nodes as GraphNodeData[]) {
@@ -1192,7 +1243,7 @@ export default function DagbanGraph({
     }
 
     return closest;
-  }, [graphDataView.nodes, rootActiveNodeIds, getZoomScale, nodeRadius]);
+  }, [graphDataView.nodes, rootActiveNodeIds, getZoomScale, nodeRadius, displayMode]);
 
   const findTraverserHit = useCallback((point: { x: number; y: number }) => {
     const zoom = getZoomScale();
@@ -1201,60 +1252,39 @@ export default function DagbanGraph({
       const edgeNodes = getEdgeNodes(traverser.edgeId);
       if (!edgeNodes) continue;
       const { sourceNode, targetNode } = edgeNodes;
-      const tx = sourceNode.x! + (targetNode.x! - sourceNode.x!) * traverser.position;
-      const ty = sourceNode.y! + (targetNode.y! - sourceNode.y!) * traverser.position;
+      const render = getTraverserRenderPoint(sourceNode, targetNode, traverser.position);
+      const tx = render.x;
+      const ty = render.y;
       const dist = Math.hypot(point.x - tx, point.y - ty);
       if (dist <= hitDistance) {
         return { traverserId: traverser.id };
       }
     }
     return null;
-  }, [data.traversers, getEdgeNodes, getZoomScale, TRAVERSER_HIT_RADIUS]);
+  }, [data.traversers, getEdgeNodes, getZoomScale, TRAVERSER_HIT_RADIUS, getTraverserRenderPoint]);
 
-  const getPreselectedEdges = useCallback((targetNodeId: string) => {
-    const preselected = new Set<string>();
-    data.edges.forEach(edge => {
-      if (edge.source !== targetNodeId) return;
-      if (traverserByEdgeId.has(edge.id)) return;
-      const targetCard = cardById.get(edge.target);
-      if (targetCard?.assignee) {
-        preselected.add(edge.id);
+  const beginPendingBurn = useCallback((
+    targetNodeId: string,
+    traverser: Traverser | null,
+    initiatorUserId: string | null,
+    anchor?: { x: number; y: number }
+  ) => {
+    setPendingBurn(prev => {
+      if (prev && prev.traverserId === (traverser?.id || null) && prev.targetNodeId === targetNodeId) {
+        return prev;
       }
-    });
-    return preselected;
-  }, [data.edges, traverserByEdgeId, cardById]);
-
-  const beginPendingSelection = useCallback((traverser: Traverser, targetNodeId: string) => {
-    setPendingSelection(prev => {
-      if (prev && prev.traverserId === traverser.id) return prev;
       return {
-        traverserId: traverser.id,
-        edgeId: traverser.edgeId,
-        targetNodeId,
-        initiatorUserId: traverser.userId,
-        selectedEdgeIds: getPreselectedEdges(targetNodeId),
-      };
-    });
-  }, [getPreselectedEdges]);
-
-  const beginRootSelection = useCallback((targetNodeId: string, initiatorUserId: string) => {
-    setPendingSelection(prev => {
-      if (prev) return prev;
-      return {
-        traverserId: null,
-        edgeId: null,
+        traverserId: traverser?.id || null,
         targetNodeId,
         initiatorUserId,
-        selectedEdgeIds: getPreselectedEdges(targetNodeId),
+        anchor,
       };
     });
-  }, [getPreselectedEdges]);
+  }, []);
 
-  const clearPendingSelection = useCallback((traverserId: string) => {
-    setPendingSelection(prev => {
-      if (!prev || prev.traverserId !== traverserId) return prev;
-      return null;
-    });
+  const cancelPendingBurn = useCallback(() => {
+    setPendingBurn(null);
+    setPreviewBurn(null);
   }, []);
 
   const updateTraverserPosition = useCallback((traverser: Traverser, nextPosition: number) => {
@@ -1285,6 +1315,57 @@ export default function DagbanGraph({
     };
   }, []);
 
+  const confirmPendingBurn = useCallback(() => {
+    if (!pendingBurn) return;
+    const targetCard = cardById.get(pendingBurn.targetNodeId);
+    if (targetCard?.burntAt) {
+      setPendingBurn(null);
+      setPreviewBurn(null);
+      showToast('Node already burnt', 'info');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    if (onCardChange) {
+      onCardChange(pendingBurn.targetNodeId, { burntAt: now });
+    }
+
+    if (onTraverserCreate) {
+      data.edges.forEach(edge => {
+        if (edge.source !== pendingBurn.targetNodeId) return;
+        if (traverserByEdgeId.has(edge.id)) return;
+        const edgeTarget = cardById.get(edge.target);
+        if (!edgeTarget?.assignee) return;
+        onTraverserCreate(createTraverserForEdge(edge.id, edgeTarget.assignee, 0));
+      });
+    }
+
+    if (pendingBurn.traverserId && onTraverserDelete) {
+      onTraverserDelete(pendingBurn.traverserId);
+    }
+
+    setPendingBurn(null);
+    setPreviewBurn(null);
+    showToast('Node burnt', 'success');
+  }, [
+    pendingBurn,
+    cardById,
+    onCardChange,
+    onTraverserCreate,
+    onTraverserDelete,
+    data.edges,
+    traverserByEdgeId,
+    createTraverserForEdge,
+    showToast,
+  ]);
+
+  const suppressNextBackgroundClick = useCallback(() => {
+    suppressBackgroundClickRef.current = true;
+    requestAnimationFrame(() => {
+      suppressBackgroundClickRef.current = false;
+    });
+  }, []);
+
   const handleUserDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes('application/dagban-user')) {
       event.preventDefault();
@@ -1294,18 +1375,27 @@ export default function DagbanGraph({
 
   const handleUserDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const userId = event.dataTransfer.getData('application/dagban-user');
-    if (!userId || !onTraverserCreate) return;
+    if (!userId) return;
     event.preventDefault();
 
     const coords = getGraphCoords(event.clientX, event.clientY);
     if (!coords) return;
     const rootCandidate = findClosestRootNode(coords);
     if (rootCandidate) {
-      beginRootSelection(rootCandidate.nodeId, userId);
+      const rect = containerRef.current?.getBoundingClientRect();
+      const anchor = rect
+        ? { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        : { x: event.clientX, y: event.clientY };
+      beginPendingBurn(rootCandidate.nodeId, null, userId, anchor);
+      setPreviewBurn({ edgeId: '', targetNodeId: rootCandidate.nodeId });
+      suppressNextBackgroundClick();
+      setEdgeStartPicker(null);
       setDraggingUserId(null);
-      showToast('Select next edges, then confirm', 'info');
+      showToast('Confirm task completion', 'info');
       return;
     }
+
+    if (!onTraverserCreate) return;
 
     if (eligibleTraverserEdgeIds.size === 0) {
       showToast('No available edges yet. Drop on a root node to start.', 'info');
@@ -1328,12 +1418,15 @@ export default function DagbanGraph({
 
     const traverser = createTraverserForEdge(closestAny.edgeId, userId, closestAny.position);
     onTraverserCreate(traverser);
+    setEdgeStartPicker(null);
     setDraggingUserId(null);
 
     if (closestAny.position >= SELECTION_THRESHOLD) {
       const edge = edgeById.get(closestAny.edgeId);
       if (edge) {
-        beginPendingSelection(traverser, edge.target);
+        beginPendingBurn(edge.target, traverser, traverser.userId);
+        setPreviewBurn({ edgeId: closestAny.edgeId, targetNodeId: edge.target });
+        suppressNextBackgroundClick();
       }
     }
   }, [
@@ -1342,13 +1435,43 @@ export default function DagbanGraph({
     findClosestEdge,
     traverserByEdgeId,
     createTraverserForEdge,
-    beginPendingSelection,
+    beginPendingBurn,
     edgeById,
     showToast,
     SELECTION_THRESHOLD,
     eligibleTraverserEdgeIds,
     findClosestRootNode,
-    beginRootSelection,
+    suppressNextBackgroundClick,
+  ]);
+
+  const closeEdgeStartPicker = useCallback(() => {
+    setEdgeStartPicker(null);
+  }, []);
+
+  const handleEdgeStartPickUser = useCallback((userId: string) => {
+    if (!edgeStartPicker || !onTraverserCreate) return;
+    const edgeId = edgeStartPicker.edgeId;
+    if (traverserByEdgeId.has(edgeId)) {
+      showToast('That edge already has a traverser', 'warning');
+      closeEdgeStartPicker();
+      return;
+    }
+    if (!eligibleTraverserEdgeIds.has(edgeId)) {
+      showToast('That node is blocked or already complete', 'warning');
+      closeEdgeStartPicker();
+      return;
+    }
+    const traverser = createTraverserForEdge(edgeId, userId, 0);
+    onTraverserCreate(traverser);
+    closeEdgeStartPicker();
+  }, [
+    edgeStartPicker,
+    onTraverserCreate,
+    traverserByEdgeId,
+    eligibleTraverserEdgeIds,
+    createTraverserForEdge,
+    showToast,
+    closeEdgeStartPicker,
   ]);
 
   const handleTraverserPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -1359,18 +1482,32 @@ export default function DagbanGraph({
     if (!hit) return;
     event.preventDefault();
     event.stopPropagation();
+    setEdgeStartPicker(null);
+    if (pendingBurn) {
+      cancelPendingBurn();
+    }
+    if (previewBurn) {
+      setPreviewBurn(null);
+    }
     setDraggingTraverserId(hit.traverserId);
     draggingTraverserRef.current = hit.traverserId;
-  }, [viewMode, getGraphCoords, findTraverserHit]);
+  }, [viewMode, getGraphCoords, findTraverserHit, pendingBurn, cancelPendingBurn, previewBurn]);
 
   const handleTraverserOverlayPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, traverserId: string) => {
     if (viewMode !== '2D') return;
     event.preventDefault();
     event.stopPropagation();
+    setEdgeStartPicker(null);
+    if (pendingBurn) {
+      cancelPendingBurn();
+    }
+    if (previewBurn) {
+      setPreviewBurn(null);
+    }
     setDraggingTraverserId(traverserId);
     draggingTraverserRef.current = traverserId;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [viewMode]);
+  }, [viewMode, pendingBurn, cancelPendingBurn, previewBurn]);
 
   useEffect(() => {
     if (!draggingTraverserId) return;
@@ -1395,17 +1532,38 @@ export default function DagbanGraph({
       );
 
       updateTraverserPosition(traverser, projection.t);
-
+      lastDragStateRef.current = { t: projection.t, targetNodeId: targetNode.id };
       if (projection.t >= SELECTION_THRESHOLD) {
-        beginPendingSelection(traverser, targetNode.id);
-      } else {
-        clearPendingSelection(traverser.id);
+        setPreviewBurn(prev => {
+          if (prev && prev.edgeId === traverser.edgeId && prev.targetNodeId === targetNode.id) {
+            return prev;
+          }
+          return { edgeId: traverser.edgeId, targetNodeId: targetNode.id };
+        });
+      } else if (previewBurn?.edgeId === traverser.edgeId) {
+        setPreviewBurn(null);
+      }
+      if (pendingBurn?.traverserId === traverser.id && projection.t < SELECTION_THRESHOLD) {
+        setPendingBurn(null);
       }
     };
 
     const handlePointerUp = () => {
+      const activeId = draggingTraverserRef.current;
+      if (activeId) {
+        const traverser = traverserById.get(activeId);
+        const lastDrag = lastDragStateRef.current;
+        if (traverser && lastDrag && lastDrag.t >= SELECTION_THRESHOLD) {
+          beginPendingBurn(lastDrag.targetNodeId, traverser, traverser.userId);
+          setPreviewBurn({ edgeId: traverser.edgeId, targetNodeId: lastDrag.targetNodeId });
+          suppressNextBackgroundClick();
+        } else {
+          setPreviewBurn(null);
+        }
+      }
       setDraggingTraverserId(null);
       draggingTraverserRef.current = null;
+      lastDragStateRef.current = null;
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -1420,80 +1578,13 @@ export default function DagbanGraph({
     getGraphCoords,
     getEdgeNodes,
     updateTraverserPosition,
-    beginPendingSelection,
-    clearPendingSelection,
+    beginPendingBurn,
+    previewBurn?.edgeId,
+    previewBurn?.targetNodeId,
+    suppressNextBackgroundClick,
+    pendingBurn?.traverserId,
     SELECTION_THRESHOLD,
   ]);
-
-  const toggleSelectionEdge = useCallback((edgeId: string) => {
-    setPendingSelection(prev => {
-      if (!prev) return prev;
-      const nextSelected = new Set(prev.selectedEdgeIds);
-      if (nextSelected.has(edgeId)) {
-        nextSelected.delete(edgeId);
-      } else {
-        nextSelected.add(edgeId);
-      }
-      return { ...prev, selectedEdgeIds: nextSelected };
-    });
-  }, []);
-
-  const confirmPendingSelection = useCallback(() => {
-    if (!pendingSelection) return;
-    const traverser = pendingSelection.traverserId
-      ? traverserById.get(pendingSelection.traverserId)
-      : null;
-    const initiatorUserId = pendingSelection.initiatorUserId || traverser?.userId || null;
-    if (!initiatorUserId) {
-      setPendingSelection(null);
-      showToast('Missing user for traversal', 'warning');
-      return;
-    }
-
-    const now = new Date().toISOString();
-    if (onCardChange) {
-      onCardChange(pendingSelection.targetNodeId, { burntAt: now });
-    }
-
-    // TODO: emit downstream-start events for assignees when this node is burnt.
-    if (onTraverserCreate) {
-      pendingSelection.selectedEdgeIds.forEach(edgeId => {
-        if (traverserByEdgeId.has(edgeId)) return;
-        const edge = edgeById.get(edgeId);
-        if (!edge) return;
-        const targetCard = cardById.get(edge.target);
-        const userId = targetCard?.assignee || initiatorUserId;
-        onTraverserCreate(createTraverserForEdge(edge.id, userId, 0));
-      });
-    }
-
-    if (traverser && onTraverserDelete) {
-      onTraverserDelete(traverser.id);
-    }
-
-    setPendingSelection(null);
-    showToast('Node burnt', 'success');
-  }, [
-    pendingSelection,
-    traverserById,
-    onCardChange,
-    onTraverserCreate,
-    onTraverserDelete,
-    edgeById,
-    cardById,
-    traverserByEdgeId,
-    createTraverserForEdge,
-    showToast,
-  ]);
-
-  useEffect(() => {
-    if (pendingSelection) return;
-    const readyTraverser = (data.traversers || []).find(traverser => traverser.position >= SELECTION_THRESHOLD);
-    if (!readyTraverser) return;
-    const edge = edgeById.get(readyTraverser.edgeId);
-    if (!edge) return;
-    beginPendingSelection(readyTraverser, edge.target);
-  }, [pendingSelection, data.traversers, edgeById, beginPendingSelection, SELECTION_THRESHOLD]);
 
   // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
   useEffect(() => {
@@ -1504,9 +1595,27 @@ export default function DagbanGraph({
         return;
       }
 
-      if (pendingSelection && e.key === 'Enter') {
+      if (pendingBurn && e.key === 'Enter') {
         e.preventDefault();
-        confirmPendingSelection();
+        confirmPendingBurn();
+        return;
+      }
+
+      if (pendingBurn && e.key === 'Escape') {
+        e.preventDefault();
+        cancelPendingBurn();
+        return;
+      }
+
+      if (previewBurn && e.key === 'Escape') {
+        e.preventDefault();
+        setPreviewBurn(null);
+        return;
+      }
+
+      if (edgeStartPicker && e.key === 'Escape') {
+        e.preventDefault();
+        closeEdgeStartPicker();
         return;
       }
 
@@ -1547,8 +1656,12 @@ export default function DagbanGraph({
     commandPalette.visible,
     connectionMode.active,
     graphDataView.nodes,
-    pendingSelection,
-    confirmPendingSelection,
+    pendingBurn,
+    previewBurn,
+    edgeStartPicker,
+    confirmPendingBurn,
+    cancelPendingBurn,
+    closeEdgeStartPicker,
     handleDeleteNode,
     handleUndo,
     cancelConnectionMode,
@@ -1559,8 +1672,9 @@ export default function DagbanGraph({
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
-    const isPreviewBurnt = pendingSelection?.targetNodeId === node.id;
     const isRootCandidate = Boolean(draggingUserId) && rootActiveNodeIds.has(node.id);
+    const isPendingBurn = pendingBurn?.targetNodeId === node.id;
+    const isPreviewBurnt = previewBurn?.targetNodeId === node.id || isPendingBurn;
     const drawColor = isPreviewBurnt ? BURNT_COLOR : node.color;
 
     // Check if this is the source node in connection mode
@@ -1627,6 +1741,14 @@ export default function DagbanGraph({
       ctx.fillStyle = drawColor;
       ctx.fill();
 
+      if (isPendingBurn) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 8, 0, 2 * Math.PI);
+        ctx.strokeStyle = PENDING_RING_COLOR;
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
+      }
+
       if (isRootCandidate) {
         ctx.beginPath();
         ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
@@ -1656,6 +1778,14 @@ export default function DagbanGraph({
       ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
       ctx.fillStyle = drawColor;
       ctx.fill();
+
+      if (isPendingBurn) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 8, 0, 2 * Math.PI);
+        ctx.strokeStyle = PENDING_RING_COLOR;
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
+      }
 
       // Draw dark background (matches html-nodes example)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -1698,7 +1828,10 @@ export default function DagbanGraph({
     dragConnect.sourceNode?.id,
     dragConnect.targetNode?.id,
     getAssigneeName,
-    pendingSelection?.targetNodeId,
+    pendingBurn?.targetNodeId,
+    previewBurn?.targetNodeId,
+    FUSE_COLOR,
+    PENDING_RING_COLOR,
     BURNT_COLOR,
     draggingUserId,
     rootActiveNodeIds,
@@ -1712,7 +1845,7 @@ export default function DagbanGraph({
     if (source.x === undefined || source.y === undefined || target.x === undefined || target.y === undefined) return;
 
     const targetCard = cardById.get(link.edge.target);
-    const isPreviewBurnt = pendingSelection?.edgeId === link.edge.id;
+    const isPreviewBurnt = previewBurn?.edgeId === link.edge.id || pendingBurn?.targetNodeId === link.edge.target;
     const isBurnt = Boolean(targetCard?.burntAt) || isPreviewBurnt;
     const baseStroke = isBurnt ? BURNT_COLOR : 'rgba(255, 255, 255, 0.3)';
     const isEligible = Boolean(draggingUserId) && eligibleTraverserEdgeIds.has(link.edge.id);
@@ -1737,13 +1870,12 @@ export default function DagbanGraph({
     const traverser = traverserByEdgeId.get(link.edge.id);
     if (traverser && !isBurnt) {
       const pos = clamp(traverser.position, 0, 1);
-      const tx = source.x + (target.x - source.x) * pos;
-      const ty = source.y + (target.y - source.y) * pos;
+      const render = getTraverserRenderPoint(source, target, pos);
 
       // Draw burning segment behind the traverser
       ctx.beginPath();
-      ctx.moveTo(source.x, source.y);
-      ctx.lineTo(tx, ty);
+      ctx.moveTo(render.startX, render.startY);
+      ctx.lineTo(render.x, render.y);
       ctx.strokeStyle = FUSE_COLOR;
       ctx.lineWidth = Math.max(2 / globalScale, 1);
       ctx.stroke();
@@ -1780,7 +1912,7 @@ export default function DagbanGraph({
         arrowY - arrowLength * Math.sin(angle + arrowWidth)
       );
       ctx.closePath();
-      ctx.fillStyle = isBurnt ? 'rgba(148, 163, 184, 0.6)' : 'rgba(255, 255, 255, 0.5)';
+      ctx.fillStyle = baseStroke;
       ctx.fill();
     }
   }, [
@@ -1792,9 +1924,11 @@ export default function DagbanGraph({
     FUSE_COLOR,
     BURNT_COLOR,
     TRAVERSER_RADIUS,
-    pendingSelection?.targetNodeId,
     draggingUserId,
+    previewBurn?.edgeId,
+    pendingBurn?.targetNodeId,
     eligibleTraverserEdgeIds,
+    getTraverserRenderPoint,
   ]);
 
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
@@ -1849,10 +1983,44 @@ export default function DagbanGraph({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG3D = ForceGraph3D as any;
 
+  const handleLinkClick = useCallback((link: GraphLinkData, event: MouseEvent) => {
+    if (viewMode !== '2D') return;
+    if (connectionMode.active) return;
+    if (!event) return;
+    const edgeId = link.edge.id;
+    if (traverserByEdgeId.has(edgeId)) {
+      showToast('That edge already has a traverser', 'warning');
+      setEdgeStartPicker(null);
+      return;
+    }
+    if (!eligibleTraverserEdgeIds.has(edgeId)) {
+      showToast('That node is blocked or already complete', 'warning');
+      setEdgeStartPicker(null);
+      return;
+    }
+    const rect = containerRef.current?.getBoundingClientRect();
+    const x = rect ? event.clientX - rect.left : event.clientX;
+    const y = rect ? event.clientY - rect.top : event.clientY;
+    setEdgeStartPicker(prev => (prev && prev.edgeId === edgeId ? null : { edgeId, x, y }));
+    setPendingBurn(null);
+    suppressNextBackgroundClick();
+  }, [
+    viewMode,
+    connectionMode.active,
+    traverserByEdgeId,
+    eligibleTraverserEdgeIds,
+    showToast,
+    suppressNextBackgroundClick,
+  ]);
+
   // Handle node left-click - show detail panel or complete connection
   const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
     // Hide tooltip when clicking a node
     setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
+    setEdgeStartPicker(null);
+    if (pendingBurn) {
+      cancelPendingBurn();
+    }
 
     // If in connection mode, complete the connection
     if (connectionMode.active && connectionMode.sourceNode) {
@@ -1866,7 +2034,7 @@ export default function DagbanGraph({
       screenX: event.clientX,
       screenY: event.clientY,
     });
-  }, [connectionMode.active, connectionMode.sourceNode, completeConnection]);
+  }, [connectionMode.active, connectionMode.sourceNode, completeConnection, pendingBurn, cancelPendingBurn]);
 
   // Handle node hover - track for keyboard shortcuts
   const handleNodeHover = useCallback((node: GraphNodeData | null) => {
@@ -1917,13 +2085,24 @@ export default function DagbanGraph({
 
   // Handle background click - close panel and cancel connection mode
   const handleBackgroundClick = useCallback(() => {
+    if (suppressBackgroundClickRef.current) {
+      suppressBackgroundClickRef.current = false;
+      return;
+    }
     if (selectedNode) {
       setSelectedNode(null);
     }
     if (connectionMode.active) {
       cancelConnectionMode();
     }
-  }, [selectedNode, connectionMode.active, cancelConnectionMode]);
+    if (pendingBurn) {
+      cancelPendingBurn();
+    }
+    setEdgeStartPicker(null);
+    if (previewBurn) {
+      setPreviewBurn(null);
+    }
+  }, [selectedNode, connectionMode.active, cancelConnectionMode, pendingBurn, cancelPendingBurn, previewBurn]);
 
   // Handle node drag end - unfix the node so user can drag it freely
   // We fix nodes with fx/fy to preserve layout on data updates, but we want
@@ -2066,6 +2245,7 @@ export default function DagbanGraph({
     backgroundColor: "#000000",
     nodeLabel: () => '', // Disable default tooltip, using custom one
     onNodeClick: handleNodeClick,
+    onLinkClick: handleLinkClick,
     onNodeHover: handleNodeHover,
     onBackgroundClick: handleBackgroundClick,
     onNodeDrag: handleNodeDrag,
@@ -2077,49 +2257,13 @@ export default function DagbanGraph({
     showPointerCursor: (obj: unknown) => Boolean(obj),
   };
 
-  const pendingOutgoingEdges = pendingSelection
-    ? data.edges.filter(edge => edge.source === pendingSelection.targetNodeId)
-    : [];
-
-  const selectionTargets = (() => {
-    if (!pendingSelection || viewMode !== '2D') return [];
-
-    return pendingOutgoingEdges
-      .map(edge => {
-        const edgeNodes = getEdgeNodes(edge.id);
-        if (!edgeNodes) return null;
-        const { sourceNode, targetNode } = edgeNodes;
-        const markerX = sourceNode.x! + (targetNode.x! - sourceNode.x!) * 0.18;
-        const markerY = sourceNode.y! + (targetNode.y! - sourceNode.y!) * 0.18;
-        const screen = getScreenCoords(markerX, markerY);
-        if (!screen) return null;
-        const targetCard = cardById.get(edge.target);
-        const targetUser = targetCard?.assignee ? userById.get(targetCard.assignee) : null;
-        return {
-          edgeId: edge.id,
-          x: screen.x,
-          y: screen.y,
-          title: targetCard?.title || 'Untitled',
-          assigneeName: targetUser?.name || '',
-          assigneeId: targetCard?.assignee || '',
-        };
-      })
-      .filter(Boolean) as Array<{
-        edgeId: string;
-        x: number;
-        y: number;
-        title: string;
-        assigneeName: string;
-        assigneeId: string;
-      }>;
-  })();
-
-  const selectionAnchor = (() => {
-    if (!pendingSelection || viewMode !== '2D') return null;
-    const node = nodeByIdRef.current.get(pendingSelection.targetNodeId);
+  const pendingBurnAnchor = useMemo(() => {
+    if (!pendingBurn || viewMode !== '2D') return null;
+    if (pendingBurn.anchor) return pendingBurn.anchor;
+    const node = nodeByIdRef.current.get(pendingBurn.targetNodeId);
     if (!node || node.x === undefined || node.y === undefined) return null;
     return getScreenCoords(node.x, node.y);
-  })();
+  }, [pendingBurn?.targetNodeId, pendingBurn?.anchor, viewMode, renderTick, getScreenCoords]);
 
   const traverserOverlays = useMemo(() => {
     if (viewMode !== '2D') return [];
@@ -2129,9 +2273,8 @@ export default function DagbanGraph({
         if (!edgeNodes) return null;
         const { sourceNode, targetNode } = edgeNodes;
         const pos = clamp(traverser.position, 0, 1);
-        const tx = sourceNode.x! + (targetNode.x! - sourceNode.x!) * pos;
-        const ty = sourceNode.y! + (targetNode.y! - sourceNode.y!) * pos;
-        const screen = getScreenCoords(tx, ty);
+        const render = getTraverserRenderPoint(sourceNode, targetNode, pos);
+        const screen = getScreenCoords(render.x, render.y);
         if (!screen) return null;
         const user = userById.get(traverser.userId) || null;
         return {
@@ -2142,7 +2285,7 @@ export default function DagbanGraph({
         };
       })
       .filter(Boolean) as Array<{ id: string; x: number; y: number; user: User | null }>;
-  }, [data.traversers, viewMode, renderTick, getEdgeNodes, userById, getScreenCoords]);
+  }, [data.traversers, viewMode, renderTick, getEdgeNodes, userById, getScreenCoords, getTraverserRenderPoint]);
 
   return (
     <div
@@ -2261,34 +2404,52 @@ export default function DagbanGraph({
         </div>
       )}
 
-      {pendingSelection && viewMode === '2D' && (
-        <div className="traverser-selection-layer">
-          {selectionTargets.map(target => (
-            <button
-              key={target.edgeId}
-              type="button"
-              className={`traverser-selection ${pendingSelection.selectedEdgeIds.has(target.edgeId) ? 'selected' : ''}`}
-              style={{ left: `${target.x}px`, top: `${target.y}px` }}
-              onClick={() => toggleSelectionEdge(target.edgeId)}
-            >
-              <span className="traverser-selection-dot" />
-              <span className="traverser-selection-title">{target.title}</span>
-              {target.assigneeName && (
-                <span className="traverser-selection-assignee">{target.assigneeName}</span>
-              )}
-            </button>
-          ))}
-          {selectionAnchor && (
-            <div
-              className="traverser-selection-actions"
-              style={{ left: `${selectionAnchor.x}px`, top: `${selectionAnchor.y}px` }}
-            >
-              <button type="button" onClick={confirmPendingSelection}>
-                Confirm next steps
+      {pendingBurn && pendingBurnAnchor && viewMode === '2D' && (
+        <div
+          className="burn-confirm"
+          style={{ left: `${pendingBurnAnchor.x}px`, top: `${pendingBurnAnchor.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="burn-confirm-title">Is the task done?</div>
+          <div className="burn-confirm-actions">
+            <button type="button" onClick={confirmPendingBurn}>Yes, burn</button>
+            <button type="button" className="ghost" onClick={cancelPendingBurn}>Not yet</button>
+          </div>
+          <span className="burn-confirm-hint">Press Enter to confirm</span>
+        </div>
+      )}
+
+      {edgeStartPicker && viewMode === '2D' && (
+        <div
+          className="edge-start-picker"
+          style={{ left: `${edgeStartPicker.x}px`, top: `${edgeStartPicker.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="edge-start-title">Start progress</div>
+          <div className="edge-start-users">
+            {data.users.length === 0 && (
+              <span className="edge-start-empty">Add a user to begin.</span>
+            )}
+            {data.users.map(user => (
+              <button
+                key={user.id}
+                type="button"
+                className="edge-start-user"
+                onClick={() => handleEdgeStartPickUser(user.id)}
+                title={user.name}
+              >
+                <UserAvatar user={user} size="sm" />
               </button>
-              <span>Drag back to undo</span>
-            </div>
-          )}
+            ))}
+            <button
+              type="button"
+              className="edge-start-add"
+              onClick={handleAddUser}
+              title="Add user"
+            >
+              +
+            </button>
+          </div>
         </div>
       )}
 

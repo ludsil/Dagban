@@ -243,68 +243,32 @@ html, body {
   font-size: 8px;
 }
 
-.traverser-selection-layer {
+.burn-confirm {
   position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 900;
-}
-
-.traverser-selection {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  pointer-events: auto;
+  transform: translate(-50%, -140%);
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(20, 20, 20, 0.85);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 10px;
-  transition: all 0.15s ease;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 10, 10, 0.92);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  z-index: 950;
+  pointer-events: auto;
 }
 
-.traverser-selection:hover {
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #fff;
-}
-
-.traverser-selection.selected {
-  border-color: rgba(249, 115, 22, 0.9);
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
-  color: #fff;
-}
-
-.traverser-selection-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(249, 115, 22, 0.9);
-}
-
-.traverser-selection-title {
+.burn-confirm-title {
   font-weight: 600;
 }
 
-.traverser-selection-assignee {
-  opacity: 0.7;
-}
-
-.traverser-selection-actions {
-  position: absolute;
-  transform: translate(-50%, -160%);
+.burn-confirm-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: center;
-  pointer-events: auto;
+  gap: 6px;
 }
 
-.traverser-selection-actions button {
-  background: rgba(249, 115, 22, 0.9);
-  color: #111;
+.burn-confirm-actions button {
   border: none;
   border-radius: 999px;
   padding: 4px 10px;
@@ -312,8 +276,69 @@ html, body {
   cursor: pointer;
 }
 
-.traverser-selection-actions span {
+.burn-confirm-actions button:first-child {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0b0b0b;
+}
+
+.burn-confirm-actions button.ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.burn-confirm-hint {
   font-size: 9px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.edge-start-picker {
+  position: absolute;
+  transform: translate(-10%, -110%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 12, 12, 0.94);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  z-index: 950;
+  pointer-events: auto;
+}
+
+.edge-start-title {
+  font-weight: 600;
+}
+
+.edge-start-users {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.edge-start-user,
+.edge-start-add {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 18, 18, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.edge-start-add {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.edge-start-empty {
+  font-size: 10px;
   color: rgba(255, 255, 255, 0.6);
 }
 
