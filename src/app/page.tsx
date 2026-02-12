@@ -107,6 +107,17 @@ function GraphHost({
     }));
   }, [setGraph]);
 
+  const handleEdgeDelete = useCallback((edgeId: string) => {
+    setGraph(prev => {
+      const remainingEdges = prev.edges.filter(edge => edge.id !== edgeId);
+      return {
+        ...prev,
+        edges: remainingEdges,
+        traversers: prev.traversers.filter(traverser => traverser.edgeId !== edgeId),
+      };
+    });
+  }, [setGraph]);
+
   const handleUserAdd = useCallback((name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -150,6 +161,10 @@ function GraphHost({
     }));
   }, [setGraph]);
 
+  const handleGraphImport = useCallback((nextGraph: GraphData) => {
+    setGraph(nextGraph);
+  }, [setGraph]);
+
   return (
     <DagbanGraph
       data={graph}
@@ -158,10 +173,12 @@ function GraphHost({
       onCardCreate={handleCardCreate}
       onCardDelete={handleCardDelete}
       onEdgeCreate={handleEdgeCreate}
+      onEdgeDelete={handleEdgeDelete}
       onUserAdd={handleUserAdd}
       onTraverserCreate={handleTraverserCreate}
       onTraverserUpdate={handleTraverserUpdate}
       onTraverserDelete={handleTraverserDelete}
+      onGraphImport={handleGraphImport}
       devDatasetMode={datasetMode}
       onDevDatasetModeChange={onDatasetModeChange}
     />

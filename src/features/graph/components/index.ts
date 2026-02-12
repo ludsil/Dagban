@@ -1,6 +1,7 @@
 // Re-export all graph components
 export { CardDetailPanel } from './CardDetailPanel';
 export { NodeContextMenu } from './NodeContextMenu';
+export { EdgeContextMenu } from './EdgeContextMenu';
 export { CardCreationForm } from './CardCreationForm';
 export { CommandPalette } from './CommandPalette';
 export { ToastNotification } from './ToastNotification';

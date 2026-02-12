@@ -166,6 +166,7 @@ html, body {
   flex: 1;
 }
 
+
 .user-stack {
   display: flex;
   align-items: center;
@@ -185,6 +186,11 @@ html, body {
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   position: relative;
   z-index: calc(10 - var(--stack-index));
+  cursor: pointer !important;
+}
+
+.user-stack-item * {
+  cursor: pointer !important;
 }
 
 .user-stack-item:first-child {
@@ -192,18 +198,17 @@ html, body {
 }
 
 .user-stack-item:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px) scale(1.08);
   border-color: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-}
-
-.user-stack:hover .user-stack-item {
-  margin-left: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  z-index: 20;
 }
 
 .user-stack-item.active {
-  border-color: rgba(74, 222, 128, 0.8);
-  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.25);
+  border-color: rgba(74, 222, 128, 1);
+  box-shadow:
+    0 0 0 1px rgba(74, 222, 128, 0.6),
+    0 0 0 3px rgba(74, 222, 128, 0.25);
 }
 
 .user-stack-item.user-stack-add {

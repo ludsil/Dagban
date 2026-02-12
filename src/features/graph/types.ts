@@ -48,6 +48,16 @@ export interface NodeContextMenuState {
   node: GraphNodeData | null;
 }
 
+// Edge context menu state (click on an edge)
+export interface EdgeContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  containerX: number;
+  containerY: number;
+  edgeId: string | null;
+}
+
 // Card creation form state
 export interface CardCreationState {
   visible: boolean;

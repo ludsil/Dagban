@@ -26,11 +26,13 @@ import {
   SettingsPanel,
   UserAvatar,
   UserStack,
+  EdgeContextMenu,
   // Types
   GraphNodeData,
   GraphLinkData,
   SelectedNodeInfo,
   CardCreationState,
+  EdgeContextMenuState,
   HoverTooltipState,
   ToastState,
   CommandPaletteState,
@@ -64,10 +66,12 @@ interface Props {
   onCardCreate?: (card: Card, parentCardId?: string, childCardId?: string) => void;
   onCardDelete?: (cardId: string) => void;
   onEdgeCreate?: (sourceId: string, targetId: string) => void;
+  onEdgeDelete?: (edgeId: string) => void;
   onUserAdd?: (name: string) => void;
   onTraverserCreate?: (traverser: Traverser) => void;
   onTraverserUpdate?: (traverserId: string, updates: Partial<Traverser>) => void;
   onTraverserDelete?: (traverserId: string) => void;
+  onGraphImport?: (graph: GraphData) => void;
   onUndo?: () => void;
   projectHeader?: React.ReactNode;
   showSettingsProp?: boolean;
@@ -123,6 +127,19 @@ function projectPointToSegment(px: number, py: number, ax: number, ay: number, b
   return { t, x: projX, y: projY, distance: dist };
 }
 
+function distanceToLine(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) {
+    return Math.hypot(px - ax, py - ay);
+  }
+  const t = ((px - ax) * dx + (py - ay) * dy) / lengthSq;
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
 // Dim a hex color by reducing its saturation and adding transparency
 function dimColor(hex: string): string {
   // Handle rgba format
@@ -142,10 +159,12 @@ export default function DagbanGraph({
   onCardCreate,
   onCardDelete,
   onEdgeCreate,
+  onEdgeDelete,
   onUserAdd,
   onTraverserCreate,
   onTraverserUpdate,
   onTraverserDelete,
+  onGraphImport,
   onUndo,
   projectHeader,
   showSettingsProp = true,
@@ -168,7 +187,7 @@ export default function DagbanGraph({
   const [nodeRadius, setNodeRadius] = useState(8);
   const [colorMode, setColorMode] = useState<ColorMode>('category');
   const [arrowMode, setArrowMode] = useState<ArrowMode>('end');
-  const [showSettings, setShowSettings] = useState(showSettingsProp);
+  const showSettings = showSettingsProp;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
@@ -273,7 +292,17 @@ export default function DagbanGraph({
     x: number;
     y: number;
   } | null>(null);
+  const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    containerX: 0,
+    containerY: 0,
+    edgeId: null,
+  });
   const lastDragStateRef = useRef<{ t: number; targetNodeId: string } | null>(null);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const dragAngleRef = useRef<number | null>(null);
   const suppressBackgroundClickRef = useRef(false);
 
   // Undo stack for local undo functionality
@@ -322,6 +351,61 @@ export default function DagbanGraph({
   const hideToast = useCallback(() => {
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
+
+  const handleDownloadGraph = useCallback(() => {
+    try {
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      link.download = `dagban-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('Downloaded graph JSON', 'success');
+    } catch (error) {
+      console.error('Failed to download graph JSON', error);
+      showToast('Failed to download graph JSON', 'warning');
+    }
+  }, [data, showToast]);
+
+  const handleUploadGraph = useCallback((file: File) => {
+    if (!onGraphImport) {
+      showToast('Upload not available in this view', 'warning');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = typeof reader.result === 'string' ? reader.result : '';
+        const parsed = JSON.parse(text);
+        const isValid =
+          parsed &&
+          typeof parsed === 'object' &&
+          Array.isArray(parsed.cards) &&
+          Array.isArray(parsed.edges) &&
+          Array.isArray(parsed.categories) &&
+          Array.isArray(parsed.users) &&
+          Array.isArray(parsed.traversers);
+        if (!isValid) {
+          showToast('Invalid Dagban JSON format', 'warning');
+          return;
+        }
+        onGraphImport(parsed as GraphData);
+        showToast('Graph imported', 'success');
+      } catch (error) {
+        console.error('Failed to import graph JSON', error);
+        showToast('Failed to import graph JSON', 'warning');
+      }
+    };
+    reader.onerror = () => {
+      showToast('Failed to read file', 'warning');
+    };
+    reader.readAsText(file);
+  }, [onGraphImport, showToast]);
 
   // Handle assignee filter toggle
   const handleAssigneeToggle = useCallback((assignee: string) => {
@@ -1129,6 +1213,9 @@ export default function DagbanGraph({
   const PENDING_RING_COLOR = 'rgba(148, 163, 184, 0.8)';
   const SELECTION_THRESHOLD = 0.97; // position threshold to trigger burn confirmation
   const DETACH_DISTANCE = NODE_RADIUS * 1.4;
+  const ORTHOGONAL_DETACH_ANGLE = 78;
+  const DETACH_DISTANCE_BOOST = 3.1;
+  const MIN_PERP_DETACH_PX = 80;
   const ROOT_RING_RADIUS = NODE_RADIUS + 10;
 
   const getGraphCoords = useCallback((clientX: number, clientY: number) => {
@@ -1605,6 +1692,8 @@ export default function DagbanGraph({
     }
     setDraggingTraverserId(hit.traverserId);
     draggingTraverserRef.current = hit.traverserId;
+    lastPointerRef.current = { x: event.clientX, y: event.clientY };
+    dragAngleRef.current = null;
   }, [viewMode, getGraphCoords, findTraverserHit, pendingBurn, cancelPendingBurn, previewBurn, detachedDrag]);
 
   const handleTraverserOverlayPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>, traverserId: string) => {
@@ -1623,8 +1712,10 @@ export default function DagbanGraph({
     }
     setDraggingTraverserId(traverserId);
     draggingTraverserRef.current = traverserId;
+    lastPointerRef.current = { x: event.clientX, y: event.clientY };
+    dragAngleRef.current = null;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-  }, [viewMode, pendingBurn, cancelPendingBurn, previewBurn, detachedDrag]);
+  }, [viewMode, getGraphCoords, pendingBurn, cancelPendingBurn, previewBurn, detachedDrag]);
 
   useEffect(() => {
     if (!draggingTraverserId) return;
@@ -1636,6 +1727,9 @@ export default function DagbanGraph({
       if (!traverser) return;
       const coords = getGraphCoords(event.clientX, event.clientY);
       if (!coords) return;
+      const prevPointer = lastPointerRef.current;
+      const pointerScreen = { x: event.clientX, y: event.clientY };
+      lastPointerRef.current = pointerScreen;
       const isRootTraverser = traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX);
 
       if (isRootTraverser) {
@@ -1770,11 +1864,56 @@ export default function DagbanGraph({
         targetNode.x!,
         targetNode.y!
       );
+      const lineDistance = distanceToLine(
+        coords.x,
+        coords.y,
+        sourceNode.x!,
+        sourceNode.y!,
+        targetNode.x!,
+        targetNode.y!
+      );
+      const sourceScreen = getScreenCoords(sourceNode.x!, sourceNode.y!);
+      const targetScreen = getScreenCoords(targetNode.x!, targetNode.y!);
+      if (prevPointer && sourceScreen && targetScreen) {
+        const edgeDx = targetScreen.x - sourceScreen.x;
+        const edgeDy = targetScreen.y - sourceScreen.y;
+        const edgeLength = Math.hypot(edgeDx, edgeDy);
+        const deltaX = pointerScreen.x - prevPointer.x;
+        const deltaY = pointerScreen.y - prevPointer.y;
+        const moveDistance = Math.hypot(deltaX, deltaY);
+        if (moveDistance > 1e-3 && edgeLength > 1e-3) {
+          const dot = (deltaX * edgeDx + deltaY * edgeDy) / (moveDistance * edgeLength);
+          const clamped = Math.max(-1, Math.min(1, dot));
+          const angle = Math.acos(Math.abs(clamped)) * (180 / Math.PI);
+          dragAngleRef.current = angle;
+        }
+      } else if (prevPointer) {
+        const edgeDx = targetNode.x! - sourceNode.x!;
+        const edgeDy = targetNode.y! - sourceNode.y!;
+        const edgeLength = Math.hypot(edgeDx, edgeDy);
+        const deltaX = coords.x - (getGraphCoords(prevPointer.x, prevPointer.y)?.x ?? coords.x);
+        const deltaY = coords.y - (getGraphCoords(prevPointer.x, prevPointer.y)?.y ?? coords.y);
+        const moveDistance = Math.hypot(deltaX, deltaY);
+        if (moveDistance > 1e-3 && edgeLength > 1e-3) {
+          const dot = (deltaX * edgeDx + deltaY * edgeDy) / (moveDistance * edgeLength);
+          const clamped = Math.max(-1, Math.min(1, dot));
+          const angle = Math.acos(Math.abs(clamped)) * (180 / Math.PI);
+          dragAngleRef.current = angle;
+        }
+      }
+      const dragAngle = dragAngleRef.current ?? 0;
+      const orthogonalEnough = dragAngle >= ORTHOGONAL_DETACH_ANGLE;
+      const zoom = getZoomScale();
+      const lineDistanceScreen = sourceScreen && targetScreen
+        ? distanceToLine(pointerScreen.x, pointerScreen.y, sourceScreen.x, sourceScreen.y, targetScreen.x, targetScreen.y)
+        : lineDistance * zoom;
+      const baseDetachThreshold = DETACH_DISTANCE * DETACH_DISTANCE_BOOST * zoom;
+      const detachThreshold = Math.max(baseDetachThreshold, MIN_PERP_DETACH_PX);
 
       const allowedEdgeIds = new Set(eligibleTraverserEdgeIds);
       allowedEdgeIds.add(traverser.edgeId);
 
-      if ((detachedDrag && detachedDrag.traverserId === traverser.id) || projection.distance > DETACH_DISTANCE) {
+      if ((detachedDrag && detachedDrag.traverserId === traverser.id) || (orthogonalEnough && lineDistanceScreen > detachThreshold)) {
         if (pendingBurn) {
           setPendingBurn(null);
         }
@@ -1926,6 +2065,8 @@ export default function DagbanGraph({
       setDraggingTraverserId(null);
       draggingTraverserRef.current = null;
       lastDragStateRef.current = null;
+      lastPointerRef.current = null;
+      dragAngleRef.current = null;
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -1938,6 +2079,8 @@ export default function DagbanGraph({
     draggingTraverserId,
     traverserById,
     getGraphCoords,
+    getScreenCoords,
+    getZoomScale,
     getEdgeNodes,
     updateTraverserPosition,
     beginPendingBurn,
@@ -2405,11 +2548,7 @@ export default function DagbanGraph({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG3D = ForceGraph3D as any;
 
-  const handleLinkClick = useCallback((link: GraphLinkData, event: MouseEvent) => {
-    if (viewMode !== '2D') return;
-    if (connectionMode.active) return;
-    if (!event) return;
-    const edgeId = link.edge.id;
+  const openEdgeStartPicker = useCallback((edgeId: string, x: number, y: number) => {
     if (traverserByEdgeId.has(edgeId)) {
       showToast('That edge already has a traverser', 'warning');
       setEdgeStartPicker(null);
@@ -2420,18 +2559,110 @@ export default function DagbanGraph({
       setEdgeStartPicker(null);
       return;
     }
-    const rect = containerRef.current?.getBoundingClientRect();
-    const x = rect ? event.clientX - rect.left : event.clientX;
-    const y = rect ? event.clientY - rect.top : event.clientY;
     setEdgeStartPicker(prev => (prev && prev.edgeId === edgeId ? null : { edgeId, x, y }));
+    setPendingBurn(null);
+    suppressNextBackgroundClick();
+  }, [
+    traverserByEdgeId,
+    eligibleTraverserEdgeIds,
+    showToast,
+    suppressNextBackgroundClick,
+  ]);
+
+  const closeEdgeContextMenu = useCallback(() => {
+    setEdgeContextMenu(prev => (
+      prev.visible
+        ? { ...prev, visible: false, edgeId: null }
+        : prev
+    ));
+  }, []);
+
+  const handleEdgeAssign = useCallback((edgeId: string, anchor: { x: number; y: number }) => {
+    if (!onTraverserCreate) {
+      showToast('Assigning traversers is not available here', 'warning');
+      return;
+    }
+    openEdgeStartPicker(edgeId, anchor.x, anchor.y);
+  }, [onTraverserCreate, openEdgeStartPicker, showToast]);
+
+  const handleEdgeDetachTraverser = useCallback((traverserId: string) => {
+    if (!onTraverserDelete) {
+      showToast('Detaching traversers is not available here', 'warning');
+      return;
+    }
+    onTraverserDelete(traverserId);
+    if (pendingBurn?.traverserId === traverserId) {
+      cancelPendingBurn();
+    }
+    if (detachedDrag?.traverserId === traverserId) {
+      setDetachedDrag(null);
+    }
+    showToast('Traverser removed', 'info');
+  }, [
+    onTraverserDelete,
+    showToast,
+    pendingBurn?.traverserId,
+    cancelPendingBurn,
+    detachedDrag?.traverserId,
+  ]);
+
+  const handleEdgeDelete = useCallback((edgeId: string) => {
+    if (!onEdgeDelete) {
+      showToast('Edge deletion is not available here', 'warning');
+      return;
+    }
+    const edge = edgeById.get(edgeId);
+    onEdgeDelete(edgeId);
+    if (edgeStartPicker?.edgeId === edgeId) {
+      setEdgeStartPicker(null);
+    }
+    if (previewBurn?.edgeId === edgeId) {
+      setPreviewBurn(null);
+    }
+    if (pendingBurn && edge && pendingBurn.targetNodeId === edge.target) {
+      cancelPendingBurn();
+    }
+    setDetachedDrag(prev => (prev && prev.candidateEdgeId === edgeId ? null : prev));
+  }, [
+    onEdgeDelete,
+    showToast,
+    edgeById,
+    edgeStartPicker?.edgeId,
+    previewBurn?.edgeId,
+    pendingBurn,
+    cancelPendingBurn,
+  ]);
+
+  const handleLinkClick = useCallback((link: GraphLinkData, event: MouseEvent) => {
+    if (viewMode !== '2D') return;
+    if (connectionMode.active) return;
+    if (!onTraverserCreate && !onEdgeDelete) return;
+    if (!event) return;
+    const edgeId = link.edge.id;
+    const rect = containerRef.current?.getBoundingClientRect();
+    const containerX = rect ? event.clientX - rect.left : event.clientX;
+    const containerY = rect ? event.clientY - rect.top : event.clientY;
+    setEdgeContextMenu(prev => (
+      prev.visible && prev.edgeId === edgeId
+        ? { ...prev, visible: false, edgeId: null }
+        : {
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+          containerX,
+          containerY,
+          edgeId,
+        }
+    ));
+    setEdgeStartPicker(null);
     setPendingBurn(null);
     suppressNextBackgroundClick();
   }, [
     viewMode,
     connectionMode.active,
-    traverserByEdgeId,
-    eligibleTraverserEdgeIds,
-    showToast,
+    onTraverserCreate,
+    onEdgeDelete,
+    setEdgeContextMenu,
     suppressNextBackgroundClick,
   ]);
 
@@ -2440,6 +2671,7 @@ export default function DagbanGraph({
     // Hide tooltip when clicking a node
     setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
     setEdgeStartPicker(null);
+    closeEdgeContextMenu();
     if (pendingBurn) {
       cancelPendingBurn();
     }
@@ -2456,7 +2688,14 @@ export default function DagbanGraph({
       screenX: event.clientX,
       screenY: event.clientY,
     });
-  }, [connectionMode.active, connectionMode.sourceNode, completeConnection, pendingBurn, cancelPendingBurn]);
+  }, [
+    connectionMode.active,
+    connectionMode.sourceNode,
+    completeConnection,
+    pendingBurn,
+    cancelPendingBurn,
+    closeEdgeContextMenu,
+  ]);
 
   // Handle node hover - track for keyboard shortcuts
   const handleNodeHover = useCallback((node: GraphNodeData | null) => {
@@ -2514,6 +2753,7 @@ export default function DagbanGraph({
     if (selectedNode) {
       setSelectedNode(null);
     }
+    closeEdgeContextMenu();
     if (connectionMode.active) {
       cancelConnectionMode();
     }
@@ -2524,7 +2764,15 @@ export default function DagbanGraph({
     if (previewBurn) {
       setPreviewBurn(null);
     }
-  }, [selectedNode, connectionMode.active, cancelConnectionMode, pendingBurn, cancelPendingBurn, previewBurn]);
+  }, [
+    selectedNode,
+    closeEdgeContextMenu,
+    connectionMode.active,
+    cancelConnectionMode,
+    pendingBurn,
+    cancelPendingBurn,
+    previewBurn,
+  ]);
 
   // Handle node drag end - unfix the node so user can drag it freely
   // We fix nodes with fx/fy to preserve layout on data updates, but we want
@@ -2754,7 +3002,8 @@ export default function DagbanGraph({
       <div className="graph-hud-left">
         {projectHeader || (
           <Header
-            onLogoClick={() => setShowSettings(!showSettings)}
+            onDownloadGraph={handleDownloadGraph}
+            onUploadGraph={handleUploadGraph}
             onNewRootNode={openRootNodeCreation}
           />
         )}
@@ -2876,6 +3125,22 @@ export default function DagbanGraph({
           <span className="burn-confirm-hint">Press Enter to confirm</span>
         </div>
       )}
+
+      {(() => {
+        const edgeTraverser = edgeContextMenu.edgeId
+          ? traverserByEdgeId.get(edgeContextMenu.edgeId)
+          : null;
+        return (
+          <EdgeContextMenu
+            state={edgeContextMenu}
+            traverserId={edgeTraverser?.id ?? null}
+            onClose={closeEdgeContextMenu}
+            onAssign={handleEdgeAssign}
+            onDetach={handleEdgeDetachTraverser}
+            onDelete={handleEdgeDelete}
+          />
+        );
+      })()}
 
       {edgeStartPicker && viewMode === '2D' && (
         <div
