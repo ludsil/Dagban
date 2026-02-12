@@ -835,6 +835,9 @@ export default function DagbanGraph({
     if (!container) return;
 
     const handleWheel = (event: WheelEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (!container.contains(target)) return;
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
       }

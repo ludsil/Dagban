@@ -34,6 +34,7 @@ export type TraverserOverlay = {
   y: number;
   user: User | null;
   isRoot: boolean;
+  tangentAngle?: number;
 };
 
 export type UseTraverserSystemProps = {
@@ -278,22 +279,17 @@ export function useTraverserSystem({
     if (rootActiveNodeIds.size === 0) return null;
     const zoom = getZoomScale();
     const rootSnapMultiplier = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
-    const baseRadius = Math.max(rootRingRadius, nodeRadius * rootSnapMultiplier);
-    const maxDistance = baseRadius / zoom;
-    const ringTolerance = (nodeRadius * 0.9) / zoom;
-    const nodeTolerance = (nodeRadius * 1.5) / zoom;
+    const captureRadius = (rootRingRadius + nodeRadius * rootSnapMultiplier) / zoom;
     let closest: { nodeId: string; distance: number } | null = null;
 
     for (const node of graphDataView.nodes as GraphNodeData[]) {
       if (!rootActiveNodeIds.has(node.id)) continue;
       if (node.x === undefined || node.y === undefined) continue;
       const dist = Math.hypot(point.x - node.x, point.y - node.y);
-      if (dist > maxDistance + ringTolerance) continue;
+      if (dist > captureRadius) continue;
       const ringDistance = Math.abs(dist - rootRingRadius);
-      if (ringDistance > ringTolerance && dist > nodeTolerance) continue;
-      const metric = ringDistance <= ringTolerance ? ringDistance : dist;
-      if (!closest || metric < closest.distance) {
-        closest = { nodeId: node.id, distance: metric };
+      if (!closest || ringDistance < closest.distance) {
+        closest = { nodeId: node.id, distance: ringDistance };
       }
     }
 
@@ -536,6 +532,7 @@ export function useTraverserSystem({
 
   const handleTraverserPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (viewMode !== '2D') return;
+    if (event.pointerType === 'touch') return;
     const coords = getGraphCoords(event.clientX, event.clientY);
     if (!coords) return;
     const hit = findTraverserHit(coords);
@@ -585,7 +582,9 @@ export function useTraverserSystem({
     draggingTraverserRef.current = traverserId;
     lastPointerRef.current = { x: event.clientX, y: event.clientY };
     dragAngleRef.current = null;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (event.pointerType !== 'touch') {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
   }, [
     viewMode,
     pendingBurn,
@@ -993,6 +992,24 @@ export function useTraverserSystem({
           const pos = clamp(traverser.position, 0, 1);
           const render = getRootTraverserPoint(node, pos);
           renderPoint = { x: render.x, y: render.y };
+          const isDetached = detachedDrag && detachedDrag.traverserId === traverser.id;
+          const tangentAngle = isDetached ? undefined : render.angle + Math.PI / 2;
+          const override =
+            detachedDrag && detachedDrag.traverserId === traverser.id
+              ? { x: detachedDrag.x, y: detachedDrag.y }
+              : renderPoint;
+          if (!override) return null;
+          const screen = getScreenCoords(override.x, override.y);
+          if (!screen) return null;
+          const user = userById.get(traverser.userId) || null;
+          return {
+            id: traverser.id,
+            x: screen.x,
+            y: screen.y,
+            user,
+            isRoot: true,
+            tangentAngle,
+          };
         } else {
           const edgeNodes = getEdgeNodes(traverser.edgeId);
           if (!edgeNodes) return null;
