@@ -843,6 +843,35 @@ export default function DagbanGraph({
     applyPendingGraphUpdates();
   }, [applyPendingGraphUpdates, graphReady]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+      }
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest('.graph-canvas')) {
+        const selection = window.getSelection();
+        if (selection && selection.type === 'Range') {
+          selection.removeAllRanges();
+        }
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('pointerdown', handlePointerDown);
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, []);
+
   // Ensure node labels refresh when display mode changes
   useEffect(() => {
     if (displayMode !== 'balls') {

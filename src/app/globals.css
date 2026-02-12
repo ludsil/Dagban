@@ -129,6 +129,9 @@ html, body {
 .graph-canvas {
   position: absolute;
   inset: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
 }
 
 .graph-hud-left,
