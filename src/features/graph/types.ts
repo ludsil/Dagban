@@ -101,12 +101,6 @@ export interface CommandPaletteState {
   query: string;
 }
 
-// Undo action types for internal undo stack
-export type UndoAction =
-  | { type: 'delete_card'; card: Card; connectedEdges: Edge[] }
-  | { type: 'create_card'; cardId: string }
-  | { type: 'update_card'; cardId: string; previousState: Partial<Card> };
-
 // View and display modes
 export type ViewMode = '2D' | '3D';
 export type DisplayMode = 'balls' | 'labels' | 'full';

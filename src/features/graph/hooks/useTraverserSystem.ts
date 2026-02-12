@@ -65,7 +65,11 @@ export type UseTraverserSystemProps = {
   createTraverserForEdge: (edgeId: string, userId: string, position: number) => Traverser;
   createTraverserForRoot: (nodeId: string, userId: string, position: number) => Traverser;
   onTraverserCreate?: (traverser: Traverser) => void;
-  onTraverserUpdate?: (traverserId: string, updates: Partial<Traverser>) => void;
+  onTraverserUpdate?: (
+    traverserId: string,
+    updates: Partial<Traverser>,
+    options?: { transient?: boolean; recordUndo?: boolean }
+  ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
   showToast: (message: string, type?: ToastState['type'], action?: ToastState['action']) => void;
@@ -245,7 +249,7 @@ export function useTraverserSystem({
     onTraverserUpdate(traverser.id, {
       position: clamp(nextPosition, 0, 1),
       updatedAt: new Date().toISOString(),
-    });
+    }, { transient: true });
   }, [onTraverserUpdate]);
 
   const findClosestEdge = useCallback((point: { x: number; y: number }, allowedEdgeIds?: Set<string>, maxDistanceOverride?: number) => {
