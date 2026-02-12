@@ -2,7 +2,7 @@
 
 import { User } from '@/lib/types';
 import { Plus } from 'lucide-react';
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo, useRef, type CSSProperties } from 'react';
 import { UserAvatar } from './UserAvatar';
 
 interface UserStackProps {
@@ -23,6 +23,7 @@ export function UserStack({
   onUserDragEnd,
 }: UserStackProps) {
   const userList = useMemo(() => users, [users]);
+  const transparentDragImageRef = useRef<HTMLImageElement | null>(null);
 
   return (
     <div className="user-stack" title="Project users">
@@ -40,6 +41,15 @@ export function UserStack({
             onDragStart={(event) => {
               event.dataTransfer.setData('application/dagban-user', user.id);
               event.dataTransfer.effectAllowed = 'copy';
+              if (!transparentDragImageRef.current) {
+                const img = new Image();
+                img.src =
+                  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+                transparentDragImageRef.current = img;
+              }
+              if (transparentDragImageRef.current) {
+                event.dataTransfer.setDragImage(transparentDragImageRef.current, 0, 0);
+              }
               onUserDragStart?.(user.id);
             }}
             onDragEnd={() => onUserDragEnd?.()}

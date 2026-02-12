@@ -266,6 +266,7 @@ export default function DagbanGraph({
 
   const [draggingTraverserId, setDraggingTraverserId] = useState<string | null>(null);
   const draggingTraverserRef = useRef<string | null>(null);
+  const [draggingUserGhost, setDraggingUserGhost] = useState<{ x: number; y: number } | null>(null);
   const [renderTick, setRenderTick] = useState(0);
   const renderRafRef = useRef<number | null>(null);
   const [pendingBurn, setPendingBurn] = useState<{
@@ -438,6 +439,7 @@ export default function DagbanGraph({
 
   const handleUserDragEnd = useCallback(() => {
     setDraggingUserId(null);
+    setDraggingUserGhost(null);
   }, []);
 
   // Handle category filter toggle
@@ -1215,7 +1217,7 @@ export default function DagbanGraph({
   const DETACH_DISTANCE = NODE_RADIUS * 1.4;
   const ORTHOGONAL_DETACH_ANGLE = 78;
   const DETACH_DISTANCE_BOOST = 3.1;
-  const MIN_PERP_DETACH_PX = 80;
+  const MIN_PERP_DETACH_PX = 40;
   const ROOT_RING_RADIUS = NODE_RADIUS + 10;
 
   const getGraphCoords = useCallback((clientX: number, clientY: number) => {
@@ -1558,17 +1560,101 @@ export default function DagbanGraph({
     });
   }, []);
 
+  const updateDraggingUserGhost = useCallback((clientX: number, clientY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const baseX = clientX - rect.left;
+    const baseY = clientY - rect.top;
+    const coords = getGraphCoords(clientX, clientY);
+    if (!coords) {
+      setDraggingUserGhost({ x: baseX, y: baseY });
+      return;
+    }
+
+    const rootCandidate = findClosestRootNode(coords);
+    let rootCandidateId: string | null = null;
+    let rootCandidatePosition: number | null = null;
+    if (rootCandidate) {
+      const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${rootCandidate.nodeId}`;
+      if (!traverserByEdgeId.has(rootEdgeId)) {
+        const rootNode = nodeByIdRef.current.get(rootCandidate.nodeId);
+        if (rootNode) {
+          rootCandidateId = rootCandidate.nodeId;
+          rootCandidatePosition = getRootPositionFromCoords(rootNode, coords);
+        }
+      }
+    }
+
+    const candidate = findClosestEdge(coords, eligibleTraverserEdgeIds, 24);
+    const preferRoot = rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance));
+    const selectedCandidate = preferRoot ? null : candidate;
+    const selectedRootId = preferRoot ? rootCandidateId : null;
+    const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
+
+    let targetX = baseX;
+    let targetY = baseY;
+    if (selectedRootId) {
+      const rootNode = nodeByIdRef.current.get(selectedRootId);
+      if (rootNode) {
+        const render = getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
+        const screen = getScreenCoords(render.x, render.y);
+        if (screen) {
+          targetX = screen.x;
+          targetY = screen.y;
+        }
+      }
+    } else if (selectedCandidate) {
+      const candidateNodes = getEdgeNodes(selectedCandidate.edgeId);
+      if (candidateNodes) {
+        const render = getTraverserRenderPoint(
+          candidateNodes.sourceNode,
+          candidateNodes.targetNode,
+          selectedCandidate.position
+        );
+        const screen = getScreenCoords(render.x, render.y);
+        if (screen) {
+          targetX = screen.x;
+          targetY = screen.y;
+        }
+      }
+    }
+
+    setDraggingUserGhost(prev => {
+      const hasMagnetTarget = Boolean(selectedRootId || selectedCandidate);
+      const strength = hasMagnetTarget ? 0.3 : 0.18;
+      const startX = prev ? prev.x : baseX;
+      const startY = prev ? prev.y : baseY;
+      return {
+        x: startX + (targetX - startX) * strength,
+        y: startY + (targetY - startY) * strength,
+      };
+    });
+  }, [
+    getGraphCoords,
+    findClosestRootNode,
+    traverserByEdgeId,
+    getRootPositionFromCoords,
+    findClosestEdge,
+    eligibleTraverserEdgeIds,
+    getEdgeNodes,
+    getTraverserRenderPoint,
+    getRootTraverserPoint,
+    getScreenCoords,
+  ]);
+
   const handleUserDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes('application/dagban-user')) {
       event.preventDefault();
       event.dataTransfer.dropEffect = 'copy';
+      updateDraggingUserGhost(event.clientX, event.clientY);
     }
-  }, []);
+  }, [updateDraggingUserGhost]);
 
   const handleUserDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const userId = event.dataTransfer.getData('application/dagban-user');
     if (!userId) return;
     event.preventDefault();
+    setDraggingUserGhost(null);
 
     const coords = getGraphCoords(event.clientX, event.clientY);
     if (!coords) return;
@@ -1936,65 +2022,56 @@ export default function DagbanGraph({
           }
         }
 
-        if (rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance))) {
-          const rootNode = nodeByIdRef.current.get(rootCandidateId);
+        const preferRoot = rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance));
+        const selectedCandidate = preferRoot ? null : candidate;
+        const selectedRootId = preferRoot ? rootCandidateId : null;
+        const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
+
+        let targetX = coords.x;
+        let targetY = coords.y;
+        if (selectedRootId) {
+          const rootNode = nodeByIdRef.current.get(selectedRootId);
           if (rootNode) {
-            const render = getRootTraverserPoint(rootNode, rootCandidatePosition ?? 0);
-            setDetachedDrag({
-              traverserId: traverser.id,
-              x: render.x,
-              y: render.y,
-              candidateEdgeId: null,
-              candidatePosition: null,
-              candidateRootNodeId: rootCandidateId,
-              candidateRootPosition: rootCandidatePosition ?? 0,
-            });
-          } else {
-            setDetachedDrag({
-              traverserId: traverser.id,
-              x: coords.x,
-              y: coords.y,
-              candidateEdgeId: null,
-              candidatePosition: null,
-              candidateRootNodeId: null,
-              candidateRootPosition: null,
-            });
+            const render = getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
+            targetX = render.x;
+            targetY = render.y;
           }
-        } else if (candidate) {
-          const candidateNodes = getEdgeNodes(candidate.edgeId);
+        } else if (selectedCandidate) {
+          const candidateNodes = getEdgeNodes(selectedCandidate.edgeId);
           if (candidateNodes) {
-            const render = getTraverserRenderPoint(candidateNodes.sourceNode, candidateNodes.targetNode, candidate.position);
-            setDetachedDrag({
-              traverserId: traverser.id,
-              x: render.x,
-              y: render.y,
-              candidateEdgeId: candidate.edgeId,
-              candidatePosition: candidate.position,
-              candidateRootNodeId: null,
-              candidateRootPosition: null,
-            });
-          } else {
-            setDetachedDrag({
-              traverserId: traverser.id,
-              x: coords.x,
-              y: coords.y,
-              candidateEdgeId: null,
-              candidatePosition: null,
-              candidateRootNodeId: null,
-              candidateRootPosition: null,
-            });
+            const render = getTraverserRenderPoint(
+              candidateNodes.sourceNode,
+              candidateNodes.targetNode,
+              selectedCandidate.position
+            );
+            targetX = render.x;
+            targetY = render.y;
           }
-        } else {
-          setDetachedDrag({
-            traverserId: traverser.id,
-            x: coords.x,
-            y: coords.y,
-            candidateEdgeId: null,
-            candidatePosition: null,
-            candidateRootNodeId: null,
-            candidateRootPosition: null,
-          });
         }
+
+        const fallbackRender = getTraverserRenderPoint(
+          sourceNode,
+          targetNode,
+          clamp(traverser.position ?? projection.t, 0, 1)
+        );
+
+        setDetachedDrag(prev => {
+          const hasMagnetTarget = Boolean(selectedRootId || selectedCandidate);
+          const strength = hasMagnetTarget ? 0.4 : 0.2;
+          const startX = prev?.traverserId === traverser.id ? prev.x : (fallbackRender?.x ?? targetX);
+          const startY = prev?.traverserId === traverser.id ? prev.y : (fallbackRender?.y ?? targetY);
+          const nextX = startX + (targetX - startX) * strength;
+          const nextY = startY + (targetY - startY) * strength;
+          return {
+            traverserId: traverser.id,
+            x: nextX,
+            y: nextY,
+            candidateEdgeId: selectedCandidate?.edgeId ?? null,
+            candidatePosition: selectedCandidate?.position ?? null,
+            candidateRootNodeId: selectedRootId ?? null,
+            candidateRootPosition: selectedRootPosition ?? null,
+          };
+        });
         return;
       }
 
@@ -2191,7 +2268,7 @@ export default function DagbanGraph({
     const x = node.x ?? 0;
     const y = node.y ?? 0;
     const isRootCandidate =
-      (Boolean(draggingUserId) && rootActiveNodeIds.has(node.id)) ||
+      ((Boolean(draggingUserId) || Boolean(draggingTraverserId)) && rootActiveNodeIds.has(node.id)) ||
       (detachedDrag?.candidateRootNodeId === node.id);
     const isPendingBurn = pendingBurn?.targetNodeId === node.id;
     const isPreviewBurnt = previewBurn?.targetNodeId === node.id || isPendingBurn;
@@ -2411,7 +2488,9 @@ export default function DagbanGraph({
     const isPreviewBurnt = previewBurn?.edgeId === link.edge.id || pendingBurn?.targetNodeId === link.edge.target;
     const isBurnt = Boolean(targetCard?.burntAt) || isPreviewBurnt;
     const baseStroke = isBurnt ? BURNT_COLOR : 'rgba(255, 255, 255, 0.3)';
-    const isEligible = Boolean(draggingUserId) && eligibleTraverserEdgeIds.has(link.edge.id);
+    const isEligible =
+      (Boolean(draggingUserId) || Boolean(draggingTraverserId)) &&
+      eligibleTraverserEdgeIds.has(link.edge.id);
     const isCandidateEdge = detachedDrag?.candidateEdgeId === link.edge.id;
 
     // Draw base line from source to target
@@ -3108,6 +3187,19 @@ export default function DagbanGraph({
               {traverser.isRoot && <span className="traverser-root-arrow" aria-hidden="true" />}
             </button>
           ))}
+        </div>
+      )}
+
+      {viewMode === '2D' && draggingUserId && draggingUserGhost && (
+        <div
+          className="dragging-user-ghost"
+          style={{ left: `${draggingUserGhost.x}px`, top: `${draggingUserGhost.y}px` }}
+        >
+          <UserAvatar
+            user={userById.get(draggingUserId)}
+            size="sm"
+            className="traverser-overlay-avatar"
+          />
         </div>
       )}
 

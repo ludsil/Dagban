@@ -248,6 +248,13 @@ html, body {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
 
+.dragging-user-ghost {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 950;
+}
+
 .traverser-overlay-avatar [data-slot="avatar-fallback"] {
   font-size: 8px;
 }
