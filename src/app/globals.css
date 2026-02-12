@@ -38,6 +38,25 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Graph theming tokens (override on .graph-shell or :root for personalization) */
+  --graph-fuse-red: #560D07;
+  --graph-fuse-orange: #D70C00;
+  --graph-fuse-yellow: #FEDB00;
+  --graph-category-default: #6b7280;
+  --graph-postit-bg: rgba(30, 30, 30, 0.95);
+  --graph-postit-border: rgba(255, 255, 255, 0.08);
+  --graph-postit-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  --graph-postit-assignee-bg: rgba(255, 255, 255, 0.15);
+  --graph-postit-assignee-hover: rgba(255, 255, 255, 0.25);
+  --graph-postit-assignee-empty-border: rgba(255, 255, 255, 0.3);
+  --graph-postit-assignee-empty-hover: rgba(255, 255, 255, 0.5);
+  --graph-postit-assignee-empty-bg: rgba(255, 255, 255, 0.05);
+  --graph-postit-assignee-icon: rgba(255, 255, 255, 0.4);
+  --graph-postit-assignee-icon-hover: rgba(255, 255, 255, 0.6);
+  --graph-postit-title: rgba(255, 255, 255, 0.95);
+  --graph-postit-text: rgba(255, 255, 255, 0.7);
+  --graph-postit-placeholder: rgba(255, 255, 255, 0.3);
 }
 
 @theme inline {
@@ -995,12 +1014,12 @@ html, body {
 .postit-panel {
   position: fixed;
   width: 340px;
-  background-color: rgba(30, 30, 30, 0.95);
+  background-color: var(--graph-postit-bg);
   border-radius: 12px;
   z-index: 2000;
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--graph-postit-border);
+  box-shadow: var(--graph-postit-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1023,7 +1042,7 @@ html, body {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--graph-postit-assignee-bg);
   border: none;
   cursor: pointer;
   display: flex;
@@ -1033,25 +1052,25 @@ html, body {
 }
 
 .postit-assignee-avatar:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--graph-postit-assignee-hover);
 }
 
 .postit-assignee-avatar.empty {
-  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border: 2px dashed var(--graph-postit-assignee-empty-border);
   background: transparent;
 }
 
 .postit-assignee-avatar.empty:hover {
-  border-color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--graph-postit-assignee-empty-hover);
+  background: var(--graph-postit-assignee-empty-bg);
 }
 
 .postit-assignee-avatar svg {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--graph-postit-assignee-icon);
 }
 
 .postit-assignee-avatar.empty:hover svg {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--graph-postit-assignee-icon-hover);
 }
 
 .postit-assignee-initials {
@@ -1089,7 +1108,7 @@ html, body {
   padding: 16px 16px 8px 16px;
   font-size: 18px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--graph-postit-title);
   resize: none;
   overflow: hidden;
   line-height: 1.3;
@@ -1101,7 +1120,7 @@ html, body {
 }
 
 .postit-title::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--graph-postit-placeholder);
 }
 
 .postit-content {
@@ -1110,7 +1129,7 @@ html, body {
   border: none;
   padding: 0 16px 16px 16px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--graph-postit-text);
   resize: none;
   min-height: 140px;
   flex: 1;

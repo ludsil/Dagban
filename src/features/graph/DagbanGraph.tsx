@@ -229,6 +229,12 @@ export default function DagbanGraph({
   const renderRafRef = useRef<number | null>(null);
   const [fuseAnimationTime, setFuseAnimationTime] = useState(0);
   const fuseAnimationRef = useRef<number | null>(null);
+  const [graphTheme, setGraphTheme] = useState(() => ({
+    fuseRed: '#560D07',
+    fuseOrange: '#D70C00',
+    fuseYellow: '#FEDB00',
+    categoryDefault: '#6b7280',
+  }));
   const [edgeStartPicker, setEdgeStartPicker] = useState<{
     edgeId: string;
     x: number;
@@ -255,6 +261,14 @@ export default function DagbanGraph({
   const [searchQuery, setSearchQuery] = useState('');
   const [blockerThreshold, setBlockerThreshold] = useState(0);
   const [burntAgeThreshold, setBurntAgeThreshold] = useState(BURNT_AGE_MAX);
+
+  const themedCategories = useMemo(() => (
+    data.categories.map(category => (
+      category.color
+        ? category
+        : { ...category, color: graphTheme.categoryDefault }
+    ))
+  ), [data.categories, graphTheme.categoryDefault]);
 
   const cardById = useMemo(() => new Map(data.cards.map(card => [card.id, card])), [data.cards]);
 
@@ -623,7 +637,7 @@ export default function DagbanGraph({
       seenNodeIds.add(card.id);
 
       const status = getCardStatus(card, data.edges, data.cards);
-      const categoryColor = getCardColor(card, status, data.categories);
+      const categoryColor = getCardColor(card, status, themedCategories);
       const matchesFilter = cardMatchesFilter(card, status);
 
       // Compute color based on colorMode
@@ -639,7 +653,7 @@ export default function DagbanGraph({
       }
 
       if (status === 'done') {
-        color = getCardColor(card, status, data.categories);
+        color = getCardColor(card, status, themedCategories);
       }
 
       // Dim the color if node doesn't match filter
@@ -813,7 +827,7 @@ export default function DagbanGraph({
   }, [
     data.cards,
     data.edges,
-    data.categories,
+    themedCategories,
     colorMode,
     indegrees,
     outdegrees,
@@ -831,6 +845,39 @@ export default function DagbanGraph({
   useEffect(() => {
     applyPendingGraphUpdates();
   }, [applyPendingGraphUpdates, graphReady]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Theme/personalization hook: override these CSS vars per project/user on .graph-shell or :root.
+    const updateThemeFromCss = () => {
+      const rootStyles = getComputedStyle(document.documentElement);
+      const containerStyles = getComputedStyle(container);
+      const resolveVar = (name: string, fallback: string) => {
+        const local = containerStyles.getPropertyValue(name).trim();
+        if (local) return local;
+        const root = rootStyles.getPropertyValue(name).trim();
+        return root || fallback;
+      };
+
+      setGraphTheme({
+        fuseRed: resolveVar('--graph-fuse-red', '#560D07'),
+        fuseOrange: resolveVar('--graph-fuse-orange', '#D70C00'),
+        fuseYellow: resolveVar('--graph-fuse-yellow', '#FEDB00'),
+        categoryDefault: resolveVar('--graph-category-default', '#6b7280'),
+      });
+    };
+
+    updateThemeFromCss();
+
+    const observer = new MutationObserver(updateThemeFromCss);
+    observer.observe(container, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+
+    return () => observer.disconnect();
+  }, []);
 
   const hasActiveFuses = useMemo(() => (data.traversers?.length ?? 0) > 0, [data.traversers]);
 
@@ -1167,7 +1214,7 @@ export default function DagbanGraph({
       id: generateId(),
       title: titleValue.trim(),
       description: descriptionValue.trim() || undefined,
-      categoryId: data.categories.length > 0 ? data.categories[0].id : '',
+      categoryId: themedCategories.length > 0 ? themedCategories[0].id : '',
       createdAt: now,
       updatedAt: now,
     };
@@ -1180,19 +1227,19 @@ export default function DagbanGraph({
     );
 
     closeCardCreation();
-  }, [cardCreation, data.categories, onCardCreate, closeCardCreation, isBurntNodeId, showToast]);
+  }, [cardCreation, themedCategories, onCardCreate, closeCardCreation, isBurntNodeId, showToast]);
 
   // Node radius
   const NODE_RADIUS = nodeRadius;
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
-  const FUSE_COLOR = 'rgba(220, 78, 35, 0.95)'; // burning coal
+  const FUSE_COLOR = graphTheme.fuseOrange;
   const FUSE_GRADIENT_STOPS = useMemo(() => ([
-    { stop: 0, color: '#560D07' },   // deep red
-    { stop: 0.45, color: '#D70C00' }, // orange-red
-    { stop: 0.78, color: '#FEDB00' }, // yellow
-    { stop: 1, color: '#560D07' },   // loop
-  ]), []);
+    { stop: 0, color: graphTheme.fuseRed },
+    { stop: 0.45, color: graphTheme.fuseOrange },
+    { stop: 0.78, color: graphTheme.fuseYellow },
+    { stop: 1, color: graphTheme.fuseRed },
+  ]), [graphTheme.fuseRed, graphTheme.fuseOrange, graphTheme.fuseYellow]);
   const fuseGradientPhase = useMemo(() => (fuseAnimationTime * 0.00018) % 1, [fuseAnimationTime]);
   const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)'; // dark gray
   const PENDING_RING_COLOR = 'rgba(148, 163, 184, 0.8)';
@@ -1417,6 +1464,32 @@ export default function DagbanGraph({
       updatedAt: now,
     };
   }, []);
+
+  const handleCardAssigneeChange = useCallback((cardId: string, assigneeId: string | null) => {
+    if (onCardChange) {
+      onCardChange(cardId, { assignee: assigneeId || undefined });
+    }
+    if (!assigneeId) return;
+    if (!rootActiveNodeIds.has(cardId)) return;
+    const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${cardId}`;
+    const existing = traverserByEdgeId.get(rootEdgeId);
+    if (existing) {
+      if (existing.userId !== assigneeId && onTraverserUpdate) {
+        onTraverserUpdate(existing.id, { userId: assigneeId, updatedAt: new Date().toISOString() });
+      }
+      return;
+    }
+    if (!onTraverserCreate) return;
+    const traverser = createTraverserForRoot(cardId, assigneeId, 0);
+    onTraverserCreate(traverser);
+  }, [
+    onCardChange,
+    onTraverserCreate,
+    onTraverserUpdate,
+    rootActiveNodeIds,
+    traverserByEdgeId,
+    createTraverserForRoot,
+  ]);
 
   const suppressNextBackgroundClick = useCallback(() => {
     suppressBackgroundClickRef.current = true;
@@ -2406,7 +2479,7 @@ export default function DagbanGraph({
     users: data.users,
     selectedAssignees,
     onAssigneeToggle: handleAssigneeToggle,
-    categories: data.categories,
+    categories: themedCategories,
     edges: data.edges,
     searchQuery,
     onSearchChange: setSearchQuery,
@@ -2434,7 +2507,7 @@ export default function DagbanGraph({
     onDevDatasetModeChange,
     data.cards,
     data.users,
-    data.categories,
+    themedCategories,
     data.edges,
     selectedAssignees,
     handleAssigneeToggle,
@@ -2533,6 +2606,7 @@ export default function DagbanGraph({
           selectedNode={selectedNode}
           onClose={() => setSelectedNode(null)}
           onCardChange={onCardChange}
+          onAssigneeChange={handleCardAssigneeChange}
           users={data.users}
           onCreateDownstream={openDownstreamCreation}
           onCreateUpstream={openUpstreamCreation}

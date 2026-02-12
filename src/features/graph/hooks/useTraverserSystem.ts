@@ -277,9 +277,9 @@ export function useTraverserSystem({
 
   const findClosestRootNode = useCallback((point: { x: number; y: number }) => {
     if (rootActiveNodeIds.size === 0) return null;
-    const zoom = getZoomScale();
     const rootSnapMultiplier = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
-    const captureRadius = (rootRingRadius + nodeRadius * rootSnapMultiplier) / zoom;
+    const captureMargin = nodeRadius * rootSnapMultiplier;
+    const captureRadius = rootRingRadius + captureMargin;
     let closest: { nodeId: string; distance: number } | null = null;
 
     for (const node of graphDataView.nodes as GraphNodeData[]) {
@@ -288,6 +288,7 @@ export function useTraverserSystem({
       const dist = Math.hypot(point.x - node.x, point.y - node.y);
       if (dist > captureRadius) continue;
       const ringDistance = Math.abs(dist - rootRingRadius);
+      if (ringDistance > captureMargin) continue;
       if (!closest || ringDistance < closest.distance) {
         closest = { nodeId: node.id, distance: ringDistance };
       }
@@ -297,7 +298,6 @@ export function useTraverserSystem({
   }, [
     graphDataView.nodes,
     rootActiveNodeIds,
-    getZoomScale,
     nodeRadius,
     displayMode,
     rootRingRadius,
@@ -380,7 +380,9 @@ export function useTraverserSystem({
     }
 
     const candidate = findClosestEdge(coords, eligibleTraverserEdgeIds, tuning.ghostEdgeSearchRadius);
-    const preferRoot = rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance));
+    const rootSnapMultiplier = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
+    const rootBias = nodeRadius * rootSnapMultiplier;
+    const preferRoot = rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance + rootBias));
     const selectedCandidate = preferRoot ? null : candidate;
     const selectedRootId = preferRoot ? rootCandidateId : null;
     const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
@@ -437,6 +439,10 @@ export function useTraverserSystem({
     tuning.ghostEdgeSearchRadius,
     tuning.magnetStrength.ghostTarget,
     tuning.magnetStrength.ghostFree,
+    tuning.rootSnapMultiplier.balls,
+    tuning.rootSnapMultiplier.labels,
+    displayMode,
+    nodeRadius,
     nodeByIdRef,
     containerRef,
   ]);
@@ -641,65 +647,51 @@ export function useTraverserSystem({
               }
             }
           }
-          if (rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance))) {
-            const rootNode = nodeByIdRef.current?.get(rootCandidateId);
+          const rootSnapMultiplier = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
+          const rootBias = nodeRadius * rootSnapMultiplier;
+          const preferRoot = rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance + rootBias));
+          const selectedCandidate = preferRoot ? null : candidate;
+          const selectedRootId = preferRoot ? rootCandidateId : null;
+          const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
+
+          let targetX = coords.x;
+          let targetY = coords.y;
+          if (selectedRootId) {
+            const rootNode = nodeByIdRef.current?.get(selectedRootId);
             if (rootNode) {
-              const render = getRootTraverserPoint(rootNode, rootCandidatePosition ?? 0);
-              setDetachedDrag({
-                traverserId: traverser.id,
-                x: render.x,
-                y: render.y,
-                candidateEdgeId: null,
-                candidatePosition: null,
-                candidateRootNodeId: rootCandidateId,
-                candidateRootPosition: rootCandidatePosition ?? 0,
-              });
-            } else {
-              setDetachedDrag({
-                traverserId: traverser.id,
-                x: coords.x,
-                y: coords.y,
-                candidateEdgeId: null,
-                candidatePosition: null,
-                candidateRootNodeId: null,
-                candidateRootPosition: null,
-              });
+              const render = getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
+              targetX = render.x;
+              targetY = render.y;
             }
-          } else if (candidate) {
-            const candidateNodes = getEdgeNodes(candidate.edgeId);
+          } else if (selectedCandidate) {
+            const candidateNodes = getEdgeNodes(selectedCandidate.edgeId);
             if (candidateNodes) {
-              const render = getTraverserRenderPoint(candidateNodes.sourceNode, candidateNodes.targetNode, candidate.position);
-              setDetachedDrag({
-                traverserId: traverser.id,
-                x: render.x,
-                y: render.y,
-                candidateEdgeId: candidate.edgeId,
-                candidatePosition: candidate.position,
-                candidateRootNodeId: null,
-                candidateRootPosition: null,
-              });
-            } else {
-              setDetachedDrag({
-                traverserId: traverser.id,
-                x: coords.x,
-                y: coords.y,
-                candidateEdgeId: null,
-                candidatePosition: null,
-                candidateRootNodeId: null,
-                candidateRootPosition: null,
-              });
+              const render = getTraverserRenderPoint(
+                candidateNodes.sourceNode,
+                candidateNodes.targetNode,
+                selectedCandidate.position
+              );
+              targetX = render.x;
+              targetY = render.y;
             }
-          } else {
-            setDetachedDrag({
-              traverserId: traverser.id,
-              x: coords.x,
-              y: coords.y,
-              candidateEdgeId: null,
-              candidatePosition: null,
-              candidateRootNodeId: null,
-              candidateRootPosition: null,
-            });
           }
+
+          const currentRender = getRootTraverserPoint(node, clamp(traverser.position ?? 0, 0, 1));
+          setDetachedDrag(prev => {
+            const hasMagnetTarget = Boolean(selectedRootId || selectedCandidate);
+            const strength = hasMagnetTarget ? tuning.magnetStrength.detachTarget : tuning.magnetStrength.detachFree;
+            const startX = prev?.traverserId === traverser.id ? prev.x : currentRender.x;
+            const startY = prev?.traverserId === traverser.id ? prev.y : currentRender.y;
+            return {
+              traverserId: traverser.id,
+              x: startX + (targetX - startX) * strength,
+              y: startY + (targetY - startY) * strength,
+              candidateEdgeId: selectedCandidate?.edgeId ?? null,
+              candidatePosition: selectedCandidate?.position ?? null,
+              candidateRootNodeId: selectedRootId ?? null,
+              candidateRootPosition: selectedRootPosition ?? null,
+            };
+          });
           return;
         }
 
@@ -814,7 +806,9 @@ export function useTraverserSystem({
           }
         }
 
-        const preferRoot = rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance));
+        const rootSnapMultiplier = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
+        const rootBias = nodeRadius * rootSnapMultiplier;
+        const preferRoot = rootCandidateId && (!candidate || (rootCandidate.distance <= candidate.distance + rootBias));
         const selectedCandidate = preferRoot ? null : candidate;
         const selectedRootId = preferRoot ? rootCandidateId : null;
         const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
@@ -975,9 +969,13 @@ export function useTraverserSystem({
     traverserByEdgeId,
     showToast,
     nodeByIdRef,
+    nodeRadius,
     tuning.dragEdgeSearchRadius,
     tuning.magnetStrength.detachTarget,
     tuning.magnetStrength.detachFree,
+    tuning.rootSnapMultiplier.balls,
+    tuning.rootSnapMultiplier.labels,
+    displayMode,
   ]);
 
   const traverserOverlays = useMemo(() => {

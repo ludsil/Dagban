@@ -31,7 +31,7 @@ export const defaultTraverserTuning: TraverserTuning = {
   dragEdgeSearchRadius: 18,
   ghostEdgeSearchRadius: 24,
   rootSnapMultiplier: {
-    balls: 2,
-    labels: 3.2,
+    balls: 1.7,
+    labels: 2.8,
   },
 };

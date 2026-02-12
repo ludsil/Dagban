@@ -23,6 +23,7 @@ interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
   onClose: () => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
+  onAssigneeChange?: (cardId: string, assigneeId: string | null) => void;
   users?: User[];
   onCreateDownstream?: (parentNode: GraphNodeData) => void;
   onCreateUpstream?: (childNode: GraphNodeData) => void;
@@ -35,6 +36,7 @@ export function CardDetailPanel({
   selectedNode,
   onClose,
   onCardChange,
+  onAssigneeChange,
   users = [],
   onCreateDownstream,
   onCreateUpstream,
@@ -237,6 +239,13 @@ export function CardDetailPanel({
   const assigneeUser = assignee ? userById.get(assignee) : undefined;
   const assigneeLabel = assigneeUser?.name || assignee;
 
+  const handleAssigneeChange = useCallback((value: string) => {
+    const nextAssignee = value === '__unassigned__' ? '' : value;
+    setAssignee(nextAssignee);
+    onAssigneeChange?.(card.id, nextAssignee ? nextAssignee : null);
+    cardRef.current = { ...cardRef.current, assignee: nextAssignee || undefined };
+  }, [card.id, onAssigneeChange]);
+
   return (
     <div
       ref={panelRef}
@@ -253,9 +262,7 @@ export function CardDetailPanel({
       <div className="postit-assignee-corner">
         <Select
           value={assignee || '__unassigned__'}
-          onValueChange={(value) => {
-            setAssignee(value === '__unassigned__' ? '' : value);
-          }}
+          onValueChange={handleAssigneeChange}
         >
           <SelectTrigger
             size="sm"
