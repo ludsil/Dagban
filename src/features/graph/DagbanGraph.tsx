@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Category, Traverser } from '@/lib/types';
 import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } from '@/lib/colors';
 import {
@@ -26,11 +25,10 @@ import {
   CommandPalette,
   ToastNotification,
   KeyboardShortcutsHelp,
-  Header,
-  SettingsPanel,
-  UserAvatar,
-  UserStack,
-  EdgeContextMenu,
+  GraphCanvasLayer,
+  GraphHudLeft,
+  GraphHudRight,
+  GraphOverlays,
   // Types
   GraphNodeData,
   GraphLinkData,
@@ -47,17 +45,6 @@ import {
   ColorMode,
   ArrowMode,
 } from './components';
-
-// Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading graph...</div>
-});
-
-const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading graph...</div>
-});
 
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
@@ -1841,6 +1828,19 @@ export default function DagbanGraph({
     detachedDrag?.candidateEdgeId,
   ]);
 
+  const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
+    ctx.fillStyle = color;
+    const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
+    if (bckgDimensions) {
+      ctx.fillRect(
+        (node.x ?? 0) - bckgDimensions[0] / 2,
+        (node.y ?? 0) - bckgDimensions[1] / 2,
+        bckgDimensions[0],
+        bckgDimensions[1]
+      );
+    }
+  }, []);
+
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
     if (arrowMode !== 'end') return 0.5;
     const source = link.source as GraphNodeData;
@@ -1887,11 +1887,6 @@ export default function DagbanGraph({
   // Suggested approach: use linkThreeObject to draw a tube/line segment for the fuse,
   // and a Sprite or CSS2DObject avatar at the interpolated traverser position (update on tick/zoom).
   // No custom linkThreeObject needed - use built-in arrow rendering for 3D
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const FG2D = ForceGraph2D as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const FG3D = ForceGraph3D as any;
 
   const openEdgeStartPicker = useCallback((edgeId: string, x: number, y: number) => {
     if (traverserByEdgeId.has(edgeId)) {
@@ -2293,6 +2288,91 @@ export default function DagbanGraph({
     return getScreenCoords(node.x, node.y);
   }, [pendingBurn?.targetNodeId, pendingBurn?.anchor, viewMode, renderTick, getScreenCoords]);
 
+  const headerProps = useMemo(() => ({
+    onDownloadGraph: handleDownloadGraph,
+    onUploadGraph: handleUploadGraph,
+    onNewRootNode: openRootNodeCreation,
+  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation]);
+
+  const userStackProps = useMemo(() => ({
+    users: data.users,
+    selectedUserIds: selectedAssignees,
+    onUserToggle: handleAssigneeToggle,
+    onAddUser: handleAddUser,
+    onUserDragStart: handleUserDragStart,
+    onUserDragEnd: handleUserDragEnd,
+  }), [data.users, selectedAssignees, handleAssigneeToggle, handleAddUser, handleUserDragStart, handleUserDragEnd]);
+
+  const settingsPanelProps = useMemo(() => ({
+    viewMode,
+    displayMode,
+    nodeRadius,
+    onNodeRadiusChange: setNodeRadius,
+    colorMode,
+    arrowMode,
+    onViewModeChange: setViewMode,
+    onDisplayModeChange: setDisplayMode,
+    onColorModeChange: setColorMode,
+    onArrowModeChange: setArrowMode,
+    devDatasetMode,
+    onDevDatasetModeChange,
+    cards: data.cards,
+    users: data.users,
+    selectedAssignees,
+    onAssigneeToggle: handleAssigneeToggle,
+    categories: data.categories,
+    edges: data.edges,
+    searchQuery,
+    onSearchChange: setSearchQuery,
+    selectedCategories,
+    onCategoryToggle: handleCategoryToggle,
+    selectedStatuses,
+    onStatusToggle: handleStatusToggle,
+    blockerThreshold,
+    onBlockerThresholdChange: setBlockerThreshold,
+    burntAgeThreshold,
+    onBurntAgeThresholdChange: setBurntAgeThreshold,
+    burntAgeMax: BURNT_AGE_MAX,
+  }), [
+    viewMode,
+    displayMode,
+    nodeRadius,
+    setNodeRadius,
+    colorMode,
+    arrowMode,
+    setViewMode,
+    setDisplayMode,
+    setColorMode,
+    setArrowMode,
+    devDatasetMode,
+    onDevDatasetModeChange,
+    data.cards,
+    data.users,
+    data.categories,
+    data.edges,
+    selectedAssignees,
+    handleAssigneeToggle,
+    searchQuery,
+    setSearchQuery,
+    selectedCategories,
+    handleCategoryToggle,
+    selectedStatuses,
+    handleStatusToggle,
+    blockerThreshold,
+    setBlockerThreshold,
+    burntAgeThreshold,
+    setBurntAgeThreshold,
+  ]);
+
+  const edgeContextMenuTraverserId = useMemo(() => {
+    const edgeTraverser = edgeContextMenu.edgeId
+      ? traverserByEdgeId.get(edgeContextMenu.edgeId)
+      : null;
+    return edgeTraverser?.id ?? null;
+  }, [edgeContextMenu.edgeId, traverserByEdgeId]);
+
+  const draggingUser = draggingUserId ? userById.get(draggingUserId) ?? null : null;
+
   return (
     <div
       ref={containerRef}
@@ -2301,195 +2381,55 @@ export default function DagbanGraph({
       onDrop={handleUserDrop}
       onPointerDown={handleTraverserPointerDown}
     >
-      <div className="graph-hud-left">
-        {projectHeader || (
-          <Header
-            onDownloadGraph={handleDownloadGraph}
-            onUploadGraph={handleUploadGraph}
-            onNewRootNode={openRootNodeCreation}
-          />
-        )}
-      </div>
-      <div className="graph-hud-right">
-        <UserStack
-          users={data.users}
-          selectedUserIds={selectedAssignees}
-          onUserToggle={handleAssigneeToggle}
-          onAddUser={handleAddUser}
-          onUserDragStart={handleUserDragStart}
-          onUserDragEnd={handleUserDragEnd}
-        />
-        {showSettings && (
-          <SettingsPanel
-            viewMode={viewMode}
-            displayMode={displayMode}
-            nodeRadius={nodeRadius}
-            onNodeRadiusChange={setNodeRadius}
-            colorMode={colorMode}
-            arrowMode={arrowMode}
-            onViewModeChange={setViewMode}
-            onDisplayModeChange={setDisplayMode}
-            onColorModeChange={setColorMode}
-            onArrowModeChange={setArrowMode}
-            devDatasetMode={devDatasetMode}
-            onDevDatasetModeChange={onDevDatasetModeChange}
-            cards={data.cards}
-            users={data.users}
-            selectedAssignees={selectedAssignees}
-            onAssigneeToggle={handleAssigneeToggle}
-            categories={data.categories}
-            edges={data.edges}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            selectedCategories={selectedCategories}
-            onCategoryToggle={handleCategoryToggle}
-            selectedStatuses={selectedStatuses}
-            onStatusToggle={handleStatusToggle}
-            blockerThreshold={blockerThreshold}
-            onBlockerThresholdChange={setBlockerThreshold}
-            burntAgeThreshold={burntAgeThreshold}
-            onBurntAgeThresholdChange={setBurntAgeThreshold}
-            burntAgeMax={BURNT_AGE_MAX}
-          />
-        )}
-      </div>
+      <GraphHudLeft projectHeader={projectHeader} headerProps={headerProps} />
+      <GraphHudRight
+        userStackProps={userStackProps}
+        settingsPanelProps={settingsPanelProps}
+        showSettings={showSettings}
+      />
 
+      <GraphCanvasLayer
+        viewMode={viewMode}
+        displayMode={displayMode}
+        arrowMode={arrowMode}
+        nodeRadius={nodeRadius}
+        css2DRendererInstance={css2DRendererInstance}
+        commonProps={commonProps}
+        nodeCanvasObject={nodeCanvasObject}
+        nodePointerAreaPaint={nodePointerAreaPaint}
+        linkCanvasObject={linkCanvasObject}
+        nodeThreeObject={nodeThreeObject}
+        getArrowRelPos={getArrowRelPos}
+        getArrowRelPosMiddle={getArrowRelPosMiddle}
+      />
 
-      <div className="graph-canvas">
-        {viewMode === '2D' ? (
-          <FG2D
-            {...commonProps}
-            nodeCanvasObject={nodeCanvasObject}
-            nodePointerAreaPaint={(node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
-              ctx.fillStyle = color;
-              const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
-              if (bckgDimensions) {
-                ctx.fillRect(
-                  (node.x ?? 0) - bckgDimensions[0] / 2,
-                  (node.y ?? 0) - bckgDimensions[1] / 2,
-                  bckgDimensions[0],
-                  bckgDimensions[1]
-                );
-              }
-            }}
-            linkCanvasObject={linkCanvasObject}
-            linkColor={() => 'rgba(255,255,255,0.2)'}
-          />
-        ) : css2DRendererInstance ? (
-          <FG3D
-            {...commonProps}
-            extraRenderers={[css2DRendererInstance]}
-            nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
-            nodeThreeObjectExtend={true}
-            nodeRelSize={nodeRadius}
-            linkWidth={1}
-            linkOpacity={0.6}
-            linkColor={() => 'rgba(255, 255, 255, 0.4)'}
-            linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
-            linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
-            linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : arrowMode === 'middle' ? getArrowRelPosMiddle : 0.5}
-            nodeOpacity={1}
-          />
-        ) : (
-          <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
-        )}
-      </div>
-
-      {viewMode === '2D' && traverserOverlays.length > 0 && (
-        <div className="traverser-overlay-layer">
-          {traverserOverlays.map(traverser => (
-            <button
-              key={traverser.id}
-              type="button"
-              className={`traverser-overlay ${draggingTraverserId === traverser.id ? 'dragging' : ''} ${traverser.isRoot ? 'root' : ''}`}
-              style={{ left: `${traverser.x}px`, top: `${traverser.y}px` }}
-              onPointerDown={(event) => handleTraverserOverlayPointerDown(event, traverser.id)}
-              title={traverser.user?.name || 'Traverser'}
-            >
-              <UserAvatar user={traverser.user} size="sm" className="traverser-overlay-avatar" />
-              {traverser.isRoot && <span className="traverser-root-arrow" aria-hidden="true" />}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {viewMode === '2D' && draggingUserId && draggingUserGhost && (
-        <div
-          className="dragging-user-ghost"
-          style={{ left: `${draggingUserGhost.x}px`, top: `${draggingUserGhost.y}px` }}
-        >
-          <UserAvatar
-            user={userById.get(draggingUserId)}
-            size="sm"
-            className="traverser-overlay-avatar"
-          />
-        </div>
-      )}
-
-      {pendingBurn && pendingBurnAnchor && viewMode === '2D' && (
-        <div
-          className="burn-confirm"
-          style={{ left: `${pendingBurnAnchor.x}px`, top: `${pendingBurnAnchor.y}px` }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="burn-confirm-title">Is the task done?</div>
-          <div className="burn-confirm-actions">
-            <button type="button" onClick={confirmPendingBurn}>Yes, burn</button>
-            <button type="button" className="ghost" onClick={cancelPendingBurn}>Not yet</button>
-          </div>
-          <span className="burn-confirm-hint">Press Enter to confirm</span>
-        </div>
-      )}
-
-      {(() => {
-        const edgeTraverser = edgeContextMenu.edgeId
-          ? traverserByEdgeId.get(edgeContextMenu.edgeId)
-          : null;
-        return (
-          <EdgeContextMenu
-            state={edgeContextMenu}
-            traverserId={edgeTraverser?.id ?? null}
-            onClose={closeEdgeContextMenu}
-            onAssign={handleEdgeAssign}
-            onDetach={handleEdgeDetachTraverser}
-            onDelete={handleEdgeDelete}
-          />
-        );
-      })()}
-
-      {edgeStartPicker && viewMode === '2D' && (
-        <div
-          className="edge-start-picker"
-          style={{ left: `${edgeStartPicker.x}px`, top: `${edgeStartPicker.y}px` }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="edge-start-title">Start progress</div>
-          <div className="edge-start-users">
-            {data.users.length === 0 && (
-              <span className="edge-start-empty">Add a user to begin.</span>
-            )}
-            {data.users.map(user => (
-              <button
-                key={user.id}
-                type="button"
-                className="edge-start-user"
-                onClick={() => handleEdgeStartPickUser(user.id)}
-                title={user.name}
-              >
-                <UserAvatar user={user} size="sm" />
-              </button>
-            ))}
-            <button
-              type="button"
-              className="edge-start-add"
-              onClick={handleAddUser}
-              title="Add user"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      )}
+      <GraphOverlays
+        viewMode={viewMode}
+        traverserOverlays={traverserOverlays}
+        draggingTraverserId={draggingTraverserId}
+        onTraverserOverlayPointerDown={handleTraverserOverlayPointerDown}
+        draggingUserId={draggingUserId}
+        draggingUserGhost={draggingUserGhost}
+        draggingUser={draggingUser}
+        pendingBurn={pendingBurn}
+        pendingBurnAnchor={pendingBurnAnchor}
+        onConfirmPendingBurn={confirmPendingBurn}
+        onCancelPendingBurn={cancelPendingBurn}
+        edgeContextMenu={edgeContextMenu}
+        edgeContextMenuTraverserId={edgeContextMenuTraverserId}
+        onCloseEdgeContextMenu={closeEdgeContextMenu}
+        onEdgeAssign={handleEdgeAssign}
+        onEdgeDetach={handleEdgeDetachTraverser}
+        onEdgeDelete={handleEdgeDelete}
+        edgeStartPicker={edgeStartPicker}
+        users={data.users}
+        onEdgeStartPickUser={handleEdgeStartPickUser}
+        onAddUser={handleAddUser}
+        hoverTooltip={hoverTooltip}
+        connectionMode={connectionMode}
+        onCancelConnectionMode={cancelConnectionMode}
+        dragConnect={dragConnect}
+      />
 
       {/* Card Creation Form */}
       <CardCreationForm
@@ -2516,31 +2456,6 @@ export default function DagbanGraph({
         />
       )}
 
-      {/* Node Hover Tooltip */}
-      {hoverTooltip.visible && hoverTooltip.x > 0 && (
-        <div
-          className="node-hover-tooltip"
-          style={{
-            left: `${hoverTooltip.x + 12}px`,
-            top: `${hoverTooltip.y + 12}px`,
-          }}
-        >
-          <span style={{ color: hoverTooltip.color || 'inherit' }}>{hoverTooltip.title}</span>
-          <div className={`tooltip-assignee-avatar ${!hoverTooltip.assignee ? 'empty' : ''}`}>
-            {hoverTooltip.assignee ? (
-              <span className="tooltip-assignee-initials">
-                {hoverTooltip.assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')}
-              </span>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" opacity="0.4">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-              </svg>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Toast Notification */}
       <ToastNotification state={toast} onClose={hideToast} />
 
@@ -2559,43 +2474,6 @@ export default function DagbanGraph({
         visible={showShortcutsHelp}
         onClose={() => setShowShortcutsHelp(false)}
       />
-
-      {/* Connection Mode Indicator */}
-      {connectionMode.active && connectionMode.sourceNode && (
-        <div className="connection-mode-indicator">
-          <div className="connection-mode-source">
-            <div
-              className="connection-mode-dot"
-              style={{ backgroundColor: connectionMode.sourceNode.color }}
-            />
-            <span>{connectionMode.sourceNode.title}</span>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-          <span className="connection-mode-hint">Click a node to connect</span>
-          <button className="connection-mode-cancel" onClick={cancelConnectionMode}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Drag-to-Connect Progress Indicator */}
-      {dragConnect.active && dragConnect.sourceNode && dragConnect.targetNode && (
-        <div className="drag-connect-indicator">
-          <div className="drag-connect-progress-bar">
-            <div
-              className="drag-connect-progress-fill"
-              style={{ width: `${dragConnect.progress * 100}%` }}
-            />
-          </div>
-          <span className="drag-connect-text">
-            Connecting: {dragConnect.sourceNode.title} → {dragConnect.targetNode.title}
-          </span>
-        </div>
-      )}
 
     </div>
   );
