@@ -1878,8 +1878,12 @@ export default function DagbanGraph({
 
     const targetCard = cardById.get(link.edge.target);
     const isPreviewBurnt = previewBurn?.edgeId === link.edge.id || pendingBurn?.targetNodeId === link.edge.target;
-    const isBurnt = Boolean(targetCard?.burntAt) || isPreviewBurnt;
-    const baseStroke = isBurnt ? BURNT_COLOR : 'rgba(255, 255, 255, 0.3)';
+    const isBurnt = Boolean(targetCard?.burntAt);
+    const baseStroke = isBurnt
+      ? BURNT_COLOR
+      : isPreviewBurnt
+        ? 'rgba(255, 255, 255, 0.5)'
+        : 'rgba(255, 255, 255, 0.3)';
     const isEligible =
       (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) &&
       eligibleTraverserEdgeIds.has(link.edge.id);
