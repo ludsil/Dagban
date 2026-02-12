@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import DagbanGraph from '@/components/DagbanGraph';
 import { getEmptyGraph, getProjects, Project } from '@/lib/projects';
 import { usePersistedGraph } from '@/lib/storage';
+import { useGraphUndo, type GraphUpdateOptions } from '@/lib/graph-undo';
 import type { DagbanGraph as GraphData, Card, Traverser, User } from '@/lib/types';
 import { createUserId } from '@/lib/users';
 import {
@@ -176,30 +177,31 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
   const emptyGraph = useMemo(() => getEmptyGraph(), [projectId]);
   // Use persisted graph with project-specific storage
   const [graph, setGraph] = usePersistedGraph(emptyGraph, projectId);
+  const { applyGraphUpdate, handleUndo } = useGraphUndo(setGraph);
 
   // Handle card updates
   const handleCardChange = useCallback((cardId: string, updates: Partial<GraphData['cards'][0]>) => {
-    setGraph(prev => ({
+    applyGraphUpdate(prev => ({
       ...prev,
       cards: prev.cards.map(card =>
         card.id === cardId ? { ...card, ...updates, updatedAt: new Date().toISOString() } : card
       ),
     }));
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   // Handle category updates
   const handleCategoryChange = useCallback((categoryId: string, updates: Partial<GraphData['categories'][0]>) => {
-    setGraph(prev => ({
+    applyGraphUpdate(prev => ({
       ...prev,
       categories: prev.categories.map(cat =>
         cat.id === categoryId ? { ...cat, ...updates } : cat
       ),
     }));
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   // Handle card creation (with optional parent for downstream or child for upstream)
   const handleCardCreate = useCallback((card: Card, parentCardId?: string, childCardId?: string) => {
-    setGraph(prev => {
+    applyGraphUpdate(prev => {
       const newEdges = [...prev.edges];
 
       if (parentCardId) {
@@ -224,11 +226,11 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         edges: newEdges,
       };
     });
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   // Handle card deletion (also removes connected edges)
   const handleCardDelete = useCallback((cardId: string) => {
-    setGraph(prev => {
+    applyGraphUpdate(prev => {
       const remainingEdges = prev.edges.filter(edge => edge.source !== cardId && edge.target !== cardId);
       return {
         ...prev,
@@ -237,11 +239,11 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         traversers: prev.traversers.filter(traverser => remainingEdges.some(edge => edge.id === traverser.edgeId)),
       };
     });
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   // Handle edge creation between existing nodes
   const handleEdgeCreate = useCallback((sourceId: string, targetId: string) => {
-    setGraph(prev => ({
+    applyGraphUpdate(prev => ({
       ...prev,
       edges: [
         ...prev.edges,
@@ -252,10 +254,10 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         },
       ],
     }));
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   const handleEdgeDelete = useCallback((edgeId: string) => {
-    setGraph(prev => {
+    applyGraphUpdate(prev => {
       const remainingEdges = prev.edges.filter(edge => edge.id !== edgeId);
       return {
         ...prev,
@@ -263,12 +265,12 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         traversers: prev.traversers.filter(traverser => traverser.edgeId !== edgeId),
       };
     });
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   const handleUserAdd = useCallback((name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    setGraph(prev => {
+    applyGraphUpdate(prev => {
       const existingIds = new Set(prev.users.map(user => user.id));
       const id = createUserId(trimmed, existingIds);
       const newUser: User = {
@@ -280,33 +282,37 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         users: [...prev.users, newUser],
       };
     });
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   const handleTraverserCreate = useCallback((traverser: Traverser) => {
-    setGraph(prev => {
+    applyGraphUpdate(prev => {
       if (prev.traversers.some(existing => existing.edgeId === traverser.edgeId)) return prev;
       return {
         ...prev,
         traversers: [...prev.traversers, traverser],
       };
     });
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
-  const handleTraverserUpdate = useCallback((traverserId: string, updates: Partial<Traverser>) => {
-    setGraph(prev => ({
+  const handleTraverserUpdate = useCallback((
+    traverserId: string,
+    updates: Partial<Traverser>,
+    options?: GraphUpdateOptions
+  ) => {
+    applyGraphUpdate(prev => ({
       ...prev,
       traversers: prev.traversers.map(traverser =>
         traverser.id === traverserId ? { ...traverser, ...updates } : traverser
       ),
-    }));
-  }, [setGraph]);
+    }), { transient: options?.transient, recordUndo: options?.recordUndo });
+  }, [applyGraphUpdate]);
 
   const handleTraverserDelete = useCallback((traverserId: string) => {
-    setGraph(prev => ({
+    applyGraphUpdate(prev => ({
       ...prev,
       traversers: prev.traversers.filter(traverser => traverser.id !== traverserId),
     }));
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   const handleDownloadGraph = useCallback(() => {
     try {
@@ -344,17 +350,17 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
           console.warn('Invalid Dagban JSON format');
           return;
         }
-        setGraph(parsed as GraphData);
+        applyGraphUpdate(() => parsed as GraphData);
       } catch (error) {
         console.error('Failed to import graph JSON', error);
       }
     };
     reader.readAsText(file);
-  }, [setGraph]);
+  }, [applyGraphUpdate]);
 
   const handleGraphImport = useCallback((nextGraph: GraphData) => {
-    setGraph(nextGraph);
-  }, [setGraph]);
+    applyGraphUpdate(() => nextGraph);
+  }, [applyGraphUpdate]);
 
   const handleProjectSelect = useCallback((newProjectId: string) => {
     router.push(`/project/${newProjectId}`);
@@ -392,6 +398,7 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         onTraverserCreate={handleTraverserCreate}
         onTraverserUpdate={handleTraverserUpdate}
         onTraverserDelete={handleTraverserDelete}
+        onUndo={handleUndo}
         projectHeader={
           <ProjectHeader
             project={project}
