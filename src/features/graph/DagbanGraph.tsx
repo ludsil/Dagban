@@ -1676,13 +1676,14 @@ export default function DagbanGraph({
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
+    const rootTraverser = rootTraverserByNodeId.get(node.id);
+    const rootAvailable = !rootTraverser || rootTraverser.id === detachedDrag?.traverserId;
     const isRootCandidate =
-      ((Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) && rootActiveNodeIds.has(node.id)) ||
+      ((Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) && rootActiveNodeIds.has(node.id) && rootAvailable) ||
       (detachedDrag?.candidateRootNodeId === node.id);
     const isPendingBurn = pendingBurn?.targetNodeId === node.id;
     const isPreviewBurnt = previewBurn?.targetNodeId === node.id || isPendingBurn;
     const drawColor = isPreviewBurnt ? BURNT_COLOR : node.color;
-    const rootTraverser = rootTraverserByNodeId.get(node.id);
     const rootProgress = rootTraverser ? clamp(rootTraverser.position, 0, 1) : null;
 
     // Check if this is the source node in connection mode
