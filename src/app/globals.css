@@ -38,6 +38,25 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Graph theming tokens (override on .graph-shell or :root for personalization) */
+  --graph-fuse-red: #560D07;
+  --graph-fuse-orange: #D70C00;
+  --graph-fuse-yellow: #FEDB00;
+  --graph-category-default: #6b7280;
+  --graph-postit-bg: rgba(30, 30, 30, 0.95);
+  --graph-postit-border: rgba(255, 255, 255, 0.08);
+  --graph-postit-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  --graph-postit-assignee-bg: rgba(255, 255, 255, 0.15);
+  --graph-postit-assignee-hover: rgba(255, 255, 255, 0.25);
+  --graph-postit-assignee-empty-border: rgba(255, 255, 255, 0.3);
+  --graph-postit-assignee-empty-hover: rgba(255, 255, 255, 0.5);
+  --graph-postit-assignee-empty-bg: rgba(255, 255, 255, 0.05);
+  --graph-postit-assignee-icon: rgba(255, 255, 255, 0.4);
+  --graph-postit-assignee-icon-hover: rgba(255, 255, 255, 0.6);
+  --graph-postit-title: rgba(255, 255, 255, 0.95);
+  --graph-postit-text: rgba(255, 255, 255, 0.7);
+  --graph-postit-placeholder: rgba(255, 255, 255, 0.3);
 }
 
 @theme inline {
@@ -105,21 +124,284 @@ html, body {
 
 /* Settings panel styling */
 .settings-panel {
-  position: absolute;
-  top: 16px;
-  right: 16px;
   background-color: rgba(20, 20, 20, 0.95);
   border-radius: 6px;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  z-index: 1000;
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   min-width: 200px;
+}
+
+.graph-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+  overflow: hidden;
+}
+
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+}
+
+.graph-hud-left,
+.graph-hud-right {
+  position: absolute;
+  top: 16px;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-hud-left {
+  left: 16px;
+}
+
+.graph-hud-right {
+  right: 16px;
+  align-items: flex-start;
+}
+
+.graph-hud-right .settings-panel {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.settings-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-top-row .settings-search {
+  flex: 1;
+}
+
+
+.user-stack {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.user-stack-item {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(12, 12, 12, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -10px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  z-index: calc(10 - var(--stack-index));
+  cursor: pointer !important;
+}
+
+.user-stack-item * {
+  cursor: pointer !important;
+}
+
+.user-stack-item:first-child {
+  margin-left: 0;
+}
+
+.user-stack-item:hover {
+  transform: translateY(-3px) scale(1.08);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+
+.user-stack-item.active {
+  border-color: rgba(74, 222, 128, 1);
+  box-shadow:
+    0 0 0 1px rgba(74, 222, 128, 0.6),
+    0 0 0 3px rgba(74, 222, 128, 0.25);
+}
+
+.user-stack-item.user-stack-add {
+  border-style: dashed;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.traverser-overlay-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 900;
+}
+
+.traverser-overlay {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: grab;
+}
+
+.traverser-overlay.root {
+  position: absolute;
+}
+
+.traverser-overlay.dragging {
+  cursor: grabbing;
+}
+
+.traverser-overlay-avatar {
+  width: 16px !important;
+  height: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.dragging-user-ghost {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 950;
+}
+
+.traverser-overlay-avatar [data-slot="avatar-fallback"] {
+  font-size: 8px;
+}
+
+.traverser-root-arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  --root-arrow-angle: 0deg;
+  --root-arrow-offset: 11px;
+  transform: translate(-50%, -50%) rotate(var(--root-arrow-angle)) translateX(var(--root-arrow-offset));
+  transform-origin: center center;
+  pointer-events: none;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.45));
+  transition: transform 120ms ease-out;
+  will-change: transform;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 7px solid rgba(255, 255, 255, 0.95);
+}
+
+.traverser-root-arrow::before {
+  content: none;
+}
+
+.burn-confirm {
+  position: absolute;
+  transform: translate(-50%, -140%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 10, 10, 0.92);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  z-index: 950;
+  pointer-events: auto;
+}
+
+.burn-confirm-title {
+  font-weight: 600;
+}
+
+.burn-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.burn-confirm-actions button {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.burn-confirm-actions button:first-child {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0b0b0b;
+}
+
+.burn-confirm-actions button.ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.burn-confirm-hint {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.edge-start-picker {
+  position: absolute;
+  transform: translate(-10%, -110%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 12, 12, 0.94);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  z-index: 950;
+  pointer-events: auto;
+}
+
+.edge-start-title {
+  font-weight: 600;
+}
+
+.edge-start-users {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.edge-start-user,
+.edge-start-add {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 18, 18, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.edge-start-add {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.edge-start-empty {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .settings-row {
@@ -283,16 +565,12 @@ html, body {
 
 /* Header panel styling - top left corner */
 .header-panel {
-  position: absolute;
-  top: 16px;
-  left: 16px;
   background-color: rgba(20, 20, 20, 0.95);
   border-radius: 6px;
   padding: 4px 8px;
   display: flex;
   align-items: center;
   gap: 6px;
-  z-index: 1000;
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -736,12 +1014,12 @@ html, body {
 .postit-panel {
   position: fixed;
   width: 340px;
-  background-color: rgba(30, 30, 30, 0.95);
+  background-color: var(--graph-postit-bg);
   border-radius: 12px;
   z-index: 2000;
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--graph-postit-border);
+  box-shadow: var(--graph-postit-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -764,7 +1042,7 @@ html, body {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--graph-postit-assignee-bg);
   border: none;
   cursor: pointer;
   display: flex;
@@ -774,25 +1052,25 @@ html, body {
 }
 
 .postit-assignee-avatar:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--graph-postit-assignee-hover);
 }
 
 .postit-assignee-avatar.empty {
-  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border: 2px dashed var(--graph-postit-assignee-empty-border);
   background: transparent;
 }
 
 .postit-assignee-avatar.empty:hover {
-  border-color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--graph-postit-assignee-empty-hover);
+  background: var(--graph-postit-assignee-empty-bg);
 }
 
 .postit-assignee-avatar svg {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--graph-postit-assignee-icon);
 }
 
 .postit-assignee-avatar.empty:hover svg {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--graph-postit-assignee-icon-hover);
 }
 
 .postit-assignee-initials {
@@ -830,7 +1108,7 @@ html, body {
   padding: 16px 16px 8px 16px;
   font-size: 18px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--graph-postit-title);
   resize: none;
   overflow: hidden;
   line-height: 1.3;
@@ -842,7 +1120,7 @@ html, body {
 }
 
 .postit-title::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--graph-postit-placeholder);
 }
 
 .postit-content {
@@ -851,7 +1129,7 @@ html, body {
   border: none;
   padding: 0 16px 16px 16px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--graph-postit-text);
   resize: none;
   min-height: 140px;
   flex: 1;

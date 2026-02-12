@@ -1,10 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import dynamic from 'next/dynamic';
-import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Category } from '@/lib/types';
+import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Category, Traverser } from '@/lib/types';
 import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } from '@/lib/colors';
-import { getAvatarConfig, drawAvatar, getAvatarCSSStyles, getAvatarHTMLContent } from '@/lib/avatar';
+import {
+  getAvatarConfig,
+  drawAvatar,
+  drawAvatarCircle,
+  drawAvatarInitials,
+  drawAvatarPlaceholder,
+  getAvatarCSSStyles,
+  getAvatarHTMLContent,
+  getInitials,
+} from '@/lib/avatar';
+
+import { useTraverserSystem } from './hooks/useTraverserSystem';
+import type { TraverserTuning } from './traverserTuning';
+import { ROOT_TRAVERSER_PREFIX } from './traverserConstants';
 
 // Import extracted components
 import {
@@ -13,13 +25,16 @@ import {
   CommandPalette,
   ToastNotification,
   KeyboardShortcutsHelp,
-  Header,
-  SettingsPanel,
+  GraphCanvasLayer,
+  GraphHudLeft,
+  GraphHudRight,
+  GraphOverlays,
   // Types
   GraphNodeData,
   GraphLinkData,
   SelectedNodeInfo,
   CardCreationState,
+  EdgeContextMenuState,
   HoverTooltipState,
   ToastState,
   CommandPaletteState,
@@ -31,22 +46,10 @@ import {
   ArrowMode,
 } from './components';
 
-// Dynamic imports to avoid SSR issues - use separate packages to avoid AFRAME/VR deps
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading graph...</div>
-});
-
-const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading graph...</div>
-});
-
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
 interface Props {
   data: GraphData;
-  onEdgeProgressChange?: (edgeId: string, progress: number) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
   onCategoryAdd?: (category: Category) => void;
@@ -54,12 +57,19 @@ interface Props {
   onCardCreate?: (card: Card, parentCardId?: string, childCardId?: string) => void;
   onCardDelete?: (cardId: string) => void;
   onEdgeCreate?: (sourceId: string, targetId: string) => void;
+  onEdgeDelete?: (edgeId: string) => void;
+  onUserAdd?: (name: string) => void;
+  onTraverserCreate?: (traverser: Traverser) => void;
+  onTraverserUpdate?: (traverserId: string, updates: Partial<Traverser>) => void;
+  onTraverserDelete?: (traverserId: string) => void;
+  onGraphImport?: (graph: GraphData) => void;
   onUndo?: () => void;
   projectHeader?: React.ReactNode;
   showSettingsProp?: boolean;
   triggerNewNode?: boolean;
   devDatasetMode?: 'sample' | 'miserables';
   onDevDatasetModeChange?: (mode: 'sample' | 'miserables') => void;
+  traverserTuning?: Partial<TraverserTuning>;
 }
 
 // Lazy-loaded three.js modules (only loaded client-side)
@@ -82,6 +92,14 @@ function generateId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+function generateTraverserId(): string {
+  return `traverser-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 // Dim a hex color by reducing its saturation and adding transparency
 function dimColor(hex: string): string {
   // Handle rgba format
@@ -101,12 +119,19 @@ export default function DagbanGraph({
   onCardCreate,
   onCardDelete,
   onEdgeCreate,
+  onEdgeDelete,
+  onUserAdd,
+  onTraverserCreate,
+  onTraverserUpdate,
+  onTraverserDelete,
+  onGraphImport,
   onUndo,
   projectHeader,
   showSettingsProp = true,
   triggerNewNode = false,
   devDatasetMode,
   onDevDatasetModeChange,
+  traverserTuning,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,13 +141,14 @@ export default function DagbanGraph({
   const graphDataRef = useRef<{ nodes: GraphNodeData[]; links: GraphLinkData[] }>({ nodes: [], links: [] });
   const nodeByIdRef = useRef<Map<string, GraphNodeData>>(new Map());
   const linkByIdRef = useRef<Map<string, GraphLinkData>>(new Map());
+  const graphStructureSignatureRef = useRef<string>('');
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
   const [nodeRadius, setNodeRadius] = useState(8);
   const [colorMode, setColorMode] = useState<ColorMode>('category');
   const [arrowMode, setArrowMode] = useState<ArrowMode>('end');
-  const [showSettings, setShowSettings] = useState(showSettingsProp);
+  const showSettings = showSettingsProp;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [css2DRendererInstance, setCss2DRendererInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
@@ -199,25 +225,139 @@ export default function DagbanGraph({
   });
   const dragConnectAnimationRef = useRef<number | null>(null);
 
+  const [renderTick, setRenderTick] = useState(0);
+  const renderRafRef = useRef<number | null>(null);
+  const [fuseAnimationTime, setFuseAnimationTime] = useState(0);
+  const fuseAnimationRef = useRef<number | null>(null);
+  const [graphTheme, setGraphTheme] = useState(() => ({
+    fuseRed: '#560D07',
+    fuseOrange: '#D70C00',
+    fuseYellow: '#FEDB00',
+    categoryDefault: '#6b7280',
+  }));
+  const [edgeStartPicker, setEdgeStartPicker] = useState<{
+    edgeId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    containerX: 0,
+    containerY: 0,
+    edgeId: null,
+  });
+  const suppressBackgroundClickRef = useRef(false);
+
   // Undo stack for local undo functionality
   const undoStackRef = useRef<UndoAction[]>([]);
 
   // Filter state
+  const BURNT_AGE_MAX = 30;
   const [selectedAssignees, setSelectedAssignees] = useState<Set<string>>(new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [blockerThreshold, setBlockerThreshold] = useState(0);
+  const [burntAgeThreshold, setBurntAgeThreshold] = useState(BURNT_AGE_MAX);
+
+  const themedCategories = useMemo(() => (
+    data.categories.map(category => (
+      category.color
+        ? category
+        : { ...category, color: graphTheme.categoryDefault }
+    ))
+  ), [data.categories, graphTheme.categoryDefault]);
+
+  const cardById = useMemo(() => new Map(data.cards.map(card => [card.id, card])), [data.cards]);
+
+  const isBurntNodeId = useCallback((nodeId: string) => {
+    return Boolean(cardById.get(nodeId)?.burntAt);
+  }, [cardById]);
+  const edgeById = useMemo(() => new Map(data.edges.map(edge => [edge.id, edge])), [data.edges]);
+  const traverserByEdgeId = useMemo(() => new Map((data.traversers || []).map(traverser => [traverser.edgeId, traverser])), [data.traversers]);
+  const traverserById = useMemo(() => new Map((data.traversers || []).map(traverser => [traverser.id, traverser])), [data.traversers]);
+  const userById = useMemo(() => new Map((data.users || []).map(user => [user.id, user])), [data.users]);
+  const rootTraverserByNodeId = useMemo(() => {
+    const map = new Map<string, Traverser>();
+    (data.traversers || []).forEach(traverser => {
+      if (!traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) return;
+      const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+      if (!nodeId) return;
+      map.set(nodeId, traverser);
+    });
+    return map;
+  }, [data.traversers]);
+  const getAssigneeName = useCallback((assigneeId?: string) => {
+    if (!assigneeId) return '';
+    return userById.get(assigneeId)?.name || assigneeId;
+  }, [userById]);
 
   // Show toast notification
   const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
     setToast({ visible: true, message, type, action });
-  }, []);
+  }, [getAssigneeName]);
 
   // Hide toast
   const hideToast = useCallback(() => {
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
+
+  const handleDownloadGraph = useCallback(() => {
+    try {
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      link.download = `dagban-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('Downloaded graph JSON', 'success');
+    } catch (error) {
+      console.error('Failed to download graph JSON', error);
+      showToast('Failed to download graph JSON', 'warning');
+    }
+  }, [data, showToast]);
+
+  const handleUploadGraph = useCallback((file: File) => {
+    if (!onGraphImport) {
+      showToast('Upload not available in this view', 'warning');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = typeof reader.result === 'string' ? reader.result : '';
+        const parsed = JSON.parse(text);
+        const isValid =
+          parsed &&
+          typeof parsed === 'object' &&
+          Array.isArray(parsed.cards) &&
+          Array.isArray(parsed.edges) &&
+          Array.isArray(parsed.categories) &&
+          Array.isArray(parsed.users) &&
+          Array.isArray(parsed.traversers);
+        if (!isValid) {
+          showToast('Invalid Dagban JSON format', 'warning');
+          return;
+        }
+        onGraphImport(parsed as GraphData);
+        showToast('Graph imported', 'success');
+      } catch (error) {
+        console.error('Failed to import graph JSON', error);
+        showToast('Failed to import graph JSON', 'warning');
+      }
+    };
+    reader.onerror = () => {
+      showToast('Failed to read file', 'warning');
+    };
+    reader.readAsText(file);
+  }, [onGraphImport, showToast]);
 
   // Handle assignee filter toggle
   const handleAssigneeToggle = useCallback((assignee: string) => {
@@ -231,6 +371,15 @@ export default function DagbanGraph({
       return next;
     });
   }, []);
+
+  const handleAddUser = useCallback(() => {
+    if (!onUserAdd) return;
+    const name = prompt('Add user name');
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onUserAdd(trimmed);
+  }, [onUserAdd]);
 
   // Handle category filter toggle
   const handleCategoryToggle = useCallback((categoryId: string) => {
@@ -265,6 +414,7 @@ export default function DagbanGraph({
     setSelectedStatuses(new Set());
     setSearchQuery('');
     setBlockerThreshold(0);
+    setBurntAgeThreshold(0);
   }, []);
 
   // Load three.js on mount
@@ -317,6 +467,37 @@ export default function DagbanGraph({
     return counts;
   }, [data.edges]);
 
+  const cardStatusById = useMemo(() => {
+    const map = new Map<string, 'blocked' | 'active' | 'done'>();
+    data.cards.forEach(card => {
+      map.set(card.id, getCardStatus(card, data.edges, data.cards));
+    });
+    return map;
+  }, [data.cards, data.edges]);
+
+  const eligibleTraverserEdgeIds = useMemo(() => {
+    const eligible = new Set<string>();
+    data.edges.forEach(edge => {
+      const status = cardStatusById.get(edge.target);
+      if (status !== 'active') return;
+      if (traverserByEdgeId.has(edge.id)) return;
+      eligible.add(edge.id);
+    });
+    return eligible;
+  }, [data.edges, cardStatusById, traverserByEdgeId]);
+
+  const rootActiveNodeIds = useMemo(() => {
+    const ids = new Set<string>();
+    data.cards.forEach(card => {
+      const status = cardStatusById.get(card.id);
+      const indegree = indegrees.get(card.id) || 0;
+      if (indegree === 0 && status === 'active') {
+        ids.add(card.id);
+      }
+    });
+    return ids;
+  }, [data.cards, cardStatusById, indegrees]);
+
   // Check if a card matches the current filters
   const cardMatchesFilter = useCallback((card: Card, status: 'blocked' | 'active' | 'done'): boolean => {
     // Check search query first
@@ -352,8 +533,20 @@ export default function DagbanGraph({
       if (blockerCount < blockerThreshold) return false;
     }
 
+    // Burnt age filter: 0 hides all burnt, max shows all burnt
+    if (card.burntAt) {
+      if (burntAgeThreshold === 0) return false;
+      if (burntAgeThreshold < BURNT_AGE_MAX) {
+        const burntAt = Date.parse(card.burntAt);
+        if (!Number.isNaN(burntAt)) {
+          const ageDays = (Date.now() - burntAt) / (1000 * 60 * 60 * 24);
+          if (ageDays > burntAgeThreshold) return false;
+        }
+      }
+    }
+
     return true;
-  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts]);
+  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts, burntAgeThreshold, BURNT_AGE_MAX]);
 
   const getOrCreateLabelEntry = useCallback((nodeId: string) => {
     const cache = labelCacheRef.current;
@@ -382,7 +575,7 @@ export default function DagbanGraph({
     if (mode === 'full') {
       const avatarSize = 16;
       const avatarStyles = getAvatarCSSStyles(avatarSize);
-      const avatarContent = getAvatarHTMLContent(node.card.assignee, 10);
+      const avatarContent = getAvatarHTMLContent(getAssigneeName(node.card.assignee), 10);
       nodeEl.innerHTML = `
         <div style="display: flex; align-items: center; gap: 5px; flex-direction: row;">
           <span>${node.title}</span>
@@ -396,7 +589,7 @@ export default function DagbanGraph({
 
     nodeEl.textContent = '';
     return entry;
-  }, [getOrCreateLabelEntry]);
+  }, [getOrCreateLabelEntry, getAssigneeName]);
 
   // Reconcile dagban data into stable graph data without recreating nodes/links.
   const applyPendingGraphUpdates = useCallback(() => {
@@ -444,7 +637,7 @@ export default function DagbanGraph({
       seenNodeIds.add(card.id);
 
       const status = getCardStatus(card, data.edges, data.cards);
-      const categoryColor = getCardColor(card, status, data.categories);
+      const categoryColor = getCardColor(card, status, themedCategories);
       const matchesFilter = cardMatchesFilter(card, status);
 
       // Compute color based on colorMode
@@ -457,6 +650,10 @@ export default function DagbanGraph({
         color = getGradientColor('outdegree', degree, maxOutdegree);
       } else {
         color = categoryColor;
+      }
+
+      if (status === 'done') {
+        color = getCardColor(card, status, themedCategories);
       }
 
       // Dim the color if node doesn't match filter
@@ -550,7 +747,6 @@ export default function DagbanGraph({
         link = {
           source: edge.source,
           target: edge.target,
-          progress: edge.progress,
           edge,
         };
         linkById.set(edge.id, link);
@@ -570,11 +766,6 @@ export default function DagbanGraph({
       if (linkTargetId !== edge.target) {
         linkUpdates.target = edge.target;
         structuralChanged = true;
-      }
-
-      if (link.progress !== edge.progress) {
-        linkUpdates.progress = edge.progress;
-        visualChanged = true;
       }
 
       if (link.edge !== edge) {
@@ -608,14 +799,21 @@ export default function DagbanGraph({
       .map(edge => linkById.get(edge.id))
       .filter(Boolean) as GraphLinkData[];
 
-    graphDataRef.current = { nodes, links };
-    setGraphDataView(graphDataRef.current);
-    if (structuralChanged || !hasSeededGraphRef.current) {
-      setGraphDataForForce(graphDataRef.current);
+    const nextGraphData = { nodes, links };
+    const nextSignature = `${nodes.map(node => node.id).join('|')}::${links.map(link => link.edge.id).join('|')}`;
+    const signatureChanged = nextSignature !== graphStructureSignatureRef.current;
+    if (signatureChanged) {
+      graphStructureSignatureRef.current = nextSignature;
+    }
+
+    graphDataRef.current = nextGraphData;
+    if (signatureChanged || !hasSeededGraphRef.current) {
+      setGraphDataView(nextGraphData);
+      setGraphDataForForce(nextGraphData);
       hasSeededGraphRef.current = true;
     }
 
-    if (structuralChanged) {
+    if (structuralChanged || signatureChanged) {
       pendingStructuralUpdateRef.current = true;
     }
     if (visualChanged) {
@@ -629,7 +827,7 @@ export default function DagbanGraph({
   }, [
     data.cards,
     data.edges,
-    data.categories,
+    themedCategories,
     colorMode,
     indegrees,
     outdegrees,
@@ -647,6 +845,96 @@ export default function DagbanGraph({
   useEffect(() => {
     applyPendingGraphUpdates();
   }, [applyPendingGraphUpdates, graphReady]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Theme/personalization hook: override these CSS vars per project/user on .graph-shell or :root.
+    const updateThemeFromCss = () => {
+      const rootStyles = getComputedStyle(document.documentElement);
+      const containerStyles = getComputedStyle(container);
+      const resolveVar = (name: string, fallback: string) => {
+        const local = containerStyles.getPropertyValue(name).trim();
+        if (local) return local;
+        const root = rootStyles.getPropertyValue(name).trim();
+        return root || fallback;
+      };
+
+      setGraphTheme({
+        fuseRed: resolveVar('--graph-fuse-red', '#560D07'),
+        fuseOrange: resolveVar('--graph-fuse-orange', '#D70C00'),
+        fuseYellow: resolveVar('--graph-fuse-yellow', '#FEDB00'),
+        categoryDefault: resolveVar('--graph-category-default', '#6b7280'),
+      });
+    };
+
+    updateThemeFromCss();
+
+    const observer = new MutationObserver(updateThemeFromCss);
+    observer.observe(container, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+
+    return () => observer.disconnect();
+  }, []);
+
+  const hasActiveFuses = useMemo(() => (data.traversers?.length ?? 0) > 0, [data.traversers]);
+
+  useEffect(() => {
+    if (viewMode !== '2D' || !hasActiveFuses) {
+      if (fuseAnimationRef.current) {
+        cancelAnimationFrame(fuseAnimationRef.current);
+        fuseAnimationRef.current = null;
+      }
+      return;
+    }
+
+    const animate = (time: number) => {
+      setFuseAnimationTime(time);
+      fuseAnimationRef.current = requestAnimationFrame(animate);
+    };
+
+    fuseAnimationRef.current = requestAnimationFrame(animate);
+    return () => {
+      if (fuseAnimationRef.current) {
+        cancelAnimationFrame(fuseAnimationRef.current);
+        fuseAnimationRef.current = null;
+      }
+    };
+  }, [viewMode, hasActiveFuses]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (!container.contains(target)) return;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+      }
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest('.graph-canvas')) {
+        const selection = window.getSelection();
+        if (selection && selection.type === 'Range') {
+          selection.removeAllRanges();
+        }
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('pointerdown', handlePointerDown);
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, []);
 
   // Ensure node labels refresh when display mode changes
   useEffect(() => {
@@ -767,13 +1055,17 @@ export default function DagbanGraph({
 
   // Start upstream connection mode - selected node becomes target, pick source
   const startUpstreamConnection = useCallback((targetNode: GraphNodeData) => {
+    if (isBurntNodeId(targetNode.id)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
     setConnectionMode({
       active: true,
       sourceNode: targetNode, // Store the target node here, we'll swap in completeConnection
       direction: 'upstream',
     });
     showToast(`Click a node to make it upstream of "${targetNode.title}"`, 'info');
-  }, [showToast]);
+  }, [isBurntNodeId, showToast]);
 
   // Cancel connection mode
   const cancelConnectionMode = useCallback(() => {
@@ -808,6 +1100,11 @@ export default function DagbanGraph({
       return;
     }
 
+    if (isBurntNodeId(targetId)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
+
     // Check if edge already exists
     const edgeExists = data.edges.some(
       e => e.source === sourceId && e.target === targetId
@@ -824,50 +1121,7 @@ export default function DagbanGraph({
     const targetNode = data.cards.find(c => c.id === targetId);
     showToast(`Connected "${sourceNode?.title}" -> "${targetNode?.title}"`, 'success');
     cancelConnectionMode();
-  }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, showToast, cancelConnectionMode]);
-
-  // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if typing in an input or textarea
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-
-      // Escape cancels connection mode
-      if (e.key === 'Escape' && connectionMode.active) {
-        e.preventDefault();
-        cancelConnectionMode();
-        showToast('Connection cancelled', 'info');
-        return;
-      }
-
-      // Skip if command palette is open (it handles its own keys)
-      if (commandPalette.visible) return;
-
-      // Cmd+Z / Ctrl+Z - Undo
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-      }
-
-      // Cmd+K / Ctrl+K - Command palette
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setCommandPalette({ visible: true, query: '' });
-      }
-
-      // ? - Show keyboard shortcuts help
-      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        setShowShortcutsHelp(prev => !prev);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoverTooltip.nodeId, commandPalette.visible, connectionMode.active, graphDataView.nodes, handleDeleteNode, handleUndo, cancelConnectionMode, showToast]);
+  }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, isBurntNodeId, showToast, cancelConnectionMode]);
 
   // Open card creation form for new root node
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
@@ -921,6 +1175,10 @@ export default function DagbanGraph({
 
   // Open card creation form for upstream dependency
   const openUpstreamCreation = useCallback((childNode: GraphNodeData) => {
+    if (isBurntNodeId(childNode.id)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
     const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
     const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
 
@@ -933,7 +1191,7 @@ export default function DagbanGraph({
       parentNodeId: null,
       childNodeId: childNode.id,
     });
-  }, []);
+  }, [isBurntNodeId, showToast]);
 
   // Close card creation form
   const closeCardCreation = useCallback(() => {
@@ -946,12 +1204,17 @@ export default function DagbanGraph({
     if (!titleValue.trim() || !onCardCreate) return;
     const descriptionValue = typeof cardCreation.description === 'string' ? cardCreation.description : '';
 
+    if (cardCreation.childNodeId && isBurntNodeId(cardCreation.childNodeId)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
+
     const now = new Date().toISOString();
     const newCard: Card = {
       id: generateId(),
       title: titleValue.trim(),
       description: descriptionValue.trim() || undefined,
-      categoryId: data.categories.length > 0 ? data.categories[0].id : '',
+      categoryId: themedCategories.length > 0 ? themedCategories[0].id : '',
       createdAt: now,
       updatedAt: now,
     };
@@ -964,24 +1227,492 @@ export default function DagbanGraph({
     );
 
     closeCardCreation();
-  }, [cardCreation, data.categories, onCardCreate, closeCardCreation]);
+  }, [cardCreation, themedCategories, onCardCreate, closeCardCreation, isBurntNodeId, showToast]);
 
   // Node radius
   const NODE_RADIUS = nodeRadius;
+  const TRAVERSER_RADIUS = 9;
+  const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
+  const FUSE_COLOR = graphTheme.fuseOrange;
+  const FUSE_GRADIENT_STOPS = useMemo(() => ([
+    { stop: 0, color: graphTheme.fuseRed },
+    { stop: 0.45, color: graphTheme.fuseOrange },
+    { stop: 0.78, color: graphTheme.fuseYellow },
+    { stop: 1, color: graphTheme.fuseRed },
+  ]), [graphTheme.fuseRed, graphTheme.fuseOrange, graphTheme.fuseYellow]);
+  const fuseGradientPhase = useMemo(() => (fuseAnimationTime * 0.00018) % 1, [fuseAnimationTime]);
+  const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)'; // dark gray
+  const PENDING_RING_COLOR = 'rgba(148, 163, 184, 0.8)';
+  const ROOT_RING_RADIUS = NODE_RADIUS + 10;
+
+  const getGraphCoords = useCallback((clientX: number, clientY: number) => {
+    const graph = graphRef.current;
+    if (!graph || typeof graph.screen2GraphCoords !== 'function') {
+      return null;
+    }
+    const canvas = typeof graph.canvas === 'function' ? graph.canvas() : null;
+    if (!canvas) {
+      return graph.screen2GraphCoords(clientX, clientY) as { x: number; y: number };
+    }
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width ? canvas.width / rect.width : 1;
+    const scaleY = rect.height ? canvas.height / rect.height : 1;
+    const localX = (clientX - rect.left) * scaleX;
+    const localY = (clientY - rect.top) * scaleY;
+    return graph.screen2GraphCoords(localX, localY) as { x: number; y: number };
+  }, []);
+
+  const getZoomScale = useCallback(() => {
+    if (!graphRef.current || typeof graphRef.current.zoom !== 'function') {
+      return 1;
+    }
+    return graphRef.current.zoom() as number;
+  }, []);
+
+  const getScreenCoords = useCallback((x: number, y: number) => {
+    const graph = graphRef.current;
+    if (!graph || typeof graph.graph2ScreenCoords !== 'function') {
+      return null;
+    }
+    const coords = graph.graph2ScreenCoords(x, y) as { x: number; y: number } | null;
+    if (!coords) return null;
+    const canvas = typeof graph.canvas === 'function' ? graph.canvas() : null;
+    if (!canvas) return coords;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width ? canvas.width / rect.width : 1;
+    const scaleY = rect.height ? canvas.height / rect.height : 1;
+    const isAbsolute =
+      coords.x >= rect.left &&
+      coords.x <= rect.right &&
+      coords.y >= rect.top &&
+      coords.y <= rect.bottom;
+
+    if (isAbsolute) {
+      return {
+        x: coords.x - rect.left,
+        y: coords.y - rect.top,
+      };
+    }
+
+    const isDevicePixels = coords.x > rect.width || coords.y > rect.height;
+    if (isDevicePixels && scaleX && scaleY) {
+      return {
+        x: coords.x / scaleX,
+        y: coords.y / scaleY,
+      };
+    }
+
+    return coords;
+  }, []);
+
+  const getEdgeNodes = useCallback((edgeId: string) => {
+    const link = linkByIdRef.current.get(edgeId);
+    if (!link) return null;
+    const sourceNode = typeof link.source === 'string'
+      ? nodeByIdRef.current.get(link.source)
+      : link.source;
+    const targetNode = typeof link.target === 'string'
+      ? nodeByIdRef.current.get(link.target)
+      : link.target;
+    if (!sourceNode || !targetNode) return null;
+    if (sourceNode.x === undefined || sourceNode.y === undefined || targetNode.x === undefined || targetNode.y === undefined) {
+      return null;
+    }
+    return { sourceNode, targetNode };
+  }, []);
+
+  const getTraverserRenderPoint = useCallback((
+    sourceNode: GraphNodeData,
+    targetNode: GraphNodeData,
+    position: number
+  ) => {
+    const sx = sourceNode.x ?? 0;
+    const sy = sourceNode.y ?? 0;
+    const tx = targetNode.x ?? 0;
+    const ty = targetNode.y ?? 0;
+    const dx = tx - sx;
+    const dy = ty - sy;
+    const dist = Math.hypot(dx, dy);
+    if (!dist) {
+      return {
+        x: sx,
+        y: sy,
+        startX: sx,
+        startY: sy,
+        clampedT: position,
+        offsetT: 0,
+      };
+    }
+
+    const ux = dx / dist;
+    const uy = dy / dist;
+    const safeOffset = Math.min(NODE_RADIUS, dist * 0.45);
+    const offsetT = safeOffset / dist;
+    const clampedT = clamp(position, offsetT, 1 - offsetT);
+    const startX = sx + ux * safeOffset;
+    const startY = sy + uy * safeOffset;
+    const x = sx + dx * clampedT;
+    const y = sy + dy * clampedT;
+
+    return { x, y, startX, startY, clampedT, offsetT };
+  }, [NODE_RADIUS]);
+
+  const ROOT_START_ANGLE = -Math.PI / 2;
+
+  const getRootTraverserPoint = useCallback((
+    node: GraphNodeData,
+    position: number
+  ) => {
+    const cx = node.x ?? 0;
+    const cy = node.y ?? 0;
+    const angle = ROOT_START_ANGLE + clamp(position, 0, 1) * Math.PI * 2;
+    return {
+      x: cx + Math.cos(angle) * ROOT_RING_RADIUS,
+      y: cy + Math.sin(angle) * ROOT_RING_RADIUS,
+      angle,
+      startAngle: ROOT_START_ANGLE,
+      radius: ROOT_RING_RADIUS,
+    };
+  }, [ROOT_RING_RADIUS, ROOT_START_ANGLE]);
+
+  const getRootPositionFromCoords = useCallback((node: GraphNodeData, point: { x: number; y: number }) => {
+    const dx = point.x - (node.x ?? 0);
+    const dy = point.y - (node.y ?? 0);
+    const angle = Math.atan2(dy, dx);
+    let theta = angle - ROOT_START_ANGLE;
+    if (theta < 0) theta += Math.PI * 2;
+    return clamp(theta / (Math.PI * 2), 0, 1);
+  }, [ROOT_START_ANGLE]);
+
+  const getShiftedGradientStops = useCallback((phase: number) => {
+    const epsilon = 0.0001;
+    const stops = FUSE_GRADIENT_STOPS;
+    let startIndex = stops.findIndex(stop => stop.stop >= phase);
+    if (startIndex === -1) startIndex = 0;
+    const rotated = [...stops.slice(startIndex), ...stops.slice(0, startIndex)].map(stop => {
+      let shifted = stop.stop - phase;
+      if (shifted < 0) shifted += 1;
+      return { stop: shifted, color: stop.color };
+    });
+    const output: Array<{ stop: number; color: string }> = [];
+    const first = rotated[0];
+    const last = rotated[rotated.length - 1];
+    if (first.stop > epsilon) {
+      output.push({ stop: 0, color: last.color });
+    }
+    output.push(...rotated);
+    if (last.stop < 1 - epsilon) {
+      output.push({ stop: 1, color: first.color });
+    }
+    return output;
+  }, [FUSE_GRADIENT_STOPS]);
+
+  const getFuseGradient = useCallback((
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ) => {
+    const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+    const shiftedStops = getShiftedGradientStops(fuseGradientPhase);
+    shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+    return gradient;
+  }, [getShiftedGradientStops, fuseGradientPhase]);
+
+  const getFuseRingGradient = useCallback((ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => {
+    const conicFactory = (ctx as CanvasRenderingContext2D & {
+      createConicGradient?: (startAngle: number, x: number, y: number) => CanvasGradient;
+    }).createConicGradient;
+    if (typeof conicFactory !== 'function') {
+      return FUSE_COLOR;
+    }
+    const gradient = conicFactory.call(ctx, -Math.PI / 2 + fuseGradientPhase * Math.PI * 2, centerX, centerY);
+    FUSE_GRADIENT_STOPS.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+    return gradient;
+  }, [FUSE_COLOR, FUSE_GRADIENT_STOPS, fuseGradientPhase]);
+
+
+  const bumpRenderTick = useCallback(() => {
+    if (renderRafRef.current !== null) return;
+    renderRafRef.current = requestAnimationFrame(() => {
+      renderRafRef.current = null;
+      setRenderTick(prev => prev + 1);
+    });
+  }, []);
+
+  const createTraverserForEdge = useCallback((edgeId: string, userId: string, position: number) => {
+    const now = new Date().toISOString();
+    return {
+      id: generateTraverserId(),
+      edgeId,
+      userId,
+      position: clamp(position, 0, 1),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }, []);
+
+  const createTraverserForRoot = useCallback((nodeId: string, userId: string, position: number) => {
+    const now = new Date().toISOString();
+    return {
+      id: generateTraverserId(),
+      edgeId: `${ROOT_TRAVERSER_PREFIX}${nodeId}`,
+      userId,
+      position: clamp(position, 0, 1),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }, []);
+
+  const handleCardAssigneeChange = useCallback((cardId: string, assigneeId: string | null) => {
+    if (onCardChange) {
+      onCardChange(cardId, { assignee: assigneeId || undefined });
+    }
+    if (!assigneeId) return;
+    if (!rootActiveNodeIds.has(cardId)) return;
+    const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${cardId}`;
+    const existing = traverserByEdgeId.get(rootEdgeId);
+    if (existing) {
+      if (existing.userId !== assigneeId && onTraverserUpdate) {
+        onTraverserUpdate(existing.id, { userId: assigneeId, updatedAt: new Date().toISOString() });
+      }
+      return;
+    }
+    if (!onTraverserCreate) return;
+    const traverser = createTraverserForRoot(cardId, assigneeId, 0);
+    onTraverserCreate(traverser);
+  }, [
+    onCardChange,
+    onTraverserCreate,
+    onTraverserUpdate,
+    rootActiveNodeIds,
+    traverserByEdgeId,
+    createTraverserForRoot,
+  ]);
+
+  const suppressNextBackgroundClick = useCallback(() => {
+    suppressBackgroundClickRef.current = true;
+    requestAnimationFrame(() => {
+      suppressBackgroundClickRef.current = false;
+    });
+  }, []);
+
+  const closeEdgeStartPicker = useCallback(() => {
+    setEdgeStartPicker(null);
+  }, []);
+
+  const {
+    pendingBurn,
+    previewBurn,
+    setPreviewBurn,
+    beginPendingBurn,
+    cancelPendingBurn,
+    confirmPendingBurn,
+    clearDetachedDrag,
+    draggingUserId,
+    draggingTraverserId,
+    draggingUserGhost,
+    detachedDrag,
+    handleUserDragStart,
+    handleUserDragEnd,
+    handleUserDragOver,
+    handleUserDrop,
+    handleTraverserPointerDown,
+    handleTraverserOverlayPointerDown,
+    traverserOverlays,
+  } = useTraverserSystem({
+    data,
+    viewMode,
+    displayMode,
+    nodeRadius: NODE_RADIUS,
+    rootRingRadius: ROOT_RING_RADIUS,
+    traverserHitRadius: TRAVERSER_HIT_RADIUS,
+    containerRef,
+    renderTick,
+    graphDataView,
+    nodeByIdRef,
+    cardById,
+    edgeById,
+    traverserByEdgeId,
+    traverserById,
+    userById,
+    rootActiveNodeIds,
+    eligibleTraverserEdgeIds,
+    getGraphCoords,
+    getScreenCoords,
+    getZoomScale,
+    getEdgeNodes,
+    getTraverserRenderPoint,
+    getRootTraverserPoint,
+    getRootPositionFromCoords,
+    createTraverserForEdge,
+    createTraverserForRoot,
+    onTraverserCreate,
+    onTraverserUpdate,
+    onTraverserDelete,
+    onCardChange,
+    showToast,
+    closeEdgeStartPicker,
+    suppressNextBackgroundClick,
+    tuning: traverserTuning,
+  });
+
+  useEffect(() => {
+    if (graphRef.current && typeof graphRef.current.refresh === 'function') {
+      graphRef.current.refresh();
+    }
+  }, [draggingUserId, pendingBurn?.targetNodeId]);
+
+  const handleEdgeStartPickUser = useCallback((userId: string) => {
+    if (!edgeStartPicker || !onTraverserCreate) return;
+    const edgeId = edgeStartPicker.edgeId;
+    if (traverserByEdgeId.has(edgeId)) {
+      showToast('That edge already has a traverser', 'warning');
+      closeEdgeStartPicker();
+      return;
+    }
+    if (!eligibleTraverserEdgeIds.has(edgeId)) {
+      showToast('That node is blocked or already complete', 'warning');
+      closeEdgeStartPicker();
+      return;
+    }
+    const traverser = createTraverserForEdge(edgeId, userId, 0);
+    onTraverserCreate(traverser);
+    closeEdgeStartPicker();
+  }, [
+    edgeStartPicker,
+    onTraverserCreate,
+    traverserByEdgeId,
+    eligibleTraverserEdgeIds,
+    createTraverserForEdge,
+    showToast,
+    closeEdgeStartPicker,
+  ]);
+
+  // Keyboard shortcuts handler (must be after handleDeleteNode and handleUndo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if typing in an input or textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      if (pendingBurn && e.key === 'Enter') {
+        e.preventDefault();
+        confirmPendingBurn();
+        return;
+      }
+
+      if (pendingBurn && e.key === 'Escape') {
+        e.preventDefault();
+        cancelPendingBurn();
+        return;
+      }
+
+      if (previewBurn && e.key === 'Escape') {
+        e.preventDefault();
+        setPreviewBurn(null);
+        return;
+      }
+
+      if (edgeStartPicker && e.key === 'Escape') {
+        e.preventDefault();
+        closeEdgeStartPicker();
+        return;
+      }
+
+      // Escape cancels connection mode
+      if (e.key === 'Escape' && connectionMode.active) {
+        e.preventDefault();
+        cancelConnectionMode();
+        showToast('Connection cancelled', 'info');
+        return;
+      }
+
+      // Skip if command palette is open (it handles its own keys)
+      if (commandPalette.visible) return;
+
+      // Cmd+Z / Ctrl+Z - Undo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+
+      // Cmd+K / Ctrl+K - Command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPalette({ visible: true, query: '' });
+      }
+
+      // ? - Show keyboard shortcuts help
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setShowShortcutsHelp(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    hoverTooltip.nodeId,
+    commandPalette.visible,
+    connectionMode.active,
+    graphDataView.nodes,
+    pendingBurn,
+    previewBurn,
+    edgeStartPicker,
+    confirmPendingBurn,
+    cancelPendingBurn,
+    closeEdgeStartPicker,
+    handleDeleteNode,
+    handleUndo,
+    cancelConnectionMode,
+    showToast,
+  ]);
 
   // Custom node rendering for 2D - matches text-nodes example exactly
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
+    const isRootCandidate =
+      ((Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) && rootActiveNodeIds.has(node.id)) ||
+      (detachedDrag?.candidateRootNodeId === node.id);
+    const isPendingBurn = pendingBurn?.targetNodeId === node.id;
+    const isPreviewBurnt = previewBurn?.targetNodeId === node.id || isPendingBurn;
+    const drawColor = isPreviewBurnt ? BURNT_COLOR : node.color;
+    const rootTraverser = rootTraverserByNodeId.get(node.id);
+    const rootProgress = rootTraverser ? clamp(rootTraverser.position, 0, 1) : null;
 
     // Check if this is the source node in connection mode
     const isConnectionSource = connectionMode.active && connectionMode.sourceNode?.id === node.id;
 
     // Check if this node is part of a drag-to-connect animation
-    const isDragConnectTarget = dragConnect.active && dragConnect.targetNode?.id === node.id;
+    const isDragConnectTarget =
+      dragConnect.active &&
+      dragConnect.targetNode?.id === node.id &&
+      !isBurntNodeId(node.id);
     const isDragConnectSource = dragConnect.active && dragConnect.sourceNode?.id === node.id;
 
     if (displayMode === 'balls') {
+      if (rootTraverser && rootProgress !== null) {
+        const startAngle = -Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = Math.max(1.2 / globalScale, 0.6);
+        ctx.stroke();
+
+        if (rootProgress > 0) {
+          ctx.beginPath();
+          ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
+          ctx.strokeStyle = getFuseRingGradient(ctx, x, y);
+          ctx.lineWidth = Math.max(2 / globalScale, 1);
+          ctx.stroke();
+        }
+      }
+
       // Draw glow effect for connection source
       if (isConnectionSource) {
         ctx.beginPath();
@@ -1035,8 +1766,24 @@ export default function DagbanGraph({
       // Balls mode: just draw the colored ball
       ctx.beginPath();
       ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-      ctx.fillStyle = node.color;
+      ctx.fillStyle = drawColor;
       ctx.fill();
+
+      if (isPendingBurn) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 8, 0, 2 * Math.PI);
+        ctx.strokeStyle = PENDING_RING_COLOR;
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
+      }
+
+      if (isRootCandidate) {
+        ctx.beginPath();
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
+      }
 
       // Store dimensions for pointer area
       nodeBckgDimensionsRef.current.set(node.id, [NODE_RADIUS * 2, NODE_RADIUS * 2]);
@@ -1055,10 +1802,35 @@ export default function DagbanGraph({
       const bckgDimensions: [number, number] = [totalWidth + avatarConfig.padding * 2, fontSize * 1.2];
 
       // Draw ball behind the label (matches 3D sphere + label)
+      if (rootTraverser && rootProgress !== null) {
+        const startAngle = -Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = Math.max(1.2 / globalScale, 0.6);
+        ctx.stroke();
+
+        if (rootProgress > 0) {
+          ctx.beginPath();
+          ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
+          ctx.strokeStyle = getFuseRingGradient(ctx, x, y);
+          ctx.lineWidth = Math.max(2 / globalScale, 1);
+          ctx.stroke();
+        }
+      }
+
       ctx.beginPath();
       ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-      ctx.fillStyle = node.color;
+      ctx.fillStyle = drawColor;
       ctx.fill();
+
+      if (isPendingBurn) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 8, 0, 2 * Math.PI);
+        ctx.strokeStyle = PENDING_RING_COLOR;
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
+      }
 
       // Draw dark background (matches html-nodes example)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -1067,7 +1839,7 @@ export default function DagbanGraph({
       // Draw text (centered, or left-aligned if full mode with avatar)
       ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = node.color;
+      ctx.fillStyle = drawColor;
 
       if (displayMode === 'full') {
         // Text on left side
@@ -1075,34 +1847,97 @@ export default function DagbanGraph({
 
         // Assignee avatar on right side using standardized utility
         const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
-        drawAvatar(ctx, node.card.assignee, avatarX, y, fontSize, globalScale);
+        drawAvatar(ctx, getAssigneeName(node.card.assignee), avatarX, y, fontSize, globalScale);
       } else {
         ctx.fillText(label, x, y);
+      }
+
+      if (isRootCandidate) {
+        ctx.beginPath();
+        ctx.arc(x, y, ROOT_RING_RADIUS, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
       }
 
       // Store dimensions for pointer area
       nodeBckgDimensionsRef.current.set(node.id, bckgDimensions);
     }
-  }, [displayMode, nodeRadius, connectionMode.active, connectionMode.sourceNode?.id, dragConnect.active, dragConnect.progress, dragConnect.sourceNode?.id, dragConnect.targetNode?.id]);
+  }, [
+    displayMode,
+    nodeRadius,
+    connectionMode.active,
+    connectionMode.sourceNode?.id,
+    dragConnect.active,
+    dragConnect.progress,
+    dragConnect.sourceNode?.id,
+    dragConnect.targetNode?.id,
+    getAssigneeName,
+    isBurntNodeId,
+    pendingBurn?.targetNodeId,
+    previewBurn?.targetNodeId,
+    FUSE_COLOR,
+    getFuseRingGradient,
+    PENDING_RING_COLOR,
+    BURNT_COLOR,
+    draggingUserId,
+    rootActiveNodeIds,
+    rootTraverserByNodeId,
+    ROOT_RING_RADIUS,
+    detachedDrag?.traverserId,
+    detachedDrag?.candidateRootNodeId,
+  ]);
 
-  // Custom link rendering for 2D - uniform line with small arrow in middle
+  // Custom link rendering for 2D - supports traversers ("fuses") and burnt edges
   const linkCanvasObject = useCallback((link: GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const source = link.source as GraphNodeData;
     const target = link.target as GraphNodeData;
 
-    if (!source.x || !target.x) return;
+    if (source.x === undefined || source.y === undefined || target.x === undefined || target.y === undefined) return;
 
-    // Draw uniform line from source to target
+    const targetCard = cardById.get(link.edge.target);
+    const isPreviewBurnt = previewBurn?.edgeId === link.edge.id || pendingBurn?.targetNodeId === link.edge.target;
+    const isBurnt = Boolean(targetCard?.burntAt) || isPreviewBurnt;
+    const baseStroke = isBurnt ? BURNT_COLOR : 'rgba(255, 255, 255, 0.3)';
+    const isEligible =
+      (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) &&
+      eligibleTraverserEdgeIds.has(link.edge.id);
+    const isCandidateEdge = detachedDrag?.candidateEdgeId === link.edge.id;
+
+    // Draw base line from source to target
     ctx.beginPath();
-    ctx.moveTo(source.x, source.y!);
-    ctx.lineTo(target.x, target.y!);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 1 / globalScale;
+    ctx.moveTo(source.x, source.y);
+    ctx.lineTo(target.x, target.y);
+    ctx.strokeStyle = baseStroke;
+    ctx.lineWidth = (isBurnt ? 1.6 : 1) / globalScale;
     ctx.stroke();
+
+    if ((isEligible || isCandidateEdge) && !isBurnt) {
+      ctx.beginPath();
+      ctx.moveTo(source.x, source.y);
+      ctx.lineTo(target.x, target.y);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+      ctx.lineWidth = Math.max(3.5 / globalScale, 1.8);
+      ctx.stroke();
+    }
+
+    const traverser = traverserByEdgeId.get(link.edge.id);
+    if (traverser && !isBurnt) {
+      const pos = clamp(traverser.position, 0, 1);
+      const render = getTraverserRenderPoint(source, target, pos);
+
+      // Draw burning segment behind the traverser
+      ctx.beginPath();
+      ctx.moveTo(render.startX, render.startY);
+      ctx.lineTo(render.x, render.y);
+      ctx.strokeStyle = getFuseGradient(ctx, render.startX, render.startY, render.x, render.y);
+      ctx.lineWidth = Math.max(2 / globalScale, 1);
+      ctx.stroke();
+    }
 
     // Draw arrow based on arrowMode
     if (arrowMode !== 'none') {
-      const angle = Math.atan2(target.y! - source.y!, target.x - source.x);
+      const angle = Math.atan2(target.y - source.y, target.x - source.x);
       const arrowLength = Math.max(4, NODE_RADIUS * 0.75);
       const arrowWidth = Math.PI / 6;
 
@@ -1110,11 +1945,11 @@ export default function DagbanGraph({
       if (arrowMode === 'end') {
         const arrowOffset = NODE_RADIUS;
         arrowX = target.x - arrowOffset * Math.cos(angle);
-        arrowY = target.y! - arrowOffset * Math.sin(angle);
+        arrowY = target.y - arrowOffset * Math.sin(angle);
       } else {
         // middle
         const midX = (source.x + target.x) / 2;
-        const midY = (source.y! + target.y!) / 2;
+        const midY = (source.y + target.y) / 2;
         const forwardOffset = arrowLength / 2;
         arrowX = midX + forwardOffset * Math.cos(angle);
         arrowY = midY + forwardOffset * Math.sin(angle);
@@ -1131,10 +1966,39 @@ export default function DagbanGraph({
         arrowY - arrowLength * Math.sin(angle + arrowWidth)
       );
       ctx.closePath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fillStyle = baseStroke;
       ctx.fill();
     }
-  }, [arrowMode, nodeRadius]);
+  }, [
+    arrowMode,
+    nodeRadius,
+    cardById,
+    traverserByEdgeId,
+    userById,
+    getFuseGradient,
+    BURNT_COLOR,
+    TRAVERSER_RADIUS,
+    draggingUserId,
+    previewBurn?.edgeId,
+    pendingBurn?.targetNodeId,
+    eligibleTraverserEdgeIds,
+    getTraverserRenderPoint,
+    detachedDrag?.traverserId,
+    detachedDrag?.candidateEdgeId,
+  ]);
+
+  const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
+    ctx.fillStyle = color;
+    const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
+    if (bckgDimensions) {
+      ctx.fillRect(
+        (node.x ?? 0) - bckgDimensions[0] / 2,
+        (node.y ?? 0) - bckgDimensions[1] / 2,
+        bckgDimensions[0],
+        bckgDimensions[1]
+      );
+    }
+  }, []);
 
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
     if (arrowMode !== 'end') return 0.5;
@@ -1178,17 +2042,145 @@ export default function DagbanGraph({
     return entry.obj;
   }, [displayMode, updateNodeLabelElement]);
 
+  // 3D TODO: mirror traversers/fuse rendering with linkThreeObject or sprites + burn coloring.
+  // Suggested approach: use linkThreeObject to draw a tube/line segment for the fuse,
+  // and a Sprite or CSS2DObject avatar at the interpolated traverser position (update on tick/zoom).
   // No custom linkThreeObject needed - use built-in arrow rendering for 3D
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const FG2D = ForceGraph2D as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const FG3D = ForceGraph3D as any;
+  const openEdgeStartPicker = useCallback((edgeId: string, x: number, y: number) => {
+    if (traverserByEdgeId.has(edgeId)) {
+      showToast('That edge already has a traverser', 'warning');
+      setEdgeStartPicker(null);
+      return;
+    }
+    if (!eligibleTraverserEdgeIds.has(edgeId)) {
+      showToast('That node is blocked or already complete', 'warning');
+      setEdgeStartPicker(null);
+      return;
+    }
+    setEdgeStartPicker(prev => (prev && prev.edgeId === edgeId ? null : { edgeId, x, y }));
+    cancelPendingBurn();
+    suppressNextBackgroundClick();
+  }, [
+    traverserByEdgeId,
+    eligibleTraverserEdgeIds,
+    showToast,
+    cancelPendingBurn,
+    suppressNextBackgroundClick,
+  ]);
+
+  const closeEdgeContextMenu = useCallback(() => {
+    setEdgeContextMenu(prev => (
+      prev.visible
+        ? { ...prev, visible: false, edgeId: null }
+        : prev
+    ));
+  }, []);
+
+  const handleEdgeAssign = useCallback((edgeId: string, anchor: { x: number; y: number }) => {
+    if (!onTraverserCreate) {
+      showToast('Assigning traversers is not available here', 'warning');
+      return;
+    }
+    openEdgeStartPicker(edgeId, anchor.x, anchor.y);
+  }, [onTraverserCreate, openEdgeStartPicker, showToast]);
+
+  const handleEdgeDetachTraverser = useCallback((traverserId: string) => {
+    if (!onTraverserDelete) {
+      showToast('Detaching traversers is not available here', 'warning');
+      return;
+    }
+    onTraverserDelete(traverserId);
+    if (pendingBurn?.traverserId === traverserId) {
+      cancelPendingBurn();
+    }
+    if (detachedDrag?.traverserId === traverserId) {
+      clearDetachedDrag();
+    }
+    showToast('Traverser removed', 'info');
+  }, [
+    onTraverserDelete,
+    showToast,
+    pendingBurn?.traverserId,
+    cancelPendingBurn,
+    detachedDrag?.traverserId,
+    clearDetachedDrag,
+  ]);
+
+  const handleEdgeDelete = useCallback((edgeId: string) => {
+    if (!onEdgeDelete) {
+      showToast('Edge deletion is not available here', 'warning');
+      return;
+    }
+    const edge = edgeById.get(edgeId);
+    onEdgeDelete(edgeId);
+    if (edgeStartPicker?.edgeId === edgeId) {
+      setEdgeStartPicker(null);
+    }
+    if (previewBurn?.edgeId === edgeId) {
+      setPreviewBurn(null);
+    }
+    if (pendingBurn && edge && pendingBurn.targetNodeId === edge.target) {
+      cancelPendingBurn();
+    }
+    if (detachedDrag?.candidateEdgeId === edgeId) {
+      clearDetachedDrag();
+    }
+  }, [
+    onEdgeDelete,
+    showToast,
+    edgeById,
+    edgeStartPicker?.edgeId,
+    previewBurn?.edgeId,
+    pendingBurn,
+    cancelPendingBurn,
+    detachedDrag?.candidateEdgeId,
+    clearDetachedDrag,
+  ]);
+
+  const handleLinkClick = useCallback((link: GraphLinkData, event: MouseEvent) => {
+    if (viewMode !== '2D') return;
+    if (connectionMode.active) return;
+    if (!onTraverserCreate && !onEdgeDelete) return;
+    if (!event) return;
+    const edgeId = link.edge.id;
+    const rect = containerRef.current?.getBoundingClientRect();
+    const containerX = rect ? event.clientX - rect.left : event.clientX;
+    const containerY = rect ? event.clientY - rect.top : event.clientY;
+    setEdgeContextMenu(prev => (
+      prev.visible && prev.edgeId === edgeId
+        ? { ...prev, visible: false, edgeId: null }
+        : {
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+          containerX,
+          containerY,
+          edgeId,
+        }
+    ));
+    setEdgeStartPicker(null);
+    cancelPendingBurn();
+    suppressNextBackgroundClick();
+  }, [
+    viewMode,
+    connectionMode.active,
+    onTraverserCreate,
+    onEdgeDelete,
+    cancelPendingBurn,
+    setEdgeContextMenu,
+    suppressNextBackgroundClick,
+  ]);
 
   // Handle node left-click - show detail panel or complete connection
   const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
     // Hide tooltip when clicking a node
     setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
+    setEdgeStartPicker(null);
+    closeEdgeContextMenu();
+    if (pendingBurn) {
+      cancelPendingBurn();
+    }
 
     // If in connection mode, complete the connection
     if (connectionMode.active && connectionMode.sourceNode) {
@@ -1202,7 +2194,14 @@ export default function DagbanGraph({
       screenX: event.clientX,
       screenY: event.clientY,
     });
-  }, [connectionMode.active, connectionMode.sourceNode, completeConnection]);
+  }, [
+    connectionMode.active,
+    connectionMode.sourceNode,
+    completeConnection,
+    pendingBurn,
+    cancelPendingBurn,
+    closeEdgeContextMenu,
+  ]);
 
   // Handle node hover - track for keyboard shortcuts
   const handleNodeHover = useCallback((node: GraphNodeData | null) => {
@@ -1214,12 +2213,12 @@ export default function DagbanGraph({
         title: node.title,
         nodeId: node.id,
         color: node.color,
-        assignee: node.card.assignee || null,
+        assignee: getAssigneeName(node.card.assignee) || null,
       });
     } else {
       setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
     }
-  }, []);
+  }, [getAssigneeName]);
 
   // Track mouse position for tooltip
   useEffect(() => {
@@ -1242,15 +2241,44 @@ export default function DagbanGraph({
     };
   }, [hoverTooltip.visible]);
 
+  useEffect(() => {
+    if (!hoverTooltip.visible) {
+      const canvas = graphRef.current?.canvas?.();
+      if (canvas) {
+        canvas.classList.remove('clickable');
+      }
+    }
+  }, [hoverTooltip.visible]);
+
   // Handle background click - close panel and cancel connection mode
   const handleBackgroundClick = useCallback(() => {
+    if (suppressBackgroundClickRef.current) {
+      suppressBackgroundClickRef.current = false;
+      return;
+    }
     if (selectedNode) {
       setSelectedNode(null);
     }
+    closeEdgeContextMenu();
     if (connectionMode.active) {
       cancelConnectionMode();
     }
-  }, [selectedNode, connectionMode.active, cancelConnectionMode]);
+    if (pendingBurn) {
+      cancelPendingBurn();
+    }
+    setEdgeStartPicker(null);
+    if (previewBurn) {
+      setPreviewBurn(null);
+    }
+  }, [
+    selectedNode,
+    closeEdgeContextMenu,
+    connectionMode.active,
+    cancelConnectionMode,
+    pendingBurn,
+    cancelPendingBurn,
+    previewBurn,
+  ]);
 
   // Handle node drag end - unfix the node so user can drag it freely
   // We fix nodes with fx/fy to preserve layout on data updates, but we want
@@ -1290,6 +2318,11 @@ export default function DagbanGraph({
       return;
     }
 
+    if (isBurntNodeId(targetNode.id)) {
+      showToast('Cannot add dependencies to a burnt node', 'warning');
+      return;
+    }
+
     // Check if edge already exists
     const edgeExists = data.edges.some(
       e => e.source === sourceNode.id && e.target === targetNode.id
@@ -1302,7 +2335,7 @@ export default function DagbanGraph({
     // Create the edge (source -> target, so target becomes downstream)
     onEdgeCreate(sourceNode.id, targetNode.id);
     showToast(`Connected "${sourceNode.title}" -> "${targetNode.title}"`, 'success');
-  }, [onEdgeCreate, data.edges, showToast]);
+  }, [onEdgeCreate, data.edges, isBurntNodeId, showToast]);
 
   // Handle node drag - detect when dragged node touches another node
   const handleNodeDrag = useCallback((node: GraphNodeData) => {
@@ -1315,6 +2348,7 @@ export default function DagbanGraph({
     for (const otherNode of graphDataView.nodes as GraphNodeData[]) {
       if (otherNode.id === node.id) continue;
       if (!otherNode.x || !otherNode.y) continue;
+      if (isBurntNodeId(otherNode.id)) continue;
 
       const dx = node.x - otherNode.x;
       const dy = node.y - otherNode.y;
@@ -1382,7 +2416,7 @@ export default function DagbanGraph({
         });
       }
     }
-  }, [graphDataView.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect, nodeRadius]);
+  }, [graphDataView.nodes, dragConnect.active, dragConnect.targetNode?.id, completeDragConnect, nodeRadius, isBurntNodeId]);
 
   // Common props for both 2D and 3D graphs
   const commonProps = {
@@ -1393,92 +2427,168 @@ export default function DagbanGraph({
     backgroundColor: "#000000",
     nodeLabel: () => '', // Disable default tooltip, using custom one
     onNodeClick: handleNodeClick,
+    onLinkClick: handleLinkClick,
     onNodeHover: handleNodeHover,
     onBackgroundClick: handleBackgroundClick,
     onNodeDrag: handleNodeDrag,
     onNodeDragEnd: handleNodeDragEnd,
+    onZoom: bumpRenderTick,
+    onZoomEnd: bumpRenderTick,
+    onEngineTick: bumpRenderTick,
     nodeColor: (node: GraphNodeData) => node.color,
+    showPointerCursor: (obj: unknown) => Boolean(obj),
   };
+
+  const pendingBurnAnchor = useMemo(() => {
+    if (!pendingBurn || viewMode !== '2D') return null;
+    if (pendingBurn.anchor) return pendingBurn.anchor;
+    const node = nodeByIdRef.current.get(pendingBurn.targetNodeId);
+    if (!node || node.x === undefined || node.y === undefined) return null;
+    return getScreenCoords(node.x, node.y);
+  }, [pendingBurn?.targetNodeId, pendingBurn?.anchor, viewMode, renderTick, getScreenCoords]);
+
+  const headerProps = useMemo(() => ({
+    onDownloadGraph: handleDownloadGraph,
+    onUploadGraph: handleUploadGraph,
+    onNewRootNode: openRootNodeCreation,
+  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation]);
+
+  const userStackProps = useMemo(() => ({
+    users: data.users,
+    selectedUserIds: selectedAssignees,
+    onUserToggle: handleAssigneeToggle,
+    onAddUser: handleAddUser,
+    onUserDragStart: handleUserDragStart,
+    onUserDragEnd: handleUserDragEnd,
+  }), [data.users, selectedAssignees, handleAssigneeToggle, handleAddUser, handleUserDragStart, handleUserDragEnd]);
+
+  const settingsPanelProps = useMemo(() => ({
+    viewMode,
+    displayMode,
+    nodeRadius,
+    onNodeRadiusChange: setNodeRadius,
+    colorMode,
+    arrowMode,
+    onViewModeChange: setViewMode,
+    onDisplayModeChange: setDisplayMode,
+    onColorModeChange: setColorMode,
+    onArrowModeChange: setArrowMode,
+    devDatasetMode,
+    onDevDatasetModeChange,
+    cards: data.cards,
+    users: data.users,
+    selectedAssignees,
+    onAssigneeToggle: handleAssigneeToggle,
+    categories: themedCategories,
+    edges: data.edges,
+    searchQuery,
+    onSearchChange: setSearchQuery,
+    selectedCategories,
+    onCategoryToggle: handleCategoryToggle,
+    selectedStatuses,
+    onStatusToggle: handleStatusToggle,
+    blockerThreshold,
+    onBlockerThresholdChange: setBlockerThreshold,
+    burntAgeThreshold,
+    onBurntAgeThresholdChange: setBurntAgeThreshold,
+    burntAgeMax: BURNT_AGE_MAX,
+  }), [
+    viewMode,
+    displayMode,
+    nodeRadius,
+    setNodeRadius,
+    colorMode,
+    arrowMode,
+    setViewMode,
+    setDisplayMode,
+    setColorMode,
+    setArrowMode,
+    devDatasetMode,
+    onDevDatasetModeChange,
+    data.cards,
+    data.users,
+    themedCategories,
+    data.edges,
+    selectedAssignees,
+    handleAssigneeToggle,
+    searchQuery,
+    setSearchQuery,
+    selectedCategories,
+    handleCategoryToggle,
+    selectedStatuses,
+    handleStatusToggle,
+    blockerThreshold,
+    setBlockerThreshold,
+    burntAgeThreshold,
+    setBurntAgeThreshold,
+  ]);
+
+  const edgeContextMenuTraverserId = useMemo(() => {
+    const edgeTraverser = edgeContextMenu.edgeId
+      ? traverserByEdgeId.get(edgeContextMenu.edgeId)
+      : null;
+    return edgeTraverser?.id ?? null;
+  }, [edgeContextMenu.edgeId, traverserByEdgeId]);
+
+  const draggingUser = draggingUserId ? userById.get(draggingUserId) ?? null : null;
 
   return (
     <div
       ref={containerRef}
-      className="w-full h-full bg-[#000000] relative"
+      className="graph-shell"
+      onDragOver={handleUserDragOver}
+      onDrop={handleUserDrop}
+      onPointerDown={handleTraverserPointerDown}
     >
-      {projectHeader || (
-        <Header
-          onLogoClick={() => setShowSettings(!showSettings)}
-          onNewRootNode={openRootNodeCreation}
-        />
-      )}
-      {showSettings && (
-        <SettingsPanel
-          viewMode={viewMode}
-          displayMode={displayMode}
-          nodeRadius={nodeRadius}
-          onNodeRadiusChange={setNodeRadius}
-          colorMode={colorMode}
-          arrowMode={arrowMode}
-          onViewModeChange={setViewMode}
-          onDisplayModeChange={setDisplayMode}
-          onColorModeChange={setColorMode}
-          onArrowModeChange={setArrowMode}
-          devDatasetMode={devDatasetMode}
-          onDevDatasetModeChange={onDevDatasetModeChange}
-          cards={data.cards}
-          selectedAssignees={selectedAssignees}
-          onAssigneeToggle={handleAssigneeToggle}
-          categories={data.categories}
-          edges={data.edges}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedCategories={selectedCategories}
-          onCategoryToggle={handleCategoryToggle}
-          selectedStatuses={selectedStatuses}
-          onStatusToggle={handleStatusToggle}
-          blockerThreshold={blockerThreshold}
-          onBlockerThresholdChange={setBlockerThreshold}
-        />
-      )}
+      <GraphHudLeft projectHeader={projectHeader} headerProps={headerProps} />
+      <GraphHudRight
+        userStackProps={userStackProps}
+        settingsPanelProps={settingsPanelProps}
+        showSettings={showSettings}
+      />
 
+      <GraphCanvasLayer
+        viewMode={viewMode}
+        displayMode={displayMode}
+        arrowMode={arrowMode}
+        nodeRadius={nodeRadius}
+        css2DRendererInstance={css2DRendererInstance}
+        commonProps={commonProps}
+        nodeCanvasObject={nodeCanvasObject}
+        nodePointerAreaPaint={nodePointerAreaPaint}
+        linkCanvasObject={linkCanvasObject}
+        nodeThreeObject={nodeThreeObject}
+        getArrowRelPos={getArrowRelPos}
+        getArrowRelPosMiddle={getArrowRelPosMiddle}
+      />
 
-      {viewMode === '2D' ? (
-        <FG2D
-          {...commonProps}
-          nodeCanvasObject={nodeCanvasObject}
-          nodePointerAreaPaint={(node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
-            ctx.fillStyle = color;
-            const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
-            if (bckgDimensions) {
-              ctx.fillRect(
-                (node.x ?? 0) - bckgDimensions[0] / 2,
-                (node.y ?? 0) - bckgDimensions[1] / 2,
-                bckgDimensions[0],
-                bckgDimensions[1]
-              );
-            }
-          }}
-          linkCanvasObject={linkCanvasObject}
-          linkColor={() => 'rgba(255,255,255,0.2)'}
-        />
-      ) : css2DRendererInstance ? (
-        <FG3D
-          {...commonProps}
-          extraRenderers={[css2DRendererInstance]}
-          nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
-          nodeThreeObjectExtend={true}
-          nodeRelSize={nodeRadius}
-          linkWidth={1}
-          linkOpacity={0.6}
-          linkColor={() => 'rgba(255, 255, 255, 0.4)'}
-          linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
-          linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
-          linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : arrowMode === 'middle' ? getArrowRelPosMiddle : 0.5}
-          nodeOpacity={1}
-        />
-      ) : (
-        <div className="w-full h-full bg-[#000000] flex items-center justify-center text-gray-500">Loading 3D graph...</div>
-      )}
+      <GraphOverlays
+        viewMode={viewMode}
+        traverserOverlays={traverserOverlays}
+        draggingTraverserId={draggingTraverserId}
+        onTraverserOverlayPointerDown={handleTraverserOverlayPointerDown}
+        draggingUserId={draggingUserId}
+        draggingUserGhost={draggingUserGhost}
+        draggingUser={draggingUser}
+        pendingBurn={pendingBurn}
+        pendingBurnAnchor={pendingBurnAnchor}
+        onConfirmPendingBurn={confirmPendingBurn}
+        onCancelPendingBurn={cancelPendingBurn}
+        edgeContextMenu={edgeContextMenu}
+        edgeContextMenuTraverserId={edgeContextMenuTraverserId}
+        onCloseEdgeContextMenu={closeEdgeContextMenu}
+        onEdgeAssign={handleEdgeAssign}
+        onEdgeDetach={handleEdgeDetachTraverser}
+        onEdgeDelete={handleEdgeDelete}
+        edgeStartPicker={edgeStartPicker}
+        users={data.users}
+        onEdgeStartPickUser={handleEdgeStartPickUser}
+        onAddUser={handleAddUser}
+        hoverTooltip={hoverTooltip}
+        connectionMode={connectionMode}
+        onCancelConnectionMode={cancelConnectionMode}
+        dragConnect={dragConnect}
+      />
 
       {/* Card Creation Form */}
       <CardCreationForm
@@ -1496,37 +2606,14 @@ export default function DagbanGraph({
           selectedNode={selectedNode}
           onClose={() => setSelectedNode(null)}
           onCardChange={onCardChange}
+          onAssigneeChange={handleCardAssigneeChange}
+          users={data.users}
           onCreateDownstream={openDownstreamCreation}
           onCreateUpstream={openUpstreamCreation}
           onLinkDownstream={startDownstreamConnection}
           onLinkUpstream={startUpstreamConnection}
           onDelete={handleDeleteNode}
         />
-      )}
-
-      {/* Node Hover Tooltip */}
-      {hoverTooltip.visible && hoverTooltip.x > 0 && (
-        <div
-          className="node-hover-tooltip"
-          style={{
-            left: `${hoverTooltip.x + 12}px`,
-            top: `${hoverTooltip.y + 12}px`,
-          }}
-        >
-          <span style={{ color: hoverTooltip.color || 'inherit' }}>{hoverTooltip.title}</span>
-          <div className={`tooltip-assignee-avatar ${!hoverTooltip.assignee ? 'empty' : ''}`}>
-            {hoverTooltip.assignee ? (
-              <span className="tooltip-assignee-initials">
-                {hoverTooltip.assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')}
-              </span>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" opacity="0.4">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-              </svg>
-            )}
-          </div>
-        </div>
       )}
 
       {/* Toast Notification */}
@@ -1547,43 +2634,6 @@ export default function DagbanGraph({
         visible={showShortcutsHelp}
         onClose={() => setShowShortcutsHelp(false)}
       />
-
-      {/* Connection Mode Indicator */}
-      {connectionMode.active && connectionMode.sourceNode && (
-        <div className="connection-mode-indicator">
-          <div className="connection-mode-source">
-            <div
-              className="connection-mode-dot"
-              style={{ backgroundColor: connectionMode.sourceNode.color }}
-            />
-            <span>{connectionMode.sourceNode.title}</span>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-          <span className="connection-mode-hint">Click a node to connect</span>
-          <button className="connection-mode-cancel" onClick={cancelConnectionMode}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Drag-to-Connect Progress Indicator */}
-      {dragConnect.active && dragConnect.sourceNode && dragConnect.targetNode && (
-        <div className="drag-connect-indicator">
-          <div className="drag-connect-progress-bar">
-            <div
-              className="drag-connect-progress-fill"
-              style={{ width: `${dragConnect.progress * 100}%` }}
-            />
-          </div>
-          <span className="drag-connect-text">
-            Connecting: {dragConnect.sourceNode.title} → {dragConnect.targetNode.title}
-          </span>
-        </div>
-      )}
 
     </div>
   );

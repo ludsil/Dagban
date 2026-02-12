@@ -2,7 +2,8 @@
 
 import { useMemo, useRef, useEffect, useState } from 'react';
 import { ViewMode, DisplayMode, ColorMode, ArrowMode } from '../types';
-import { Card, Category, Edge } from '@/lib/types';
+import { Card, Category, Edge, User } from '@/lib/types';
+import { UserAvatar } from './UserAvatar';
 
 interface SettingsPanelProps {
   viewMode: ViewMode;
@@ -18,6 +19,7 @@ interface SettingsPanelProps {
   devDatasetMode?: 'sample' | 'miserables';
   onDevDatasetModeChange?: (mode: 'sample' | 'miserables') => void;
   cards?: Card[];
+  users?: User[];
   selectedAssignees?: Set<string>;
   onAssigneeToggle?: (assignee: string) => void;
   categories?: Category[];
@@ -30,6 +32,9 @@ interface SettingsPanelProps {
   onStatusToggle?: (status: string) => void;
   blockerThreshold?: number;
   onBlockerThresholdChange?: (threshold: number) => void;
+  burntAgeThreshold?: number;
+  onBurntAgeThresholdChange?: (threshold: number) => void;
+  burntAgeMax?: number;
 }
 
 export function SettingsPanel({
@@ -46,6 +51,7 @@ export function SettingsPanel({
   devDatasetMode,
   onDevDatasetModeChange,
   cards,
+  users = [],
   selectedAssignees,
   onAssigneeToggle,
   categories,
@@ -58,6 +64,9 @@ export function SettingsPanel({
   onStatusToggle,
   blockerThreshold = 0,
   onBlockerThresholdChange,
+  burntAgeThreshold = 0,
+  onBurntAgeThresholdChange,
+  burntAgeMax = 30,
 }: SettingsPanelProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -90,17 +99,9 @@ export function SettingsPanel({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Extract unique assignees from cards
   const assignees = useMemo(() => {
-    if (!cards) return [];
-    const assigneeSet = new Set<string>();
-    cards.forEach(card => {
-      if (card.assignee) {
-        assigneeSet.add(card.assignee);
-      }
-    });
-    return Array.from(assigneeSet).sort((a, b) => a.localeCompare(b));
-  }, [cards]);
+    return [...users].sort((a, b) => a.name.localeCompare(b.name));
+  }, [users]);
 
   // Count cards per assignee
   const assigneeCounts = useMemo(() => {
@@ -145,42 +146,35 @@ export function SettingsPanel({
     return counts;
   }, [cards, categories]);
 
-  // Get initials from name
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(part => part.charAt(0).toUpperCase())
-      .slice(0, 2)
-      .join('');
-  };
-
   return (
     <div className="settings-panel">
-      {/* Search bar at top */}
-      {onSearchChange && (
-        <div className="settings-search">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="settings-search-input"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
-          {searchQuery && (
-            <button className="settings-search-clear" onClick={() => onSearchChange('')}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-          <span className="settings-search-hint">/</span>
-        </div>
-      )}
+      <div className="settings-top-row">
+        {/* Search bar at top */}
+        {onSearchChange && (
+          <div className="settings-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="settings-search-input"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="settings-search-clear" onClick={() => onSearchChange('')}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+            <span className="settings-search-hint">/</span>
+          </div>
+        )}
+      </div>
 
       <div className="settings-row">
         <span className="settings-label">View</span>
@@ -398,6 +392,50 @@ export function SettingsPanel({
         </div>
       )}
 
+      {/* Burnt age filter */}
+      {onBurntAgeThresholdChange && (
+        <div className="filter-section">
+          <div className="filter-section-header" onClick={() => toggleSection('burnt')}>
+            <span className="filter-section-title">Burnt Age</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="filter-section-value">
+                {burntAgeThreshold === 0
+                  ? 'Hide'
+                  : burntAgeThreshold >= burntAgeMax
+                    ? 'All'
+                    : `${burntAgeThreshold}d`}
+              </span>
+              <svg className={`filter-section-toggle ${collapsedSections.has('burnt') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
+          </div>
+          <div className={`filter-section-content ${collapsedSections.has('burnt') ? 'collapsed' : ''}`}>
+            <div className="filter-slider-container">
+              <input
+                type="range"
+                className="filter-slider"
+                min={0}
+                max={burntAgeMax}
+                value={burntAgeThreshold}
+                onChange={(e) => onBurntAgeThresholdChange(parseInt(e.target.value))}
+              />
+              <div className="filter-slider-labels">
+                <span>Hide</span>
+                <span>All</span>
+              </div>
+              <div className="filter-slider-hint">
+                {burntAgeThreshold === 0
+                  ? 'Hide all burnt nodes'
+                  : burntAgeThreshold >= burntAgeMax
+                    ? 'Show all burnt nodes'
+                    : `Show burnt nodes from last ${burntAgeThreshold} days`}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Assignee filter */}
       {cards && selectedAssignees && onAssigneeToggle && (assignees.length > 0 || unassignedCount > 0) && (
         <div className="filter-section">
@@ -414,15 +452,15 @@ export function SettingsPanel({
             <div className="filter-assignee-list">
               {assignees.map(assignee => (
                 <button
-                  key={assignee}
-                  className={`filter-assignee-item ${selectedAssignees.has(assignee) ? 'selected' : ''}`}
-                  onClick={() => onAssigneeToggle(assignee)}
+                  key={assignee.id}
+                  className={`filter-assignee-item ${selectedAssignees.has(assignee.id) ? 'selected' : ''}`}
+                  onClick={() => onAssigneeToggle(assignee.id)}
                 >
                   <div className="filter-assignee-avatar">
-                    <span className="filter-assignee-initials">{getInitials(assignee)}</span>
+                    <UserAvatar user={assignee} size="sm" />
                   </div>
-                  <span className="filter-assignee-name">{assignee}</span>
-                  <span className="filter-assignee-count">{assigneeCounts.get(assignee) || 0}</span>
+                  <span className="filter-assignee-name">{assignee.name}</span>
+                  <span className="filter-assignee-count">{assigneeCounts.get(assignee.id) || 0}</span>
                 </button>
               ))}
               {unassignedCount > 0 && (
@@ -431,10 +469,7 @@ export function SettingsPanel({
                   onClick={() => onAssigneeToggle('__unassigned__')}
                 >
                   <div className="filter-assignee-avatar unassigned">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                      <circle cx="12" cy="8" r="4" />
-                      <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-                    </svg>
+                    <UserAvatar size="sm" showPlaceholderIcon />
                   </div>
                   <span className="filter-assignee-name">Unassigned</span>
                   <span className="filter-assignee-count">{unassignedCount}</span>

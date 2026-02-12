@@ -1,18 +1,26 @@
 'use client';
 
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import DagbanGraph from '@/components/DagbanGraph';
 import { getEmptyGraph, getProjects, Project } from '@/lib/projects';
 import { usePersistedGraph } from '@/lib/storage';
-import type { DagbanGraph as GraphData, Card } from '@/lib/types';
+import type { DagbanGraph as GraphData, Card, Traverser, User } from '@/lib/types';
+import { createUserId } from '@/lib/users';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface ProjectHeaderProps {
   project: Project;
   projects: Project[];
   onProjectSelect: (projectId: string) => void;
   onNewRootNode: () => void;
-  onLogoClick: () => void;
+  onDownloadGraph: () => void;
+  onUploadGraph: (file: File) => void;
   onBackToProjects: () => void;
 }
 
@@ -21,10 +29,12 @@ function ProjectHeader({
   projects,
   onProjectSelect,
   onNewRootNode,
-  onLogoClick,
+  onDownloadGraph,
+  onUploadGraph,
   onBackToProjects,
 }: ProjectHeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -37,13 +47,33 @@ function ProjectHeader({
 
   return (
     <div className="header-panel">
-      <button
-        className="header-logo"
-        onClick={onLogoClick}
-        title="Settings"
-      >
-        <div className="header-logo-ball" />
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="header-logo"
+            title="Project actions"
+          >
+            <div className="header-logo-ball" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem onClick={onDownloadGraph}>Download JSON</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>Upload JSON</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            onUploadGraph(file);
+            event.target.value = '';
+          }
+        }}
+        style={{ display: 'none' }}
+      />
 
       <button
         className="header-back-btn"
@@ -129,7 +159,6 @@ interface ProjectViewProps {
 export default function ProjectView({ projectId }: ProjectViewProps) {
   const router = useRouter();
   const [allProjects] = useState<Project[]>(() => getProjects());
-  const [showSettings, setShowSettings] = useState(true);
   const [triggerNewNode, setTriggerNewNode] = useState(false);
 
   // Derive current project from allProjects and projectId
@@ -148,80 +177,184 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
   // Use persisted graph with project-specific storage
   const [graph, setGraph] = usePersistedGraph(emptyGraph, projectId);
 
-  // Handle edge progress changes
-  const handleEdgeProgressChange = useCallback((edgeId: string, progress: number) => {
-    setGraph({
-      ...graph,
-      edges: graph.edges.map(edge =>
-        edge.id === edgeId ? { ...edge, progress } : edge
-      ),
-    });
-  }, [graph, setGraph]);
-
   // Handle card updates
   const handleCardChange = useCallback((cardId: string, updates: Partial<GraphData['cards'][0]>) => {
-    setGraph({
-      ...graph,
-      cards: graph.cards.map(card =>
+    setGraph(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
         card.id === cardId ? { ...card, ...updates, updatedAt: new Date().toISOString() } : card
       ),
-    });
-  }, [graph, setGraph]);
+    }));
+  }, [setGraph]);
 
   // Handle category updates
   const handleCategoryChange = useCallback((categoryId: string, updates: Partial<GraphData['categories'][0]>) => {
-    setGraph({
-      ...graph,
-      categories: graph.categories.map(cat =>
+    setGraph(prev => ({
+      ...prev,
+      categories: prev.categories.map(cat =>
         cat.id === categoryId ? { ...cat, ...updates } : cat
       ),
-    });
-  }, [graph, setGraph]);
+    }));
+  }, [setGraph]);
 
-  // Handle card creation (with optional parent for downstream tasks)
-  const handleCardCreate = useCallback((card: Card, parentCardId?: string) => {
-    const newGraph = {
-      ...graph,
-      cards: [...graph.cards, card],
-      edges: parentCardId
-        ? [
-            ...graph.edges,
-            {
-              id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              source: parentCardId,
-              target: card.id,
-              progress: 0,
-            },
-          ]
-        : graph.edges,
-    };
-    setGraph(newGraph);
-  }, [graph, setGraph]);
+  // Handle card creation (with optional parent for downstream or child for upstream)
+  const handleCardCreate = useCallback((card: Card, parentCardId?: string, childCardId?: string) => {
+    setGraph(prev => {
+      const newEdges = [...prev.edges];
+
+      if (parentCardId) {
+        newEdges.push({
+          id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          source: parentCardId,
+          target: card.id,
+        });
+      }
+
+      if (childCardId) {
+        newEdges.push({
+          id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-up`,
+          source: card.id,
+          target: childCardId,
+        });
+      }
+
+      return {
+        ...prev,
+        cards: [...prev.cards, card],
+        edges: newEdges,
+      };
+    });
+  }, [setGraph]);
 
   // Handle card deletion (also removes connected edges)
   const handleCardDelete = useCallback((cardId: string) => {
-    setGraph({
-      ...graph,
-      cards: graph.cards.filter(card => card.id !== cardId),
-      edges: graph.edges.filter(edge => edge.source !== cardId && edge.target !== cardId),
+    setGraph(prev => {
+      const remainingEdges = prev.edges.filter(edge => edge.source !== cardId && edge.target !== cardId);
+      return {
+        ...prev,
+        cards: prev.cards.filter(card => card.id !== cardId),
+        edges: remainingEdges,
+        traversers: prev.traversers.filter(traverser => remainingEdges.some(edge => edge.id === traverser.edgeId)),
+      };
     });
-  }, [graph, setGraph]);
+  }, [setGraph]);
 
   // Handle edge creation between existing nodes
   const handleEdgeCreate = useCallback((sourceId: string, targetId: string) => {
-    setGraph({
-      ...graph,
+    setGraph(prev => ({
+      ...prev,
       edges: [
-        ...graph.edges,
+        ...prev.edges,
         {
           id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           source: sourceId,
           target: targetId,
-          progress: 0,
         },
       ],
+    }));
+  }, [setGraph]);
+
+  const handleEdgeDelete = useCallback((edgeId: string) => {
+    setGraph(prev => {
+      const remainingEdges = prev.edges.filter(edge => edge.id !== edgeId);
+      return {
+        ...prev,
+        edges: remainingEdges,
+        traversers: prev.traversers.filter(traverser => traverser.edgeId !== edgeId),
+      };
     });
-  }, [graph, setGraph]);
+  }, [setGraph]);
+
+  const handleUserAdd = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setGraph(prev => {
+      const existingIds = new Set(prev.users.map(user => user.id));
+      const id = createUserId(trimmed, existingIds);
+      const newUser: User = {
+        id,
+        name: trimmed,
+      };
+      return {
+        ...prev,
+        users: [...prev.users, newUser],
+      };
+    });
+  }, [setGraph]);
+
+  const handleTraverserCreate = useCallback((traverser: Traverser) => {
+    setGraph(prev => {
+      if (prev.traversers.some(existing => existing.edgeId === traverser.edgeId)) return prev;
+      return {
+        ...prev,
+        traversers: [...prev.traversers, traverser],
+      };
+    });
+  }, [setGraph]);
+
+  const handleTraverserUpdate = useCallback((traverserId: string, updates: Partial<Traverser>) => {
+    setGraph(prev => ({
+      ...prev,
+      traversers: prev.traversers.map(traverser =>
+        traverser.id === traverserId ? { ...traverser, ...updates } : traverser
+      ),
+    }));
+  }, [setGraph]);
+
+  const handleTraverserDelete = useCallback((traverserId: string) => {
+    setGraph(prev => ({
+      ...prev,
+      traversers: prev.traversers.filter(traverser => traverser.id !== traverserId),
+    }));
+  }, [setGraph]);
+
+  const handleDownloadGraph = useCallback(() => {
+    try {
+      const json = JSON.stringify(graph, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      link.download = `${project.name || 'dagban'}-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download graph JSON', error);
+    }
+  }, [graph, project.name]);
+
+  const handleUploadGraph = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = typeof reader.result === 'string' ? reader.result : '';
+        const parsed = JSON.parse(text);
+        const isValid =
+          parsed &&
+          typeof parsed === 'object' &&
+          Array.isArray(parsed.cards) &&
+          Array.isArray(parsed.edges) &&
+          Array.isArray(parsed.categories) &&
+          Array.isArray(parsed.users) &&
+          Array.isArray(parsed.traversers);
+        if (!isValid) {
+          console.warn('Invalid Dagban JSON format');
+          return;
+        }
+        setGraph(parsed as GraphData);
+      } catch (error) {
+        console.error('Failed to import graph JSON', error);
+      }
+    };
+    reader.readAsText(file);
+  }, [setGraph]);
+
+  const handleGraphImport = useCallback((nextGraph: GraphData) => {
+    setGraph(nextGraph);
+  }, [setGraph]);
 
   const handleProjectSelect = useCallback((newProjectId: string) => {
     router.push(`/project/${newProjectId}`);
@@ -249,24 +382,29 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
     <div className="w-screen h-screen">
       <DagbanGraph
         data={graph}
-        onEdgeProgressChange={handleEdgeProgressChange}
         onCardChange={handleCardChange}
         onCategoryChange={handleCategoryChange}
         onCardCreate={handleCardCreate}
         onCardDelete={handleCardDelete}
         onEdgeCreate={handleEdgeCreate}
+        onEdgeDelete={handleEdgeDelete}
+        onUserAdd={handleUserAdd}
+        onTraverserCreate={handleTraverserCreate}
+        onTraverserUpdate={handleTraverserUpdate}
+        onTraverserDelete={handleTraverserDelete}
         projectHeader={
           <ProjectHeader
             project={project}
             projects={allProjects}
             onProjectSelect={handleProjectSelect}
             onNewRootNode={handleNewRootNode}
-            onLogoClick={() => setShowSettings(!showSettings)}
+            onDownloadGraph={handleDownloadGraph}
+            onUploadGraph={handleUploadGraph}
             onBackToProjects={handleBackToProjects}
           />
         }
-        showSettingsProp={showSettings}
         triggerNewNode={triggerNewNode}
+        onGraphImport={handleGraphImport}
       />
     </div>
   );

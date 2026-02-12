@@ -6,7 +6,8 @@ import { sampleGraph } from '@/lib/sample-data';
 import { convertMiserablesToDagban } from '@/lib/miserables-converter';
 import miserablesData from '@/lib/miserables.json';
 import { usePersistedGraph } from '@/lib/storage';
-import type { DagbanGraph as GraphData, Card } from '@/lib/types';
+import type { DagbanGraph as GraphData, Card, Traverser, User } from '@/lib/types';
+import { createUserId } from '@/lib/users';
 
 type DatasetMode = 'sample' | 'miserables';
 
@@ -18,106 +19,166 @@ function GraphHost({
   onDatasetModeChange: (mode: DatasetMode) => void;
 }) {
   const miserablesGraph = useMemo(() => convertMiserablesToDagban(miserablesData), []);
-  const initialGraph = datasetMode === 'miserables' ? miserablesGraph : sampleGraph;
-  const projectId = datasetMode === 'miserables' ? 'miserables-temp' : 'default';
+  const initialGraph = datasetMode === 'miserables'
+    ? miserablesGraph
+    : sampleGraph;
+  const projectId = datasetMode === 'miserables'
+    ? 'miserables-temp'
+    : 'default';
 
   const [graph, setGraph] = usePersistedGraph(initialGraph, projectId);
 
-  // Handle edge progress changes
-  const handleEdgeProgressChange = useCallback((edgeId: string, progress: number) => {
-    setGraph({
-      ...graph,
-      edges: graph.edges.map(edge =>
-        edge.id === edgeId ? { ...edge, progress } : edge
-      ),
-    });
-  }, [graph, setGraph]);
-
   // Handle card updates
   const handleCardChange = useCallback((cardId: string, updates: Partial<GraphData['cards'][0]>) => {
-    setGraph({
-      ...graph,
-      cards: graph.cards.map(card =>
+    setGraph(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
         card.id === cardId ? { ...card, ...updates, updatedAt: new Date().toISOString() } : card
       ),
-    });
-  }, [graph, setGraph]);
+    }));
+  }, [setGraph]);
 
   // Handle category updates
   const handleCategoryChange = useCallback((categoryId: string, updates: Partial<GraphData['categories'][0]>) => {
-    setGraph({
-      ...graph,
-      categories: graph.categories.map(cat =>
+    setGraph(prev => ({
+      ...prev,
+      categories: prev.categories.map(cat =>
         cat.id === categoryId ? { ...cat, ...updates } : cat
       ),
-    });
-  }, [graph, setGraph]);
+    }));
+  }, [setGraph]);
 
   // Handle card creation (with optional parent for downstream or child for upstream)
   const handleCardCreate = useCallback((card: Card, parentCardId?: string, childCardId?: string) => {
-    const newEdges = [...graph.edges];
+    setGraph(prev => {
+      const newEdges = [...prev.edges];
 
-    // Add edge for downstream (new card is target of parent)
-    if (parentCardId) {
-      newEdges.push({
-        id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        source: parentCardId,
-        target: card.id,
-        progress: 0,
-      });
-    }
+      // Add edge for downstream (new card is target of parent)
+      if (parentCardId) {
+        newEdges.push({
+          id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          source: parentCardId,
+          target: card.id,
+        });
+      }
 
-    // Add edge for upstream (new card is source, child is target)
-    if (childCardId) {
-      newEdges.push({
-        id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-up`,
-        source: card.id,
-        target: childCardId,
-        progress: 0,
-      });
-    }
+      // Add edge for upstream (new card is source, child is target)
+      if (childCardId) {
+        newEdges.push({
+          id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-up`,
+          source: card.id,
+          target: childCardId,
+        });
+      }
 
-    setGraph({
-      ...graph,
-      cards: [...graph.cards, card],
-      edges: newEdges,
+      return {
+        ...prev,
+        cards: [...prev.cards, card],
+        edges: newEdges,
+      };
     });
-  }, [graph, setGraph]);
+  }, [setGraph]);
 
   // Handle card deletion (also removes connected edges)
   const handleCardDelete = useCallback((cardId: string) => {
-    setGraph({
-      ...graph,
-      cards: graph.cards.filter(card => card.id !== cardId),
-      edges: graph.edges.filter(edge => edge.source !== cardId && edge.target !== cardId),
+    setGraph(prev => {
+      const remainingEdges = prev.edges.filter(edge => edge.source !== cardId && edge.target !== cardId);
+      return {
+        ...prev,
+        cards: prev.cards.filter(card => card.id !== cardId),
+        edges: remainingEdges,
+        traversers: prev.traversers.filter(traverser => remainingEdges.some(edge => edge.id === traverser.edgeId)),
+      };
     });
-  }, [graph, setGraph]);
+  }, [setGraph]);
 
   // Handle edge creation between existing nodes
   const handleEdgeCreate = useCallback((sourceId: string, targetId: string) => {
-    setGraph({
-      ...graph,
+    setGraph(prev => ({
+      ...prev,
       edges: [
-        ...graph.edges,
+        ...prev.edges,
         {
           id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           source: sourceId,
           target: targetId,
-          progress: 0,
         },
       ],
+    }));
+  }, [setGraph]);
+
+  const handleEdgeDelete = useCallback((edgeId: string) => {
+    setGraph(prev => {
+      const remainingEdges = prev.edges.filter(edge => edge.id !== edgeId);
+      return {
+        ...prev,
+        edges: remainingEdges,
+        traversers: prev.traversers.filter(traverser => traverser.edgeId !== edgeId),
+      };
     });
-  }, [graph, setGraph]);
+  }, [setGraph]);
+
+  const handleUserAdd = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setGraph(prev => {
+      const existingIds = new Set(prev.users.map(user => user.id));
+      const id = createUserId(trimmed, existingIds);
+      const newUser: User = {
+        id,
+        name: trimmed,
+      };
+      return {
+        ...prev,
+        users: [...prev.users, newUser],
+      };
+    });
+  }, [setGraph]);
+
+  const handleTraverserCreate = useCallback((traverser: Traverser) => {
+    setGraph(prev => {
+      if (prev.traversers.some(existing => existing.edgeId === traverser.edgeId)) return prev;
+      return {
+        ...prev,
+        traversers: [...prev.traversers, traverser],
+      };
+    });
+  }, [setGraph]);
+
+  const handleTraverserUpdate = useCallback((traverserId: string, updates: Partial<Traverser>) => {
+    setGraph(prev => ({
+      ...prev,
+      traversers: prev.traversers.map(traverser =>
+        traverser.id === traverserId ? { ...traverser, ...updates } : traverser
+      ),
+    }));
+  }, [setGraph]);
+
+  const handleTraverserDelete = useCallback((traverserId: string) => {
+    setGraph(prev => ({
+      ...prev,
+      traversers: prev.traversers.filter(traverser => traverser.id !== traverserId),
+    }));
+  }, [setGraph]);
+
+  const handleGraphImport = useCallback((nextGraph: GraphData) => {
+    setGraph(nextGraph);
+  }, [setGraph]);
 
   return (
     <DagbanGraph
       data={graph}
-      onEdgeProgressChange={handleEdgeProgressChange}
       onCardChange={handleCardChange}
       onCategoryChange={handleCategoryChange}
       onCardCreate={handleCardCreate}
       onCardDelete={handleCardDelete}
       onEdgeCreate={handleEdgeCreate}
+      onEdgeDelete={handleEdgeDelete}
+      onUserAdd={handleUserAdd}
+      onTraverserCreate={handleTraverserCreate}
+      onTraverserUpdate={handleTraverserUpdate}
+      onTraverserDelete={handleTraverserDelete}
+      onGraphImport={handleGraphImport}
       devDatasetMode={datasetMode}
       onDevDatasetModeChange={onDatasetModeChange}
     />

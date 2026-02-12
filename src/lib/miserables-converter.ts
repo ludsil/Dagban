@@ -12,7 +12,7 @@
  */
 
 import type { DagbanGraph, Card, Edge, Category } from './types';
-import { schemePaired } from './types';
+import { schemePaired, placeholderUsers } from './types';
 
 interface MiserablesNode {
   id: string;
@@ -67,12 +67,13 @@ export function convertMiserablesToDagban(data: MiserablesData): DagbanGraph {
     id: `edge-${index}`,
     source: link.source,
     target: link.target,
-    progress: 0, // Default progress
   }));
 
   return {
     cards,
     edges,
     categories,
+    users: placeholderUsers,
+    traversers: [],
   };
 }

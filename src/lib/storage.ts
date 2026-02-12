@@ -1,14 +1,81 @@
 // Local storage persistence for DagbanGraph
-import { useSyncExternalStore, useCallback, useRef, useEffect } from 'react';
-import { DagbanGraph } from './types';
+import { useSyncExternalStore, useCallback, useRef, useEffect, useMemo } from 'react';
+import { DagbanGraph, placeholderUsers } from './types';
 
 const STORAGE_VERSION = 1;
 const DEFAULT_PROJECT_ID = 'default';
+const ROOT_TRAVERSER_PREFIX = 'root:';
 
 interface StorageEnvelope {
   version: number;
   data: DagbanGraph;
   savedAt: string;
+}
+
+function slugifyId(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function normalizeGraph(graph: DagbanGraph): DagbanGraph {
+  const users = Array.isArray(graph.users) ? [...graph.users] : [];
+  const traversers = Array.isArray(graph.traversers) ? [...graph.traversers] : [];
+
+  const userById = new Map(users.map(user => [user.id, user]));
+  const userByName = new Map(users.map(user => [user.name.toLowerCase(), user]));
+  let nextUserId = users.length + 1;
+
+  const cards = graph.cards.map(card => {
+    if (!card.assignee) return card;
+    if (userById.has(card.assignee)) return card;
+
+    const byName = userByName.get(card.assignee.toLowerCase());
+    if (byName) {
+      return { ...card, assignee: byName.id };
+    }
+
+    const generatedId = slugifyId(card.assignee) || `user-${nextUserId++}`;
+    const newUser = { id: generatedId, name: card.assignee };
+    users.push(newUser);
+    userById.set(newUser.id, newUser);
+    userByName.set(newUser.name.toLowerCase(), newUser);
+    return { ...card, assignee: newUser.id };
+  });
+
+  if (users.length === 0) {
+    users.push(...placeholderUsers.map(user => ({ ...user })));
+    users.forEach(user => userById.set(user.id, user));
+  }
+
+  const edgeIds = new Set(graph.edges.map(edge => edge.id));
+  const cardIds = new Set(graph.cards.map(card => card.id));
+  const userIds = new Set(users.map(user => user.id));
+  const normalizedTraversers = traversers
+    .filter(traverser => {
+      if (!userIds.has(traverser.userId)) return false;
+      if (edgeIds.has(traverser.edgeId)) return true;
+      if (traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) {
+        const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+        return Boolean(nodeId && cardIds.has(nodeId));
+      }
+      return false;
+    })
+    .map(traverser => ({
+      ...traverser,
+      position: typeof traverser.position === 'number'
+        ? Math.min(Math.max(traverser.position, 0), 1)
+        : 0,
+    }));
+
+  return {
+    ...graph,
+    users,
+    cards,
+    traversers: normalizedTraversers,
+  };
 }
 
 function getStorageKey(projectId: string = DEFAULT_PROJECT_ID): string {
@@ -86,9 +153,10 @@ export function hasSavedGraph(projectId: string = DEFAULT_PROJECT_ID): boolean {
 export function usePersistedGraph(
   fallback: DagbanGraph,
   projectId: string = DEFAULT_PROJECT_ID
-): [DagbanGraph, (graph: DagbanGraph) => void] {
+): [DagbanGraph, (graph: DagbanGraph | ((prev: DagbanGraph) => DagbanGraph)) => void] {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const graphRef = useRef<DagbanGraph>(fallback);
+  const normalizedFallback = useMemo(() => normalizeGraph(fallback), [fallback]);
+  const graphRef = useRef<DagbanGraph>(normalizedFallback);
   const listenersRef = useRef<Set<() => void>>(new Set());
 
   // Subscribe function for useSyncExternalStore
@@ -106,30 +174,34 @@ export function usePersistedGraph(
 
   // Get server snapshot (fallback data)
   const getServerSnapshot = useCallback(() => {
-    return fallback;
-  }, [fallback]);
+    return normalizedFallback;
+  }, [normalizedFallback]);
 
   // Load from localStorage on mount
   useEffect(() => {
     const saved = loadGraph(projectId);
     if (saved) {
-      graphRef.current = saved;
+      const normalized = normalizeGraph(saved);
+      graphRef.current = normalized;
       // Notify subscribers
       listenersRef.current.forEach(cb => cb());
       return;
     }
 
     // No saved graph; seed storage with fallback so the graph isn't empty.
-    graphRef.current = fallback;
+    graphRef.current = normalizedFallback;
     listenersRef.current.forEach(cb => cb());
-    saveGraph(fallback, projectId);
-  }, [projectId, fallback]);
+    saveGraph(normalizedFallback, projectId);
+  }, [projectId, normalizedFallback]);
 
   const graph = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   // Set graph with debounced auto-save
-  const setGraph = useCallback((newGraph: DagbanGraph) => {
-    graphRef.current = newGraph;
+  const setGraph = useCallback((nextGraph: DagbanGraph | ((prev: DagbanGraph) => DagbanGraph)) => {
+    const resolved = typeof nextGraph === 'function'
+      ? nextGraph(graphRef.current)
+      : nextGraph;
+    graphRef.current = normalizeGraph(resolved);
 
     // Notify subscribers
     listenersRef.current.forEach(cb => cb());
@@ -141,7 +213,7 @@ export function usePersistedGraph(
 
     // Debounce save by 500ms to avoid excessive writes
     saveTimeoutRef.current = setTimeout(() => {
-      saveGraph(newGraph, projectId);
+      saveGraph(graphRef.current, projectId);
     }, 500);
   }, [projectId]);
 

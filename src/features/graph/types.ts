@@ -30,7 +30,6 @@ export interface GraphNodeData {
 export interface GraphLinkData {
   source: string | GraphNodeData;
   target: string | GraphNodeData;
-  progress: number;
   edge: Edge;
 }
 
@@ -47,6 +46,16 @@ export interface NodeContextMenuState {
   x: number;
   y: number;
   node: GraphNodeData | null;
+}
+
+// Edge context menu state (click on an edge)
+export interface EdgeContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  containerX: number;
+  containerY: number;
+  edgeId: string | null;
 }
 
 // Card creation form state
