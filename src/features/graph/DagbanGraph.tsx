@@ -1972,6 +1972,25 @@ export default function DagbanGraph({
     detachedDrag?.candidateEdgeId,
   ]);
 
+  // 3D link accessors – dynamic per-link color and width for drag highlights.
+  // three-forcegraph uses CylinderGeometry when linkWidth > 0, so larger widths
+  // render as thick cylinders instead of thin WebGL lines.
+  const isDragging = Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId);
+
+  const link3DColor = useCallback((link: GraphLinkData) => {
+    if (isDragging && eligibleTraverserEdgeIds.has(link.edge.id)) {
+      return 'rgba(56, 189, 248, 0.85)';
+    }
+    return 'rgba(255, 255, 255, 0.4)';
+  }, [isDragging, eligibleTraverserEdgeIds]);
+
+  const link3DWidth = useCallback((link: GraphLinkData) => {
+    if (isDragging && eligibleTraverserEdgeIds.has(link.edge.id)) {
+      return 3;
+    }
+    return 1;
+  }, [isDragging, eligibleTraverserEdgeIds]);
+
   const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
     ctx.fillStyle = color;
     const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
@@ -2545,6 +2564,8 @@ export default function DagbanGraph({
         nodeThreeObject={nodeThreeObject}
         getArrowRelPos={getArrowRelPos}
         getArrowRelPosMiddle={getArrowRelPosMiddle}
+        link3DColor={link3DColor}
+        link3DWidth={link3DWidth}
       />
 
       <GraphOverlays

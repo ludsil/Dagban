@@ -34,6 +34,8 @@ interface GraphCanvasLayerProps {
   nodeThreeObject?: (node: GraphNodeData) => unknown;
   getArrowRelPos: (link: GraphLinkData) => number;
   getArrowRelPosMiddle: (link: GraphLinkData) => number;
+  link3DColor: (link: GraphLinkData) => string;
+  link3DWidth: (link: GraphLinkData) => number;
 }
 
 export function GraphCanvasLayer({
@@ -49,6 +51,8 @@ export function GraphCanvasLayer({
   nodeThreeObject,
   getArrowRelPos,
   getArrowRelPosMiddle,
+  link3DColor,
+  link3DWidth,
 }: GraphCanvasLayerProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG2D = ForceGraph2D as any;
@@ -72,9 +76,9 @@ export function GraphCanvasLayer({
           nodeThreeObject={displayMode !== 'balls' ? nodeThreeObject : undefined}
           nodeThreeObjectExtend={true}
           nodeRelSize={nodeRadius}
-          linkWidth={1}
+          linkWidth={link3DWidth}
           linkOpacity={0.6}
-          linkColor={() => 'rgba(255, 255, 255, 0.4)'}
+          linkColor={link3DColor}
           linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
           linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
           linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : arrowMode === 'middle' ? getArrowRelPosMiddle : 0.5}
