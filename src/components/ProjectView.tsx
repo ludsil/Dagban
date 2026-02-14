@@ -232,11 +232,20 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
   const handleCardDelete = useCallback((cardId: string) => {
     applyGraphUpdate(prev => {
       const remainingEdges = prev.edges.filter(edge => edge.source !== cardId && edge.target !== cardId);
+      const remainingEdgeIds = new Set(remainingEdges.map(edge => edge.id));
+      const remainingCardIds = new Set(prev.cards.filter(card => card.id !== cardId).map(card => card.id));
       return {
         ...prev,
         cards: prev.cards.filter(card => card.id !== cardId),
         edges: remainingEdges,
-        traversers: prev.traversers.filter(traverser => remainingEdges.some(edge => edge.id === traverser.edgeId)),
+        traversers: prev.traversers.filter(traverser => {
+          if (remainingEdgeIds.has(traverser.edgeId)) return true;
+          if (traverser.edgeId.startsWith('root:')) {
+            const nodeId = traverser.edgeId.slice('root:'.length);
+            return remainingCardIds.has(nodeId);
+          }
+          return false;
+        }),
       };
     });
   }, [applyGraphUpdate]);
