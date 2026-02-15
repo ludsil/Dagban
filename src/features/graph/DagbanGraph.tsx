@@ -25,7 +25,6 @@ import { Button } from '@/components/ui/button';
 import {
   CardDetailPanel,
   CardCreationForm,
-  CommandPalette,
   ToastNotification,
   KeyboardShortcutsHelp,
   GraphCanvasLayer,
@@ -40,7 +39,6 @@ import {
   EdgeContextMenuState,
   HoverTooltipState,
   ToastState,
-  CommandPaletteState,
   ConnectionModeState,
   ViewMode,
   DisplayMode,
@@ -197,12 +195,6 @@ export default function DagbanGraph({
     visible: false,
     message: '',
     type: 'info',
-  });
-
-  // Command palette state
-  const [commandPalette, setCommandPalette] = useState<CommandPaletteState>({
-    visible: false,
-    query: '',
   });
 
   // Keyboard shortcuts help state
@@ -1133,6 +1125,21 @@ export default function DagbanGraph({
     cancelConnectionMode();
   }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, isBurntNodeId, showToast, cancelConnectionMode]);
 
+  // Fast root-node spawn for hotkey flow (blank title/description, editable later).
+  const createEmptyRootNode = useCallback(() => {
+    if (!onCardCreate) return;
+    const now = new Date().toISOString();
+    const newCard: Card = {
+      id: generateId(),
+      title: '',
+      description: undefined,
+      categoryId: themedCategories.length > 0 ? themedCategories[0].id : '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    onCardCreate(newCard);
+  }, [onCardCreate, themedCategories]);
+
   // Open card creation form for new root node
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
     // Center on screen
@@ -1156,15 +1163,6 @@ export default function DagbanGraph({
       openRootNodeCreation();
     }
   }, [triggerNewNode, openRootNodeCreation]);
-
-  // Handle command palette node selection
-  const handleCommandPaletteSelectNode = useCallback((node: GraphNodeData) => {
-    // Center graph on selected node
-    if (graphRef.current && node.x !== undefined && node.y !== undefined) {
-      graphRef.current.centerAt(node.x, node.y, 500);
-      graphRef.current.zoom(2, 500);
-    }
-  }, []);
 
   // Open card creation form for downstream task
   const openDownstreamCreation = useCallback((parentNode: GraphNodeData) => {
@@ -1641,19 +1639,22 @@ export default function DagbanGraph({
         return;
       }
 
-      // Skip if command palette is open (it handles its own keys)
-      if (commandPalette.visible) return;
-
       // Cmd+Z / Ctrl+Z - Undo
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
       }
 
-      // Cmd+K / Ctrl+K - Command palette
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      // N - New root node
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        setCommandPalette({ visible: true, query: '' });
+        createEmptyRootNode();
+      }
+
+      // M - Hotkey map
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        setShowShortcutsHelp(prev => !prev);
       }
 
       // ? - Show keyboard shortcuts help
@@ -1667,7 +1668,6 @@ export default function DagbanGraph({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     hoverTooltip.nodeId,
-    commandPalette.visible,
     connectionMode.active,
     graphDataView.nodes,
     pendingBurn,
@@ -1678,6 +1678,7 @@ export default function DagbanGraph({
     closeEdgeStartPicker,
     handleDeleteNode,
     handleUndo,
+    createEmptyRootNode,
     cancelConnectionMode,
     showToast,
   ]);
@@ -2667,16 +2668,6 @@ export default function DagbanGraph({
 
       {/* Toast Notification */}
       <ToastNotification state={toast} onClose={hideToast} />
-
-      {/* Command Palette */}
-      <CommandPalette
-        state={commandPalette}
-        nodes={graphDataView.nodes}
-        onClose={() => setCommandPalette({ visible: false, query: '' })}
-        onSelectNode={handleCommandPaletteSelectNode}
-        onQueryChange={(query) => setCommandPalette(prev => ({ ...prev, query }))}
-        onNewNode={() => openRootNodeCreation(commandPalette.query)}
-      />
 
       {/* Keyboard Shortcuts Help */}
       <KeyboardShortcutsHelp

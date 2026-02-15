@@ -83,14 +83,14 @@ export function FilterHud({
     });
   };
 
-  // Handle / key to focus search
+  // Handle global hotkeys to focus search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
-      if (e.key === '/') {
+      if (e.key === '/' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
         e.preventDefault();
         searchInputRef.current?.focus();
       }

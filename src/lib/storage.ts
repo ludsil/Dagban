@@ -222,6 +222,7 @@ export function usePersistedGraph(
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
       }
     };
   }, []);
