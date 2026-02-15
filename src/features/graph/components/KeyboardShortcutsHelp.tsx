@@ -31,7 +31,10 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
         </DialogHeader>
         <div className="shortcuts-help-list">
           {shortcuts.map((shortcut) => (
-            <div key={`${shortcut.action}:${shortcut.context ?? 'base'}`} className="shortcut-item">
+            <div
+              key={`${shortcut.keys.join('+')}:${shortcut.action}:${shortcut.context ?? 'base'}`}
+              className="shortcut-item"
+            >
               <div className="shortcut-keys">
                 {shortcut.keys.map((key, index) => (
                   <span key={`${shortcut.action}:${key}:${index}`} className="flex items-center gap-1.5">

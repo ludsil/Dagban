@@ -4,7 +4,7 @@ import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import DagbanGraph from '@/components/DagbanGraph';
 import { getEmptyGraph, getProjects, Project } from '@/lib/projects';
-import { usePersistedGraph } from '@/lib/storage';
+import { saveGraph, usePersistedGraph } from '@/lib/storage';
 import { useGraphUndo, type GraphUpdateOptions } from '@/lib/graph-undo';
 import type { DagbanGraph as GraphData, Card, Traverser, User } from '@/lib/types';
 import { createUserId } from '@/lib/users';
@@ -201,6 +201,8 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
 
   // Handle card creation (with optional parent for downstream or child for upstream)
   const handleCardCreate = useCallback((card: Card, parentCardId?: string, childCardId?: string) => {
+    let nextGraphSnapshot: GraphData | null = null;
+
     applyGraphUpdate(prev => {
       const newEdges = [...prev.edges];
 
@@ -220,13 +222,19 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         });
       }
 
-      return {
+      const nextGraph: GraphData = {
         ...prev,
         cards: [...prev.cards, card],
         edges: newEdges,
       };
+      nextGraphSnapshot = nextGraph;
+      return nextGraph;
     });
-  }, [applyGraphUpdate]);
+
+    if (nextGraphSnapshot) {
+      saveGraph(nextGraphSnapshot, projectId);
+    }
+  }, [applyGraphUpdate, projectId]);
 
   // Handle card deletion (also removes connected edges)
   const handleCardDelete = useCallback((cardId: string) => {
