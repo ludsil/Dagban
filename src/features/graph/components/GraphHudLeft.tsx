@@ -1,17 +1,17 @@
 'use client';
 
 import type { ComponentProps, ReactNode } from 'react';
-import { Header } from './Header';
+import { ProjectHud } from './ProjectHud';
 
 interface GraphHudLeftProps {
-  projectHeader?: ReactNode;
-  headerProps: ComponentProps<typeof Header>;
+  projectHud?: ReactNode;
+  projectHudProps: ComponentProps<typeof ProjectHud>;
 }
 
-export function GraphHudLeft({ projectHeader, headerProps }: GraphHudLeftProps) {
+export function GraphHudLeft({ projectHud, projectHudProps }: GraphHudLeftProps) {
   return (
     <div className="graph-hud-left">
-      {projectHeader || <Header {...headerProps} />}
+      {projectHud || <ProjectHud {...projectHudProps} />}
     </div>
   );
 }

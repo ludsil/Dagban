@@ -1,24 +1,24 @@
 'use client';
 
 import type { ComponentProps } from 'react';
-import { SettingsPanel } from './SettingsPanel';
-import { UserStack } from './UserStack';
+import { FilterHud } from './FilterHud';
+import { UserHud } from './UserHud';
 
 interface GraphHudRightProps {
-  userStackProps: ComponentProps<typeof UserStack>;
-  settingsPanelProps: ComponentProps<typeof SettingsPanel>;
+  userHudProps: ComponentProps<typeof UserHud>;
+  filterHudProps: ComponentProps<typeof FilterHud>;
   showSettings?: boolean;
 }
 
 export function GraphHudRight({
-  userStackProps,
-  settingsPanelProps,
+  userHudProps,
+  filterHudProps,
   showSettings = true,
 }: GraphHudRightProps) {
   return (
     <div className="graph-hud-right">
-      <UserStack {...userStackProps} />
-      {showSettings && <SettingsPanel {...settingsPanelProps} />}
+      <UserHud {...userHudProps} />
+      {showSettings && <FilterHud {...filterHudProps} />}
     </div>
   );
 }

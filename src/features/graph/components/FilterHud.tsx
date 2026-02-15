@@ -5,7 +5,7 @@ import { ViewMode, DisplayMode, ColorMode, ArrowMode } from '../types';
 import { Card, Category, Edge, User } from '@/lib/types';
 import { UserAvatar } from './UserAvatar';
 
-interface SettingsPanelProps {
+interface FilterHudProps {
   viewMode: ViewMode;
   displayMode: DisplayMode;
   colorMode: ColorMode;
@@ -37,7 +37,7 @@ interface SettingsPanelProps {
   burntAgeMax?: number;
 }
 
-export function SettingsPanel({
+export function FilterHud({
   viewMode,
   displayMode,
   colorMode,
@@ -67,7 +67,7 @@ export function SettingsPanel({
   burntAgeThreshold = 0,
   onBurntAgeThresholdChange,
   burntAgeMax = 30,
-}: SettingsPanelProps) {
+}: FilterHudProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 

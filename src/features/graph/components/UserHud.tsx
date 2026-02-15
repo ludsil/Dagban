@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 import { useMemo, useRef, type CSSProperties } from 'react';
 import { UserAvatar } from './UserAvatar';
 
-interface UserStackProps {
+interface UserHudProps {
   users: User[];
   selectedUserIds?: Set<string>;
   onUserToggle?: (userId: string) => void;
@@ -14,14 +14,14 @@ interface UserStackProps {
   onUserDragEnd?: () => void;
 }
 
-export function UserStack({
+export function UserHud({
   users,
   selectedUserIds,
   onUserToggle,
   onAddUser,
   onUserDragStart,
   onUserDragEnd,
-}: UserStackProps) {
+}: UserHudProps) {
   const userList = useMemo(() => users, [users]);
   const transparentDragImageRef = useRef<HTMLImageElement | null>(null);
 

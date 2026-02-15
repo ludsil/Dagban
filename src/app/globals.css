@@ -40,23 +40,50 @@
   --sidebar-ring: oklch(0.708 0 0);
 
   /* Graph theming tokens (override on .graph-shell or :root for personalization) */
-  --graph-fuse-red: #560D07;
-  --graph-fuse-orange: #D70C00;
-  --graph-fuse-yellow: #FEDB00;
-  --graph-category-default: #6b7280;
-  --graph-postit-bg: rgba(30, 30, 30, 0.95);
-  --graph-postit-border: rgba(255, 255, 255, 0.08);
-  --graph-postit-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
-  --graph-postit-assignee-bg: rgba(255, 255, 255, 0.15);
-  --graph-postit-assignee-hover: rgba(255, 255, 255, 0.25);
-  --graph-postit-assignee-empty-border: rgba(255, 255, 255, 0.3);
-  --graph-postit-assignee-empty-hover: rgba(255, 255, 255, 0.5);
-  --graph-postit-assignee-empty-bg: rgba(255, 255, 255, 0.05);
-  --graph-postit-assignee-icon: rgba(255, 255, 255, 0.4);
-  --graph-postit-assignee-icon-hover: rgba(255, 255, 255, 0.6);
-  --graph-postit-title: rgba(255, 255, 255, 0.95);
-  --graph-postit-text: rgba(255, 255, 255, 0.7);
-  --graph-postit-placeholder: rgba(255, 255, 255, 0.3);
+  --graph-color-fuse-red: #560D07;
+  --graph-color-fuse-orange: #D70C00;
+  --graph-color-fuse-yellow: #FEDB00;
+  --graph-color-category-default: #6b7280;
+  --graph-card-bg: rgba(30, 30, 30, 0.95);
+  --graph-card-border: rgba(255, 255, 255, 0.08);
+  --graph-card-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  --graph-card-assignee-bg: rgba(255, 255, 255, 0.15);
+  --graph-card-assignee-hover-bg: rgba(255, 255, 255, 0.25);
+  --graph-card-assignee-empty-border: rgba(255, 255, 255, 0.3);
+  --graph-card-assignee-empty-hover-border: rgba(255, 255, 255, 0.5);
+  --graph-card-assignee-empty-bg: rgba(255, 255, 255, 0.05);
+  --graph-card-assignee-icon: rgba(255, 255, 255, 0.4);
+  --graph-card-assignee-icon-hover: rgba(255, 255, 255, 0.6);
+  --graph-card-title: rgba(255, 255, 255, 0.95);
+  --graph-card-text: rgba(255, 255, 255, 0.7);
+  --graph-card-placeholder: rgba(255, 255, 255, 0.3);
+
+  /* Graph dialog theming tokens (override per project for customization) */
+  --graph-modal-bg: rgba(12, 12, 12, 0.96);
+  --graph-modal-border: rgba(255, 255, 255, 0.12);
+  --graph-modal-text: rgba(255, 255, 255, 0.96);
+  --graph-modal-muted-text: rgba(255, 255, 255, 0.6);
+  --graph-modal-input-bg: rgba(255, 255, 255, 0.06);
+  --graph-modal-input-border: rgba(255, 255, 255, 0.16);
+  --graph-modal-input-placeholder: rgba(255, 255, 255, 0.4);
+  --graph-modal-primary-bg: rgba(255, 255, 255, 0.92);
+  --graph-modal-primary-hover-bg: rgba(255, 255, 255, 0.98);
+  --graph-modal-primary-text: #0b0b0b;
+  --graph-modal-secondary-hover-bg: rgba(255, 255, 255, 0.12);
+  --graph-modal-secondary-text: rgba(255, 255, 255, 0.75);
+
+  /* Graph button tokens (override per project for compact UI personalization) */
+  --graph-ui-button-bg: rgba(255, 255, 255, 0.16);
+  --graph-ui-button-hover-bg: rgba(255, 255, 255, 0.02);
+  --graph-ui-button-border: rgba(255, 255, 255, 0.22);
+  --graph-ui-button-hover-border: rgba(255, 255, 255, 0.38);
+  --graph-ui-button-text: rgba(255, 255, 255, 0.82);
+  --graph-ui-button-ghost-text: rgba(255, 255, 255, 0.62);
+  --graph-ui-button-ghost-hover-bg: rgba(255, 255, 255, 0.04);
+  --graph-ui-button-link-text: rgba(255, 255, 255, 0.85);
+  --graph-ui-button-danger-bg: rgba(239, 68, 68, 0.82);
+  --graph-ui-button-danger-hover-bg: rgba(239, 68, 68, 0.96);
+  --graph-ui-button-danger-text: rgba(10, 10, 10, 0.95);
 }
 
 @theme inline {
@@ -238,6 +265,10 @@ html, body {
 .user-stack-item.user-stack-add {
   border-style: dashed;
   color: rgba(255, 255, 255, 0.7);
+}
+
+.user-stack-item.user-stack-add:hover {
+  transform: none;
 }
 
 .traverser-overlay-layer {
@@ -569,7 +600,8 @@ html, body {
 .header-panel {
   background-color: rgba(20, 20, 20, 0.95);
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 6px 10px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -625,6 +657,20 @@ html, body {
   font-size: 10px;
   color: rgba(255, 255, 255, 0.9);
   font-weight: 500;
+}
+
+.header-new-btn {
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
+  color: rgba(10, 10, 10, 0.95);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.header-new-btn:hover {
+  background: rgba(230, 230, 230, 1);
+  border-color: rgba(255, 255, 255, 1);
+  color: rgba(10, 10, 10, 1);
 }
 
 .header-chevron {
@@ -1016,12 +1062,12 @@ html, body {
 .postit-panel {
   position: fixed;
   width: 340px;
-  background-color: var(--graph-postit-bg);
+  background-color: var(--graph-card-bg);
   border-radius: 12px;
   z-index: 2000;
   backdrop-filter: blur(12px);
-  border: 1px solid var(--graph-postit-border);
-  box-shadow: var(--graph-postit-shadow);
+  border: 1px solid var(--graph-card-border);
+  box-shadow: var(--graph-card-shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1044,7 +1090,7 @@ html, body {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--graph-postit-assignee-bg);
+  background: var(--graph-card-assignee-bg);
   border: none;
   cursor: pointer;
   display: flex;
@@ -1054,25 +1100,25 @@ html, body {
 }
 
 .postit-assignee-avatar:hover {
-  background: var(--graph-postit-assignee-hover);
+  background: var(--graph-card-assignee-hover-bg);
 }
 
 .postit-assignee-avatar.empty {
-  border: 2px dashed var(--graph-postit-assignee-empty-border);
+  border: 2px dashed var(--graph-card-assignee-empty-border);
   background: transparent;
 }
 
 .postit-assignee-avatar.empty:hover {
-  border-color: var(--graph-postit-assignee-empty-hover);
-  background: var(--graph-postit-assignee-empty-bg);
+  border-color: var(--graph-card-assignee-empty-hover-border);
+  background: var(--graph-card-assignee-empty-bg);
 }
 
 .postit-assignee-avatar svg {
-  color: var(--graph-postit-assignee-icon);
+  color: var(--graph-card-assignee-icon);
 }
 
 .postit-assignee-avatar.empty:hover svg {
-  color: var(--graph-postit-assignee-icon-hover);
+  color: var(--graph-card-assignee-icon-hover);
 }
 
 .postit-assignee-initials {
@@ -1110,7 +1156,7 @@ html, body {
   padding: 16px 16px 8px 16px;
   font-size: 18px;
   font-weight: 600;
-  color: var(--graph-postit-title);
+  color: var(--graph-card-title);
   resize: none;
   overflow: hidden;
   line-height: 1.3;
@@ -1122,7 +1168,7 @@ html, body {
 }
 
 .postit-title::placeholder {
-  color: var(--graph-postit-placeholder);
+  color: var(--graph-card-placeholder);
 }
 
 .postit-content {
@@ -1131,7 +1177,7 @@ html, body {
   border: none;
   padding: 0 16px 16px 16px;
   font-size: 14px;
-  color: var(--graph-postit-text);
+  color: var(--graph-card-text);
   resize: none;
   min-height: 140px;
   flex: 1;
@@ -2953,6 +2999,60 @@ html, body {
 .header-dropdown-item.active {
   background-color: rgba(74, 222, 128, 0.15);
   color: #4ade80;
+}
+
+.graph-dropdown-content {
+  z-index: 1300;
+  min-width: 180px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(12, 12, 12, 0.96) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  padding: 6px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.graph-dropdown-item {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.graph-dropdown-item:hover,
+.graph-dropdown-item:focus-visible,
+.graph-dropdown-item[data-highlighted] {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.graph-dropdown-label {
+  padding: 3px 10px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.graph-dropdown-separator {
+  margin: 2px 0 6px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.graph-dropdown-icon {
+  width: 14px;
+  height: 14px;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.graph-dropdown-shortcut {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .header-dropdown-divider {

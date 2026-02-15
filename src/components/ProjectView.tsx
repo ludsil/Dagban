@@ -408,7 +408,7 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         onTraverserUpdate={handleTraverserUpdate}
         onTraverserDelete={handleTraverserDelete}
         onUndo={handleUndo}
-        projectHeader={
+        projectHud={
           <ProjectHeader
             project={project}
             projects={allProjects}

@@ -6,21 +6,23 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ChevronDown, Plus } from 'lucide-react';
+import { ChevronDown, Download, Plus, Upload } from 'lucide-react';
 
-interface HeaderProps {
+interface ProjectHudProps {
   onDownloadGraph: () => void;
   onUploadGraph: (file: File) => void;
   onNewRootNode: () => void;
 }
 
-export function Header({
+export function ProjectHud({
   onDownloadGraph,
   onUploadGraph,
   onNewRootNode,
-}: HeaderProps) {
+}: ProjectHudProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [currentProject] = useState('Default Project');
@@ -36,6 +38,9 @@ export function Header({
     event.target.value = '';
   };
 
+  const dropdownContentClass = 'graph-dropdown-content';
+  const dropdownItemClass = 'graph-dropdown-item';
+
   return (
     <div className="header-panel">
       <DropdownMenu>
@@ -49,12 +54,14 @@ export function Header({
             <div className="header-logo-ball" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onClick={onDownloadGraph}>
-            Download JSON
+        <DropdownMenuContent align="start" className={dropdownContentClass}>
+          <DropdownMenuItem className={dropdownItemClass} onClick={onDownloadGraph}>
+            <Download className="graph-dropdown-icon" />
+            <span>Export graph</span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleUploadClick}>
-            Upload JSON
+          <DropdownMenuItem className={dropdownItemClass} onClick={handleUploadClick}>
+            <Upload className="graph-dropdown-icon" />
+            <span>Import graph</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -72,21 +79,26 @@ export function Header({
             <ChevronDown className={`size-3 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onClick={() => setDropdownOpen(false)}>
+        <DropdownMenuContent align="start" className={dropdownContentClass}>
+          <DropdownMenuLabel className="graph-dropdown-label">
+            Project
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator className="graph-dropdown-separator" />
+          <DropdownMenuItem className={dropdownItemClass} onClick={() => setDropdownOpen(false)}>
             Default Project
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       {/* New Root Node button */}
       <Button
-        variant="outline"
-        size="sm"
+        variant="default"
+        size="xs"
+        className="header-new-btn"
         onClick={onNewRootNode}
         title="Create new root node"
       >
-        <Plus className="size-4" />
-        <span>New</span>
+        <Plus className="size-3" />
+        <span>New node</span>
       </Button>
     </div>
   );

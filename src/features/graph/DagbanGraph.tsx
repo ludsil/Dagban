@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo, type FormEvent } from 'react';
 import { DagbanGraph as GraphData, getCardStatus, getCardColor, Card, Category, Traverser } from '@/lib/types';
 import { getGradientColor, computeIndegrees, computeOutdegrees, getMaxDegree } from '@/lib/colors';
 import {
@@ -17,6 +17,9 @@ import {
 import { useTraverserSystem } from './hooks/useTraverserSystem';
 import type { TraverserTuning } from './traverserTuning';
 import { ROOT_TRAVERSER_PREFIX } from './traverserConstants';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 // Import extracted components
 import {
@@ -67,7 +70,7 @@ interface Props {
   onTraverserDelete?: (traverserId: string) => void;
   onGraphImport?: (graph: GraphData) => void;
   onUndo?: () => boolean;
-  projectHeader?: React.ReactNode;
+  projectHud?: React.ReactNode;
   showSettingsProp?: boolean;
   triggerNewNode?: boolean;
   devDatasetMode?: 'sample' | 'miserables';
@@ -129,7 +132,7 @@ export default function DagbanGraph({
   onTraverserDelete,
   onGraphImport,
   onUndo,
-  projectHeader,
+  projectHud,
   showSettingsProp = true,
   triggerNewNode = false,
   devDatasetMode,
@@ -204,6 +207,11 @@ export default function DagbanGraph({
 
   // Keyboard shortcuts help state
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+  // Add user dialog state
+  const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
+  const [addUserName, setAddUserName] = useState('');
+  const addUserInputRef = useRef<HTMLInputElement | null>(null);
 
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
@@ -372,14 +380,36 @@ export default function DagbanGraph({
     });
   }, []);
 
-  const handleAddUser = useCallback(() => {
+  const handleAddUserOpenChange = useCallback((open: boolean) => {
+    setAddUserDialogOpen(open);
+    if (!open) {
+      setAddUserName('');
+    }
+  }, []);
+
+  const handleAddUserSubmit = useCallback((event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (!onUserAdd) return;
-    const name = prompt('Add user name');
-    if (!name) return;
-    const trimmed = name.trim();
+    const trimmed = addUserName.trim();
     if (!trimmed) return;
     onUserAdd(trimmed);
+    setAddUserName('');
+    setAddUserDialogOpen(false);
+  }, [addUserName, onUserAdd]);
+
+  const handleAddUser = useCallback(() => {
+    if (!onUserAdd) return;
+    setAddUserDialogOpen(true);
   }, [onUserAdd]);
+
+  useEffect(() => {
+    if (!addUserDialogOpen) return;
+    const raf = requestAnimationFrame(() => {
+      addUserInputRef.current?.focus();
+      addUserInputRef.current?.select();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [addUserDialogOpen]);
 
   // Handle category filter toggle
   const handleCategoryToggle = useCallback((categoryId: string) => {
@@ -863,10 +893,10 @@ export default function DagbanGraph({
       };
 
       setGraphTheme({
-        fuseRed: resolveVar('--graph-fuse-red', '#560D07'),
-        fuseOrange: resolveVar('--graph-fuse-orange', '#D70C00'),
-        fuseYellow: resolveVar('--graph-fuse-yellow', '#FEDB00'),
-        categoryDefault: resolveVar('--graph-category-default', '#6b7280'),
+        fuseRed: resolveVar('--graph-color-fuse-red', '#560D07'),
+        fuseOrange: resolveVar('--graph-color-fuse-orange', '#D70C00'),
+        fuseYellow: resolveVar('--graph-color-fuse-yellow', '#FEDB00'),
+        categoryDefault: resolveVar('--graph-color-category-default', '#6b7280'),
       });
     };
 
@@ -2432,13 +2462,13 @@ export default function DagbanGraph({
     return getScreenCoords(node.x, node.y);
   }, [pendingBurn?.targetNodeId, pendingBurn?.anchor, viewMode, renderTick, getScreenCoords]);
 
-  const headerProps = useMemo(() => ({
+  const projectHudProps = useMemo(() => ({
     onDownloadGraph: handleDownloadGraph,
     onUploadGraph: handleUploadGraph,
     onNewRootNode: openRootNodeCreation,
   }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation]);
 
-  const userStackProps = useMemo(() => ({
+  const userHudProps = useMemo(() => ({
     users: data.users,
     selectedUserIds: selectedAssignees,
     onUserToggle: handleAssigneeToggle,
@@ -2447,7 +2477,7 @@ export default function DagbanGraph({
     onUserDragEnd: handleUserDragEnd,
   }), [data.users, selectedAssignees, handleAssigneeToggle, handleAddUser, handleUserDragStart, handleUserDragEnd]);
 
-  const settingsPanelProps = useMemo(() => ({
+  const filterHudProps = useMemo(() => ({
     viewMode,
     displayMode,
     nodeRadius,
@@ -2525,12 +2555,46 @@ export default function DagbanGraph({
       onDrop={handleUserDrop}
       onPointerDown={handleTraverserPointerDown}
     >
-      <GraphHudLeft projectHeader={projectHeader} headerProps={headerProps} />
+      <GraphHudLeft projectHud={projectHud} projectHudProps={projectHudProps} />
       <GraphHudRight
-        userStackProps={userStackProps}
-        settingsPanelProps={settingsPanelProps}
+        userHudProps={userHudProps}
+        filterHudProps={filterHudProps}
         showSettings={showSettings}
       />
+
+      <Dialog open={addUserDialogOpen} onOpenChange={handleAddUserOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add a user</DialogTitle>
+          </DialogHeader>
+          <form className="grid gap-4" onSubmit={handleAddUserSubmit}>
+            <Input
+              ref={addUserInputRef}
+              value={addUserName}
+              onChange={(event) => setAddUserName(event.target.value)}
+              placeholder="Enter a name"
+              className="border-[var(--graph-modal-input-border)] bg-[var(--graph-modal-input-bg)] text-[var(--graph-modal-text)] placeholder:text-[var(--graph-modal-input-placeholder)] focus-visible:ring-0 focus-visible:border-[var(--graph-modal-input-border)]"
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-[var(--graph-modal-secondary-text)] hover:bg-[var(--graph-modal-secondary-hover-bg)] hover:text-[var(--graph-modal-text)]"
+                onClick={() => handleAddUserOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-[var(--graph-modal-primary-bg)] text-[var(--graph-modal-primary-text)] hover:bg-[var(--graph-modal-primary-hover-bg)]"
+                disabled={!addUserName.trim()}
+              >
+                Add user
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <GraphCanvasLayer
         viewMode={viewMode}
