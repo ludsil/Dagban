@@ -11,12 +11,8 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
   const shortcuts = [
     { keys: ['M'], action: 'Hotkey map' },
     { keys: ['N'], action: 'New blank root node' },
-    { keys: ['/'], action: 'Focus HUD search' },
-    { keys: ['Cmd/Ctrl', 'K'], action: 'Focus HUD search' },
+    { keys: ['/'], action: 'Search' },
     { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },
-    { keys: ['Esc'], action: 'Cancel current action' },
-    { keys: ['Enter'], action: 'Confirm burn', context: 'Burn prompt' },
-    { keys: ['?'], action: 'Hotkey map (alt)' },
   ];
 
   return (
@@ -35,17 +31,17 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
               key={`${shortcut.keys.join('+')}:${shortcut.action}:${shortcut.context ?? 'base'}`}
               className="shortcut-item"
             >
-              <div className="shortcut-keys">
-                {shortcut.keys.map((key, index) => (
-                  <span key={`${shortcut.action}:${key}:${index}`} className="flex items-center gap-1.5">
-                    {index > 0 && <span className="text-white/35">+</span>}
-                    <kbd>{key}</kbd>
-                  </span>
-                ))}
-              </div>
               <div className="shortcut-meta">
                 <span className="shortcut-action">{shortcut.action}</span>
                 {shortcut.context && <span className="shortcut-context">{shortcut.context}</span>}
+              </div>
+              <div className="shortcut-keys">
+                {shortcut.keys.map((key, index) => (
+                  <span key={`${shortcut.action}:${key}:${index}`} className="flex items-center gap-1.5">
+                    {index > 0 && <span className="text-white/35">{shortcut.separator ?? '+'}</span>}
+                    <kbd>{key}</kbd>
+                  </span>
+                ))}
               </div>
             </div>
           ))}
