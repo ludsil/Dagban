@@ -106,3 +106,15 @@ export type ViewMode = '2D' | '3D';
 export type DisplayMode = 'balls' | 'labels' | 'full';
 export type ColorMode = 'category' | 'indegree' | 'outdegree';
 export type ArrowMode = 'end' | 'middle' | 'none';
+
+// Coordinate provider abstraction for the traverser system.
+// 2D and 3D renderers supply their own implementations.
+export interface TraverserCoordinateProvider {
+  getGraphCoords(clientX: number, clientY: number): { x: number; y: number; z?: number } | null;
+  getScreenCoords(x: number, y: number, z?: number): { x: number; y: number } | null;
+  getZoomScale(): number;
+  getEdgeNodes(edgeId: string): { sourceNode: GraphNodeData; targetNode: GraphNodeData } | null;
+  getTraverserRenderPoint(source: GraphNodeData, target: GraphNodeData, position: number): { x: number; y: number; z?: number };
+  getRootTraverserPoint(node: GraphNodeData, position: number): { x: number; y: number; z?: number; angle?: number; startAngle?: number; radius?: number };
+  getRootPositionFromCoords(node: GraphNodeData, point: { x: number; y: number; z?: number }): number;
+}
