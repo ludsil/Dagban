@@ -120,14 +120,23 @@ export const graphActionRegistry: readonly GraphActionDefinition[] = [
         { name: 'childCardId', type: 'string', required: false, description: 'If set, create upstream edge card -> child.' },
       ],
     },
-    preconditions: ['Card title must be non-empty after trimming.'],
+    preconditions: [
+      'Card payload must include id, categoryId, and timestamps.',
+      'Blank titles are allowed for fast hotkey root-node spawn; form-driven creation enforces non-empty title.',
+    ],
     undoable: true,
     apiCandidate: true,
-    triggers: ['Project bar: New node', 'Node detail: upstream/downstream create', 'Graph background create flow'],
+    triggers: [
+      'Project bar: New node',
+      'Node detail: upstream/downstream create',
+      'Graph background create flow',
+      'Hotkey: N (new blank root node)',
+    ],
     handlerRefs: [
       'src/components/ProjectView.tsx#handleCardCreate',
       'src/app/page.tsx#handleCardCreate',
       'src/features/graph/DagbanGraph.tsx#handleCardCreation',
+      'src/features/graph/DagbanGraph.tsx#createEmptyRootNode',
     ],
   },
   {

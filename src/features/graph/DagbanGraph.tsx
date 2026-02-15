@@ -1125,6 +1125,21 @@ export default function DagbanGraph({
     cancelConnectionMode();
   }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, isBurntNodeId, showToast, cancelConnectionMode]);
 
+  // Fast root-node spawn for hotkey flow (blank title/description, editable later).
+  const createEmptyRootNode = useCallback(() => {
+    if (!onCardCreate) return;
+    const now = new Date().toISOString();
+    const newCard: Card = {
+      id: generateId(),
+      title: '',
+      description: undefined,
+      categoryId: themedCategories.length > 0 ? themedCategories[0].id : '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    onCardCreate(newCard);
+  }, [onCardCreate, themedCategories]);
+
   // Open card creation form for new root node
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
     // Center on screen
@@ -1630,6 +1645,12 @@ export default function DagbanGraph({
         handleUndo();
       }
 
+      // N - New root node
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        createEmptyRootNode();
+      }
+
       // M - Hotkey map
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'm') {
         e.preventDefault();
@@ -1657,6 +1678,7 @@ export default function DagbanGraph({
     closeEdgeStartPicker,
     handleDeleteNode,
     handleUndo,
+    createEmptyRootNode,
     cancelConnectionMode,
     showToast,
   ]);
