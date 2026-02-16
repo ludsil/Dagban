@@ -430,17 +430,11 @@ export function useTraverserSystem3D({
 
   // --- 3D: canvas pointer-down for hit-testing traversers ---
 
-  const handleTraverserPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (viewMode !== '3D') return;
-    if (event.pointerType === 'touch') return;
-    const gc = getGraphCoords(event.clientX, event.clientY);
-    if (!gc) return;
-    const hit = logic.findTraverserHit(gc);
-    if (!hit) return;
-    event.preventDefault();
-    event.stopPropagation();
-    logic.initiateTraverserDrag(hit.traverserId, event.clientX, event.clientY);
-  }, [viewMode, getGraphCoords, logic.findTraverserHit, logic.initiateTraverserDrag]);
+  // In 3D, traversers are grabbed only via their overlay buttons (not canvas hit-test)
+  // to avoid intercepting camera orbit/pan gestures.
+  const handleTraverserPointerDown = useCallback((_event: React.PointerEvent<HTMLDivElement>) => {
+    // no-op: 3D traversers use overlay buttons for grab
+  }, []);
 
   // --- 3D: overlay avatar pointer-down ---
 
