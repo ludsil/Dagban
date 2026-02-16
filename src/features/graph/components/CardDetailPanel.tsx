@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Card, User } from '@/lib/types';
+import { getContrastColors } from '@/lib/colors';
 import { SelectedNodeInfo, GraphNodeData } from '../types';
 import { Kbd } from '@/components/ui/kbd';
 import {
@@ -17,7 +18,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { Plus, Link, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -57,6 +58,7 @@ export function CardDetailPanel({
   const [assignee, setAssignee] = useState(card.assignee || '');
   const [shiftHeld, setShiftHeld] = useState(false);
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
+  const colors = useMemo(() => getContrastColors(node.color), [node.color]);
 
   // Track shift key state
   useEffect(() => {
@@ -140,6 +142,11 @@ export function CardDetailPanel({
         descriptionRef.current.value.length
       );
     }
+    // Auto-resize title textarea to fit existing multi-line content
+    if (titleRef.current) {
+      titleRef.current.style.height = 'auto';
+      titleRef.current.style.height = titleRef.current.scrollHeight + 'px';
+    }
   }, [card.title]);
 
   // Handle Escape and Enter keys to close panel
@@ -200,8 +207,8 @@ export function CardDetailPanel({
   }, [onClose, onDelete, node]);
 
   // Calculate panel position - position to the right of the node, or left if near edge
-  const panelWidth = 340;
-  const panelHeight = 320;
+  const panelWidth = 260;
+  const panelHeight = 360;
   const offset = 20;
 
   let left = screenX + offset;
@@ -253,11 +260,15 @@ export function CardDetailPanel({
       style={{
         left: `${left}px`,
         top: `${top}px`,
-      }}
+        backgroundColor: node.color,
+        '--postit-title': colors.title,
+        '--postit-body': colors.body,
+        '--postit-muted': colors.muted,
+        '--postit-action-border': colors.actionBorder,
+        '--postit-action-text': colors.actionText,
+        '--postit-badge-bg': colors.badgeBg,
+      } as React.CSSProperties}
     >
-      {/* Status indicator bar at top */}
-      <div className="postit-status-bar" style={{ backgroundColor: node.color }} />
-
       {/* Assignee avatar in top right corner */}
       <div className="postit-assignee-corner">
         <Select
@@ -266,7 +277,7 @@ export function CardDetailPanel({
         >
           <SelectTrigger
             size="sm"
-            className="h-8 w-8 rounded-full p-0 border-none shadow-none [&>svg]:hidden"
+            className="h-6 w-6 rounded-full p-0 border-none shadow-none cursor-pointer focus:ring-0 focus:outline-none focus-visible:ring-0 focus-visible:outline-none [&>svg]:hidden"
             aria-label="Assign user"
           >
             <UserAvatar user={assigneeUser} name={assigneeLabel} size="sm" />
@@ -313,34 +324,37 @@ export function CardDetailPanel({
       {/* Bottom action bar */}
       <div className="postit-actions">
         <div className="postit-actions-left">
-          <Button
-            variant="ghost"
-            size="xs"
-            className={`postit-action-btn${shiftHeld ? ' shift-active' : ''}`}
-            onClick={handleAddTask}
-          >
-            <Plus className="size-3" />
-            <span>Add task</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            className={`postit-action-btn${shiftHeld ? ' shift-active' : ''}`}
-            onClick={handleAddDep}
-          >
-            <Link className="size-3" />
-            <span>Add dep</span>
-          </Button>
           <Tooltip delayDuration={100}>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="postit-kbd-wrapper">
-                <Kbd>⇧</Kbd>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={`postit-action-icon${shiftHeld ? ' shift-active' : ''}`}
+                onClick={handleAddTask}
+              >
+                <ArrowUp className="size-3.5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={8}>
-              <p>Hold Shift to link to existing node</p>
+              <p>{shiftHeld ? 'Link existing downstream task' : 'Add downstream task'}</p>
             </TooltipContent>
           </Tooltip>
+          <Tooltip delayDuration={100}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={`postit-action-icon${shiftHeld ? ' shift-active' : ''}`}
+                onClick={handleAddDep}
+              >
+                <ArrowDown className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={8}>
+              <p>{shiftHeld ? 'Link existing dependency' : 'Add dependency'}</p>
+            </TooltipContent>
+          </Tooltip>
+          <Kbd className="postit-kbd-hint">⇧</Kbd>
         </div>
         <div className="postit-actions-right">
           <Tooltip>
@@ -358,7 +372,7 @@ export function CardDetailPanel({
               <p>Delete node</p>
             </TooltipContent>
           </Tooltip>
-          <div className="postit-status-badge" style={{ backgroundColor: node.color }}>
+          <div className="postit-status-badge">
             {node.status}
           </div>
         </div>

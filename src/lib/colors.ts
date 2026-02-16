@@ -60,6 +60,47 @@ export function getGradientColor(scale: ColorScaleKey, value: number, max: numbe
 }
 
 /**
+ * Get contrast-aware text/UI colors for a given background hex color.
+ * Saturated/dark backgrounds get light text; light backgrounds get dark text.
+ * Body copy is always a softened alpha version of the heading color.
+ */
+export function getContrastColors(bgHex: string): {
+  title: string;
+  body: string;
+  muted: string;
+  actionBorder: string;
+  actionText: string;
+  badgeBg: string;
+} {
+  const r = parseInt(bgHex.slice(1, 3), 16);
+  const g = parseInt(bgHex.slice(3, 5), 16);
+  const b = parseInt(bgHex.slice(5, 7), 16);
+  // Perceived luminance (ITU-R BT.601)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const isLight = luminance > 0.55;
+
+  if (isLight) {
+    return {
+      title: 'rgba(0, 0, 0, 0.85)',
+      body: 'rgba(0, 0, 0, 0.6)',
+      muted: 'rgba(0, 0, 0, 0.35)',
+      actionBorder: 'rgba(0, 0, 0, 0.15)',
+      actionText: 'rgba(0, 0, 0, 0.6)',
+      badgeBg: 'rgba(0, 0, 0, 0.1)',
+    };
+  } else {
+    return {
+      title: 'rgba(255, 255, 255, 0.95)',
+      body: 'rgba(255, 255, 255, 0.7)',
+      muted: 'rgba(255, 255, 255, 0.35)',
+      actionBorder: 'rgba(255, 255, 255, 0.2)',
+      actionText: 'rgba(255, 255, 255, 0.7)',
+      badgeBg: 'rgba(255, 255, 255, 0.15)',
+    };
+  }
+}
+
+/**
  * Compute indegree (number of incoming edges) for each node.
  *
  * @param edges - Array of edges with source and target properties

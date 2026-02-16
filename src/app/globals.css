@@ -6,6 +6,7 @@
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-serif: Georgia, "Times New Roman", serif;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -1059,109 +1060,40 @@ html, body {
   opacity: 0.8;
 }
 
-/* Post-it style panel - Figma inspired */
+/* Post-it style panel - monocolor card */
 .postit-panel {
   position: fixed;
-  width: 340px;
-  background-color: var(--graph-card-bg);
-  border-radius: 12px;
+  width: 260px;
+  border-radius: 16px;
   z-index: 2000;
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--graph-card-border);
-  box-shadow: var(--graph-card-shadow);
+  border: none;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.postit-status-bar {
-  height: 4px;
-  width: 100%;
-  flex-shrink: 0;
-}
-
 .postit-assignee-corner {
   position: absolute;
-  top: 16px;
+  top: 12px;
   right: 12px;
   z-index: 1;
-}
-
-.postit-assignee-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--graph-card-assignee-bg);
-  border: none;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-
-.postit-assignee-avatar:hover {
-  background: var(--graph-card-assignee-hover-bg);
-}
-
-.postit-assignee-avatar.empty {
-  border: 2px dashed var(--graph-card-assignee-empty-border);
-  background: transparent;
-}
-
-.postit-assignee-avatar.empty:hover {
-  border-color: var(--graph-card-assignee-empty-hover-border);
-  background: var(--graph-card-assignee-empty-bg);
-}
-
-.postit-assignee-avatar svg {
-  color: var(--graph-card-assignee-icon);
-}
-
-.postit-assignee-avatar.empty:hover svg {
-  color: var(--graph-card-assignee-icon-hover);
-}
-
-.postit-assignee-initials {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.postit-assignee-dropdown {
-  padding: 6px 10px;
-  font-size: 12px;
-  background: rgba(20, 20, 20, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.9);
-  outline: none;
-  cursor: pointer;
-  min-width: 120px;
-}
-
-.postit-assignee-dropdown:focus {
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.postit-assignee-dropdown option {
-  background: #1a1a1a;
-  color: rgba(255, 255, 255, 0.9);
-  padding: 8px;
 }
 
 .postit-title {
   width: 100%;
   background: transparent;
   border: none;
-  padding: 16px 16px 8px 16px;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--graph-card-title);
+  padding: 18px 56px 6px 14px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--postit-title, rgba(255, 255, 255, 0.95));
   resize: none;
   overflow: hidden;
-  line-height: 1.3;
-  font-family: inherit;
+  line-height: 1.25;
+  font-family: var(--font-serif);
+  white-space: pre-line;
 }
 
 .postit-title:focus {
@@ -1169,18 +1101,18 @@ html, body {
 }
 
 .postit-title::placeholder {
-  color: var(--graph-card-placeholder);
+  color: var(--postit-muted, rgba(255, 255, 255, 0.35));
 }
 
 .postit-content {
   width: 100%;
   background: transparent;
   border: none;
-  padding: 0 16px 16px 16px;
+  padding: 0 14px 14px 14px;
   font-size: 14px;
-  color: var(--graph-card-text);
+  color: var(--postit-body, rgba(255, 255, 255, 0.7));
   resize: none;
-  min-height: 140px;
+  min-height: 150px;
   flex: 1;
   line-height: 1.5;
   font-family: inherit;
@@ -1191,16 +1123,15 @@ html, body {
 }
 
 .postit-content::placeholder {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--postit-muted, rgba(255, 255, 255, 0.35));
 }
 
 .postit-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background-color: rgba(0, 0, 0, 0.2);
+  padding: 8px 10px;
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 .postit-actions-left {
@@ -1208,61 +1139,44 @@ html, body {
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
 }
 
-.postit-action-btn {
-  display: inline-flex;
+.postit-action-icon {
+  display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.7);
-  padding: 4px 8px;
+  border: 1px solid var(--postit-action-border, rgba(255, 255, 255, 0.2));
+  color: var(--postit-action-text, rgba(255, 255, 255, 0.7));
   border-radius: 6px;
-  font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
-  white-space: nowrap;
 }
 
-.postit-action-btn:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.25);
-  color: rgba(255, 255, 255, 0.9);
+.postit-action-icon:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+  border-color: var(--postit-title, rgba(255, 255, 255, 0.4));
+  color: var(--postit-title, rgba(255, 255, 255, 0.95));
 }
 
-.postit-action-btn.shift-active {
-  border-color: rgba(255, 255, 255, 0.5);
-  color: rgba(255, 255, 255, 0.95);
+.postit-action-icon.shift-active {
+  border-color: var(--postit-title, rgba(255, 255, 255, 0.6));
+  color: var(--postit-title, rgba(255, 255, 255, 0.95));
 }
 
-.postit-kbd-wrapper {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: default;
-  display: inline-flex;
-}
-
-.postit-action-btn:hover svg {
-  color: #4ade80;
-}
-
-.postit-action-btn-danger:hover {
-  background-color: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #ef4444;
-}
-
-.postit-action-btn-danger:hover svg {
-  color: #ef4444;
+.postit-kbd-hint {
+  margin-left: 2px;
+  color: var(--postit-muted, rgba(255, 255, 255, 0.35));
+  font-size: 10px;
 }
 
 .postit-actions-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .postit-delete-icon {
@@ -1273,30 +1187,31 @@ html, body {
   height: 24px;
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--postit-muted, rgba(255, 255, 255, 0.35));
   cursor: pointer;
   border-radius: 4px;
   transition: all 0.15s ease;
 }
 
 .postit-delete-icon:hover {
-  background-color: rgba(239, 68, 68, 0.15);
+  background-color: rgba(239, 68, 68, 0.2);
   color: #ef4444;
 }
 
 .postit-status-badge {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 4px 8px;
+  padding: 3px 6px;
   border-radius: 4px;
-  color: rgba(0, 0, 0, 0.8);
+  background-color: var(--postit-badge-bg, rgba(255, 255, 255, 0.15));
+  color: var(--postit-title, rgba(255, 255, 255, 0.95));
   font-weight: 600;
 }
 
 /* Post-it creation form specific styles */
 .postit-creation {
-  min-height: 280px;
+  min-height: 300px;
 }
 
 .postit-creation-header {

@@ -59,8 +59,8 @@ export function CardCreationForm({
   // Calculate position - center on screen for root nodes, or near click for downstream
   let left = state.x;
   let top = state.y;
-  const formWidth = 320;
-  const formHeight = 240;
+  const formWidth = 260;
+  const formHeight = 300;
 
   // Adjust if panel would go off-screen
   if (typeof window !== 'undefined') {
@@ -87,6 +87,7 @@ export function CardCreationForm({
       style={{
         left: `${left}px`,
         top: `${top}px`,
+        backgroundColor: '#1e1e1e',
       }}
     >
       {/* Header */}
