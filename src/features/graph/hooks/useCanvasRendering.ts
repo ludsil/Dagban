@@ -20,6 +20,7 @@ export type UseCanvasRenderingProps = {
   connectionMode: ConnectionModeState;
   dragConnect: DragConnectState;
   draggingUserId: string | null;
+  focusedNodeId: string | null;
   pendingBurn: PendingBurnState;
   previewBurn: PreviewBurnState;
   detachedDrag: DetachedDragState;
@@ -50,6 +51,7 @@ export function useCanvasRendering({
   connectionMode,
   dragConnect,
   draggingUserId,
+  focusedNodeId,
   pendingBurn,
   previewBurn,
   detachedDrag,
@@ -93,7 +95,6 @@ export function useCanvasRendering({
       dragConnect.targetNode?.id === node.id &&
       !isBurntNodeId(node.id);
     const isDragConnectSource = dragConnect.active && dragConnect.sourceNode?.id === node.id;
-
     if (displayMode === 'balls') {
       if (rootTraverser && rootProgress !== null) {
         const startAngle = -Math.PI / 2;
@@ -285,6 +286,7 @@ export function useCanvasRendering({
     ROOT_RING_RADIUS,
     detachedDrag?.traverserId,
     detachedDrag?.candidateRootNodeId,
+    focusedNodeId,
   ]);
 
   // Custom link rendering for 2D - supports traversers ("fuses") and burnt edges

@@ -116,6 +116,7 @@ export default function DagbanGraph({
   const showSettings = showSettingsProp;
 
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [renderTick, setRenderTick] = useState(0);
   const [fuseAnimationTime, setFuseAnimationTime] = useState(0);
   const fuseAnimationRef = useRef<number | null>(null);
@@ -619,6 +620,7 @@ export default function DagbanGraph({
     edgeStartPicker,
     edgeContextMenu,
     selectedNode,
+    focusedNodeId,
     cardCreation,
     dragConnect,
     nodeRadius,
@@ -628,6 +630,7 @@ export default function DagbanGraph({
     rootActiveNodeIds,
     eligibleTraverserEdgeIds,
     setSelectedNode,
+    setFocusedNodeId,
     setHoverTooltip,
     setEdgeContextMenu,
     setEdgeStartPicker,
@@ -664,6 +667,13 @@ export default function DagbanGraph({
       openRootNodeCreation();
     }
   }, [triggerNewNode, openRootNodeCreation]);
+
+  // Clear focusedNodeId if the focused node is deleted or filtered out
+  useEffect(() => {
+    if (focusedNodeId && !graphDataView.nodes.some((n: GraphNodeData) => n.id === focusedNodeId)) {
+      setFocusedNodeId(null);
+    }
+  }, [focusedNodeId, graphDataView.nodes]);
 
   // ============================================================
   // Effects: Fuse animation, wheel/pointer, resize, 3D camera
@@ -797,41 +807,35 @@ export default function DagbanGraph({
   // Keyboard shortcuts handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if typing in an input or textarea
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      // --- Global keys: handled even when typing in inputs ---
+
+      // Escape — blurs input, then progressively cancels state
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (isTyping && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        if (pendingBurn) { cancelPendingBurn(); return; }
+        if (previewBurn) { setPreviewBurn(null); return; }
+        if (edgeStartPicker) { closeEdgeStartPicker(); return; }
+        if (connectionMode.active) { cancelConnectionMode(); showToast('Connection cancelled', 'info'); return; }
+        if (focusedNodeId || selectedNode) {
+          setFocusedNodeId(null);
+          setSelectedNode(null);
+          return;
+        }
         return;
       }
+
+      // --- Below: skipped when typing in an input or textarea ---
+      if (isTyping) return;
 
       if (pendingBurn && e.key === 'Enter') {
         e.preventDefault();
         confirmPendingBurn();
-        return;
-      }
-
-      if (pendingBurn && e.key === 'Escape') {
-        e.preventDefault();
-        cancelPendingBurn();
-        return;
-      }
-
-      if (previewBurn && e.key === 'Escape') {
-        e.preventDefault();
-        setPreviewBurn(null);
-        return;
-      }
-
-      if (edgeStartPicker && e.key === 'Escape') {
-        e.preventDefault();
-        closeEdgeStartPicker();
-        return;
-      }
-
-      // Escape cancels connection mode
-      if (e.key === 'Escape' && connectionMode.active) {
-        e.preventDefault();
-        cancelConnectionMode();
-        showToast('Connection cancelled', 'info');
         return;
       }
 
@@ -877,6 +881,8 @@ export default function DagbanGraph({
     createEmptyRootNode,
     cancelConnectionMode,
     showToast,
+    focusedNodeId,
+    selectedNode,
   ]);
 
   // ============================================================
@@ -895,6 +901,7 @@ export default function DagbanGraph({
     connectionMode,
     dragConnect,
     draggingUserId,
+    focusedNodeId,
     pendingBurn,
     previewBurn,
     detachedDrag,

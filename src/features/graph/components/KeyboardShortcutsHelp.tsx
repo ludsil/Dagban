@@ -13,6 +13,8 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
     { keys: ['N'], action: 'New blank root node' },
     { keys: ['/'], action: 'Search' },
     { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },
+    { keys: ['Shift', 'Click'], action: 'Connect selected → clicked node', separator: '+' },
+    { keys: ['Esc'], action: 'Deselect node' },
   ];
 
   return (

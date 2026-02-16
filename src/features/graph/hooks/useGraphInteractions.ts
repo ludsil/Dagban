@@ -43,6 +43,7 @@ export interface UseGraphInteractionsProps {
   edgeStartPicker: { edgeId: string; x: number; y: number } | null;
   edgeContextMenu: EdgeContextMenuState;
   selectedNode: SelectedNodeInfo | null;
+  focusedNodeId: string | null;
   cardCreation: CardCreationState;
   dragConnect: DragConnectState;
   nodeRadius: number;
@@ -56,6 +57,7 @@ export interface UseGraphInteractionsProps {
 
   // State setters
   setSelectedNode: React.Dispatch<React.SetStateAction<SelectedNodeInfo | null>>;
+  setFocusedNodeId: React.Dispatch<React.SetStateAction<string | null>>;
   setHoverTooltip: React.Dispatch<React.SetStateAction<HoverTooltipState>>;
   setEdgeContextMenu: React.Dispatch<React.SetStateAction<EdgeContextMenuState>>;
   setEdgeStartPicker: React.Dispatch<React.SetStateAction<{ edgeId: string; x: number; y: number } | null>>;
@@ -110,6 +112,7 @@ export function useGraphInteractions({
   edgeStartPicker,
   edgeContextMenu,
   selectedNode,
+  focusedNodeId,
   cardCreation,
   dragConnect,
   nodeRadius,
@@ -119,6 +122,7 @@ export function useGraphInteractions({
   rootActiveNodeIds,
   eligibleTraverserEdgeIds,
   setSelectedNode,
+  setFocusedNodeId,
   setHoverTooltip,
   setEdgeContextMenu,
   setEdgeStartPicker,
@@ -601,7 +605,34 @@ export function useGraphInteractions({
       return;
     }
 
-    // Otherwise show the detail panel
+    // Shift+click: create edge from focused node to clicked node
+    if (event.shiftKey && focusedNodeId && focusedNodeId !== node.id && onEdgeCreate) {
+      // Validate: no burnt target, no duplicate edge
+      if (isBurntNodeId(node.id)) {
+        showToast('Cannot add dependencies to a burnt node', 'warning');
+      } else {
+        const edgeExists = data.edges.some(
+          e => e.source === focusedNodeId && e.target === node.id
+        );
+        if (edgeExists) {
+          showToast('Connection already exists', 'warning');
+        } else {
+          onEdgeCreate(focusedNodeId, node.id);
+          showToast(`Connected → "${node.title}"`, 'success');
+        }
+      }
+      // Always advance focus to clicked node (enables chaining)
+      setFocusedNodeId(node.id);
+      setSelectedNode({
+        node,
+        screenX: event.clientX,
+        screenY: event.clientY,
+      });
+      return;
+    }
+
+    // Select node: set focus + open detail panel
+    setFocusedNodeId(node.id);
     setSelectedNode({
       node,
       screenX: event.clientX,
@@ -614,6 +645,11 @@ export function useGraphInteractions({
     pendingBurn,
     cancelPendingBurn,
     closeEdgeContextMenu,
+    focusedNodeId,
+    onEdgeCreate,
+    isBurntNodeId,
+    data.edges,
+    showToast,
   ]);
 
   const handleNodeHover = useCallback((node: GraphNodeData | null) => {
@@ -640,6 +676,7 @@ export function useGraphInteractions({
     if (selectedNode) {
       setSelectedNode(null);
     }
+    setFocusedNodeId(null);
     closeEdgeContextMenu();
     if (connectionMode.active) {
       cancelConnectionMode();
@@ -751,7 +788,7 @@ export function useGraphInteractions({
         // Start animation loop
         const animate = () => {
           const elapsed = performance.now() - now;
-          const progress = Math.min(elapsed / 1000, 1); // 1.0 seconds
+          const progress = Math.min(elapsed / 650, 1); // 0.65 seconds
 
           if (progress >= 1) {
             // Connection complete
