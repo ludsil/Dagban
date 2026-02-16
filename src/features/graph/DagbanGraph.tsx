@@ -555,7 +555,7 @@ export default function DagbanGraph({
     if (graphRef.current && typeof graphRef.current.refresh === 'function') {
       graphRef.current.refresh();
     }
-  }, [draggingUserId, pendingBurn?.targetNodeId]);
+  }, [draggingUserId, pendingBurn?.targetNodeId, previewBurn?.targetNodeId]);
 
   // ============================================================
   // Hook 3b: Three.js traverser rendering (3D scene objects)
@@ -962,7 +962,10 @@ export default function DagbanGraph({
     onZoom: bumpRenderTick,
     onZoomEnd: bumpRenderTick,
     onEngineTick: bumpRenderTick,
-    nodeColor: (node: GraphNodeData) => node.color,
+    nodeColor: (node: GraphNodeData) => {
+      const isPreviewBurnt = previewBurn?.targetNodeId === node.id || pendingBurn?.targetNodeId === node.id;
+      return isPreviewBurnt ? _BURNT_COLOR : node.color;
+    },
     showPointerCursor: (obj: unknown) => Boolean(obj),
   };
 
