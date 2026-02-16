@@ -21,6 +21,7 @@ export type UseCanvasRenderingProps = {
   dragConnect: DragConnectState;
   draggingUserId: string | null;
   focusedNodeId: string | null;
+  spaceHighlightRef: React.RefObject<boolean>;
   pendingBurn: PendingBurnState;
   previewBurn: PreviewBurnState;
   detachedDrag: DetachedDragState;
@@ -52,6 +53,7 @@ export function useCanvasRendering({
   dragConnect,
   draggingUserId,
   focusedNodeId,
+  spaceHighlightRef,
   pendingBurn,
   previewBurn,
   detachedDrag,
@@ -79,7 +81,7 @@ export function useCanvasRendering({
     const rootTraverser = rootTraverserByNodeId.get(node.id);
     const rootAvailable = !rootTraverser || rootTraverser.id === detachedDrag?.traverserId;
     const isRootCandidate =
-      ((Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) && rootActiveNodeIds.has(node.id) && rootAvailable) ||
+      ((Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current) && rootActiveNodeIds.has(node.id) && rootAvailable) ||
       (detachedDrag?.candidateRootNodeId === node.id);
     const isPendingBurn = pendingBurn?.targetNodeId === node.id;
     const isPreviewBurnt = previewBurn?.targetNodeId === node.id || isPendingBurn;
@@ -305,7 +307,7 @@ export function useCanvasRendering({
         ? 'rgba(255, 255, 255, 0.5)'
         : 'rgba(255, 255, 255, 0.3)';
     const isEligible =
-      (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) &&
+      (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current) &&
       eligibleTraverserEdgeIds.has(link.edge.id);
     const isCandidateEdge = detachedDrag?.candidateEdgeId === link.edge.id;
 

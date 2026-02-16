@@ -259,9 +259,10 @@ export function useGraphInteractions({
       return;
     }
 
-    // Check if edge already exists
+    // Check if edge already exists (either direction)
     const edgeExists = data.edges.some(
-      e => e.source === sourceId && e.target === targetId
+      e => (e.source === sourceId && e.target === targetId) ||
+           (e.source === targetId && e.target === sourceId)
     );
     if (edgeExists) {
       showToast('Connection already exists', 'warning');
@@ -555,7 +556,6 @@ export function useGraphInteractions({
   ]);
 
   const handleLinkClick = useCallback((link: GraphLinkData, event: MouseEvent) => {
-    if (viewMode !== '2D') return;
     if (connectionMode.active) return;
     if (!onTraverserCreate && !onEdgeDelete) return;
     if (!event) return;
@@ -579,7 +579,6 @@ export function useGraphInteractions({
     cancelPendingBurn();
     suppressNextBackgroundClick();
   }, [
-    viewMode,
     connectionMode.active,
     onTraverserCreate,
     onEdgeDelete,
@@ -612,7 +611,8 @@ export function useGraphInteractions({
         showToast('Cannot add dependencies to a burnt node', 'warning');
       } else {
         const edgeExists = data.edges.some(
-          e => e.source === focusedNodeId && e.target === node.id
+          e => (e.source === focusedNodeId && e.target === node.id) ||
+               (e.source === node.id && e.target === focusedNodeId)
         );
         if (edgeExists) {
           showToast('Connection already exists', 'warning');
@@ -736,9 +736,10 @@ export function useGraphInteractions({
       return;
     }
 
-    // Check if edge already exists
+    // Check if edge already exists (either direction)
     const edgeExists = data.edges.some(
-      e => e.source === sourceNode.id && e.target === targetNode.id
+      e => (e.source === sourceNode.id && e.target === targetNode.id) ||
+           (e.source === targetNode.id && e.target === sourceNode.id)
     );
     if (edgeExists) {
       showToast('Connection already exists', 'warning');

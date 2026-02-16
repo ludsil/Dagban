@@ -110,7 +110,6 @@ export function getCardColor(
     case 'done':
       return '#111827'; // gray-900 (burnt)
     case 'blocked':
-      return fadeColor(baseColor, 0.4); // 40% opacity effect
     case 'active':
       return baseColor;
   }

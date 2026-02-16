@@ -117,6 +117,7 @@ export default function DagbanGraph({
 
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const spaceHighlightRef = useRef(false);
   const [renderTick, setRenderTick] = useState(0);
   const [fuseAnimationTime, setFuseAnimationTime] = useState(0);
   const fuseAnimationRef = useRef<number | null>(null);
@@ -570,6 +571,7 @@ export default function DagbanGraph({
     graphTheme,
     draggingUserId,
     draggingTraverserId,
+    spaceHighlightRef,
     eligibleTraverserEdgeIds,
     rootActiveNodeIds,
     rootTraverserByNodeId,
@@ -804,11 +806,28 @@ export default function DagbanGraph({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, css2DRendererInstance, bumpRenderTick]);
 
-  // Keyboard shortcuts handler
+  // Keyboard shortcuts handler (includes Space highlight)
   useEffect(() => {
+    const refreshGraph = () => {
+      graphRef.current?.refresh?.();
+      // refresh() can reset the canvas cursor; restore it
+      const canvas = containerRef.current?.querySelector('canvas');
+      if (canvas) (canvas as HTMLElement).style.cursor = '';
+    };
+    const startSpaceHighlight = () => {
+      if (spaceHighlightRef.current) return;
+      spaceHighlightRef.current = true;
+      refreshGraph();
+    };
+    const stopSpaceHighlight = () => {
+      if (!spaceHighlightRef.current) return;
+      spaceHighlightRef.current = false;
+      refreshGraph();
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      const isTyping = target.isConnected && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
 
       // --- Global keys: handled even when typing in inputs ---
 
@@ -832,6 +851,13 @@ export default function DagbanGraph({
 
       // --- Below: skipped when typing in an input or textarea ---
       if (isTyping) return;
+
+      // Space — hold to highlight eligible edges and root nodes
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        startSpaceHighlight();
+        return;
+      }
 
       if (pendingBurn && e.key === 'Enter') {
         e.preventDefault();
@@ -864,8 +890,22 @@ export default function DagbanGraph({
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.code === 'Space') {
+        stopSpaceHighlight();
+      }
+    };
+
+    const handleBlur = () => stopSpaceHighlight();
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, [
     hoverTooltip.nodeId,
     connectionMode.active,
@@ -902,6 +942,7 @@ export default function DagbanGraph({
     dragConnect,
     draggingUserId,
     focusedNodeId,
+    spaceHighlightRef,
     pendingBurn,
     previewBurn,
     detachedDrag,
