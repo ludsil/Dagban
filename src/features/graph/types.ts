@@ -109,6 +109,12 @@ export type ArrowMode = 'end' | 'middle' | 'none';
 
 // Coordinate provider abstraction for the traverser system.
 // 2D and 3D renderers supply their own implementations.
+//
+// Required methods work in any projection (orthographic or perspective).
+// Optional methods (marked with ?) handle 3D-specific concerns like perspective
+// distortion. When present, useTraverserLogic uses them; when absent, it falls
+// back to world-space 2D math. The 2D provider (useGraphCoordinates) omits them,
+// and the 3D provider (useTraverserSystem3D) supplies them.
 export interface TraverserCoordinateProvider {
   getGraphCoords(clientX: number, clientY: number): { x: number; y: number; z?: number } | null;
   getScreenCoords(x: number, y: number, z?: number): { x: number; y: number } | null;
@@ -117,12 +123,17 @@ export interface TraverserCoordinateProvider {
   getTraverserRenderPoint(source: GraphNodeData, target: GraphNodeData, position: number): { x: number; y: number; z?: number };
   getRootTraverserPoint(node: GraphNodeData, position: number): { x: number; y: number; z?: number; angle?: number; startAngle?: number; radius?: number };
   getRootPositionFromCoords(node: GraphNodeData, point: { x: number; y: number; z?: number }): number;
+
+  // --- 3D perspective corrections (optional) ---
+  // When omitted, useTraverserLogic falls back to world-space 2D math.
+  // See useTraverserSystem3D.ts for the implementations.
+
   /** Screen-space distance from the ring for a node, in world-space units scaled to match detach thresholds.
-   *  Returns null to fall back to world-space distance. Used by 3D to avoid perspective distortion. */
+   *  Returns null to fall back to world-space distance. Avoids perspective distortion of ring radius. */
   getRootRingDetachDelta?(node: GraphNodeData, graphCoords: { x: number; y: number; z?: number }): number | null;
   /** Project a point onto an edge segment in screen space.
    *  Returns { t, distance } where t is the position [0,1] along the edge and distance is in world-space units.
-   *  Returns null to fall back to world-space 2D projection. Used by 3D to handle z-axis correctly. */
+   *  Returns null to fall back to world-space 2D projection. Handles z-axis correctly under perspective. */
   projectToEdgeScreen?(
     graphCoords: { x: number; y: number; z?: number },
     sourceNode: GraphNodeData,

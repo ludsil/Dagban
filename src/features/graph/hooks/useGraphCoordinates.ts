@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import type { GraphNodeData, GraphLinkData } from '../types';
 import { clamp } from './useTraverserLogic';
+import { FUSE_ANIMATION_PHASE_SCALE, getShiftedGradientStops } from '../traverserConstants';
 
 export type GraphTheme = {
   fuseRed: string;
@@ -43,7 +44,7 @@ export function useGraphCoordinates({
     { stop: 1, color: graphTheme.fuseRed },
   ]), [graphTheme.fuseRed, graphTheme.fuseOrange, graphTheme.fuseYellow]);
 
-  const fuseGradientPhase = useMemo(() => (fuseAnimationTime * 0.00018) % 1, [fuseAnimationTime]);
+  const fuseGradientPhase = useMemo(() => (fuseAnimationTime * FUSE_ANIMATION_PHASE_SCALE) % 1, [fuseAnimationTime]);
 
   // --- Coordinate conversion ---
 
@@ -198,27 +199,8 @@ export function useGraphCoordinates({
 
   // --- Fuse gradient helpers ---
 
-  const getShiftedGradientStops = useCallback((phase: number) => {
-    const epsilon = 0.0001;
-    const stops = FUSE_GRADIENT_STOPS;
-    let startIndex = stops.findIndex(stop => stop.stop >= phase);
-    if (startIndex === -1) startIndex = 0;
-    const rotated = [...stops.slice(startIndex), ...stops.slice(0, startIndex)].map(stop => {
-      let shifted = stop.stop - phase;
-      if (shifted < 0) shifted += 1;
-      return { stop: shifted, color: stop.color };
-    });
-    const output: Array<{ stop: number; color: string }> = [];
-    const first = rotated[0];
-    const last = rotated[rotated.length - 1];
-    if (first.stop > epsilon) {
-      output.push({ stop: 0, color: last.color });
-    }
-    output.push(...rotated);
-    if (last.stop < 1 - epsilon) {
-      output.push({ stop: 1, color: first.color });
-    }
-    return output;
+  const getShiftedGradientStopsLocal = useCallback((phase: number) => {
+    return getShiftedGradientStops(FUSE_GRADIENT_STOPS, phase);
   }, [FUSE_GRADIENT_STOPS]);
 
   const getFuseGradient = useCallback((
@@ -229,10 +211,10 @@ export function useGraphCoordinates({
     endY: number,
   ) => {
     const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
-    const shiftedStops = getShiftedGradientStops(fuseGradientPhase);
+    const shiftedStops = getShiftedGradientStopsLocal(fuseGradientPhase);
     shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
     return gradient;
-  }, [getShiftedGradientStops, fuseGradientPhase]);
+  }, [getShiftedGradientStopsLocal, fuseGradientPhase]);
 
   const getFuseRingGradient = useCallback((ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => {
     const conicFactory = (ctx as CanvasRenderingContext2D & {
@@ -269,7 +251,7 @@ export function useGraphCoordinates({
     getRootPositionFromCoords,
 
     // Gradient helpers
-    getShiftedGradientStops,
+    getShiftedGradientStops: getShiftedGradientStopsLocal,
     getFuseGradient,
     getFuseRingGradient,
   };

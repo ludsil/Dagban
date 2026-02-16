@@ -13,12 +13,12 @@
  *   - Root progress rings around nodes (background ring + progress arc)
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Traverser, Edge } from '@/lib/types';
 import type { GraphNodeData, GraphLinkData, ViewMode } from '../types';
 import type { PendingBurnState, PreviewBurnState, DetachedDragState } from './useTraverserLogic';
 import { clamp } from './useTraverserLogic';
-import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
+import { ROOT_TRAVERSER_PREFIX, FUSE_ANIMATION_PHASE_SCALE, getShiftedGradientStops as shiftStops } from '../traverserConstants';
 import type { GraphTheme } from './useGraphCoordinates';
 
 // ---------------------------------------------------------------
@@ -111,33 +111,12 @@ export function useThreeTraverserRendering({
 
   // --- Gradient helpers ---
 
-  const gradientStops = useCallback(() => {
-    return [
-      { stop: 0, color: graphTheme.fuseRed },
-      { stop: 0.45, color: graphTheme.fuseOrange },
-      { stop: 0.78, color: graphTheme.fuseYellow },
-      { stop: 1, color: graphTheme.fuseRed },
-    ];
-  }, [graphTheme]);
-
-  const getShiftedStops = useCallback((phase: number) => {
-    const stops = gradientStops();
-    const epsilon = 0.0001;
-    let startIndex = stops.findIndex(s => s.stop >= phase);
-    if (startIndex === -1) startIndex = 0;
-    const rotated = [...stops.slice(startIndex), ...stops.slice(0, startIndex)].map(s => {
-      let shifted = s.stop - phase;
-      if (shifted < 0) shifted += 1;
-      return { stop: shifted, color: s.color };
-    });
-    const output: Array<{ stop: number; color: string }> = [];
-    const first = rotated[0];
-    const last = rotated[rotated.length - 1];
-    if (first.stop > epsilon) output.push({ stop: 0, color: last.color });
-    output.push(...rotated);
-    if (last.stop < 1 - epsilon) output.push({ stop: 1, color: first.color });
-    return output;
-  }, [gradientStops]);
+  const fuseStops = useMemo(() => [
+    { stop: 0, color: graphTheme.fuseRed },
+    { stop: 0.45, color: graphTheme.fuseOrange },
+    { stop: 0.78, color: graphTheme.fuseYellow },
+    { stop: 1, color: graphTheme.fuseRed },
+  ], [graphTheme.fuseRed, graphTheme.fuseOrange, graphTheme.fuseYellow]);
 
   // --- Project 3D → screen ---
 
@@ -254,8 +233,8 @@ export function useThreeTraverserRendering({
     const traversers = data.traversers ?? [];
     if (!traversers.length) return;
 
-    const phase = (fuseAnimationTime * 0.00018) % 1;
-    const shiftedStops = getShiftedStops(phase);
+    const phase = (fuseAnimationTime * FUSE_ANIMATION_PHASE_SCALE) % 1;
+    const shiftedStops = shiftStops(fuseStops, phase);
 
     // Collect root rings to draw (deduplicate by nodeId)
     const rootRingsToDraw = new Map<string, { cx: number; cy: number; screenRadius: number; progress: number }>();
@@ -394,7 +373,7 @@ export function useThreeTraverserRendering({
             ROOT_START_ANGLE + phase * Math.PI * 2,
             ring.cx, ring.cy,
           );
-          gradientStops().forEach(({ stop, color }) => ringGradient.addColorStop(stop, color));
+          fuseStops.forEach(({ stop, color }) => ringGradient.addColorStop(stop, color));
           ctx.strokeStyle = ringGradient;
         } else {
           ctx.strokeStyle = graphTheme.fuseOrange;
@@ -419,8 +398,7 @@ export function useThreeTraverserRendering({
     graphTheme,
     toScreen,
     getScreenRingRadius,
-    getShiftedStops,
-    gradientStops,
+    fuseStops,
     draggingUserId,
     eligibleTraverserEdgeIds,
     rootActiveNodeIds,
