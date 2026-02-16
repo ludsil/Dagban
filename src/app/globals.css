@@ -1167,10 +1167,19 @@ html, body {
   color: var(--postit-title, rgba(255, 255, 255, 0.95));
 }
 
-.postit-kbd-hint {
-  margin-left: 2px;
-  color: var(--postit-muted, rgba(255, 255, 255, 0.35));
+.postit-shift-hint {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 3px 7px;
+  border-radius: 10px;
+  cursor: default;
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--postit-action-text, rgba(255, 255, 255, 0.7));
   font-size: 10px;
+  white-space: nowrap;
 }
 
 .postit-actions-right {

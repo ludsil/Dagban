@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Card, User } from '@/lib/types';
 import { getContrastColors } from '@/lib/colors';
 import { SelectedNodeInfo, GraphNodeData } from '../types';
-import { Kbd } from '@/components/ui/kbd';
 import {
   Tooltip,
   TooltipContent,
@@ -18,7 +17,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -354,7 +353,17 @@ export function CardDetailPanel({
               <p>{shiftHeld ? 'Link existing dependency' : 'Add dependency'}</p>
             </TooltipContent>
           </Tooltip>
-          <Kbd className="postit-kbd-hint">⇧</Kbd>
+          <Tooltip delayDuration={100}>
+            <TooltipTrigger asChild>
+              <span className="postit-shift-hint">
+                <span>⇧</span>
+                <Link className="size-2.5" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={8}>
+              <p>Hold Shift to link existing nodes</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
         <div className="postit-actions-right">
           <Tooltip>
