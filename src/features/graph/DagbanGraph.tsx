@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, useMemo, type FormEvent } fro
 import { DagbanGraph as GraphData, Card, Category, Traverser } from '@/lib/types';
 
 import { useTraverserSystem } from './hooks/useTraverserSystem';
+import { useTraverserSystem3D } from './hooks/useTraverserSystem3D';
+import { useThreeTraverserRendering } from './hooks/useThreeTraverserRendering';
 import { useGraphData } from './hooks/useGraphData';
 import { useGraphCoordinates } from './hooks/useGraphCoordinates';
 import { useCanvasRendering, type DragConnectState } from './hooks/useCanvasRendering';
@@ -206,6 +208,7 @@ export default function DagbanGraph({
   // Hook 1: Graph data reconciliation, maps, Three.js, labels
   // ============================================================
   const {
+    THREE,
     CSS2DObject,
     graphReady,
     graphDataView,
@@ -455,28 +458,9 @@ export default function DagbanGraph({
   }, []);
 
   // ============================================================
-  // Hook 3: Traverser system (drag, burn, overlays)
+  // Hook 3: Traverser system — 2D + 3D (both called, results merged by viewMode)
   // ============================================================
-  const {
-    pendingBurn,
-    previewBurn,
-    setPreviewBurn,
-    beginPendingBurn,
-    cancelPendingBurn,
-    confirmPendingBurn,
-    clearDetachedDrag,
-    draggingUserId,
-    draggingTraverserId,
-    draggingUserGhost,
-    detachedDrag,
-    handleUserDragStart,
-    handleUserDragEnd,
-    handleUserDragOver,
-    handleUserDrop,
-    handleTraverserPointerDown,
-    handleTraverserOverlayPointerDown,
-    traverserOverlays,
-  } = useTraverserSystem({
+  const traverser2D = useTraverserSystem({
     data,
     viewMode,
     displayMode,
@@ -513,11 +497,93 @@ export default function DagbanGraph({
     tuning: traverserTuning,
   });
 
+  const traverser3D = useTraverserSystem3D({
+    data,
+    viewMode,
+    displayMode,
+    nodeRadius: NODE_RADIUS,
+    rootRingRadius: ROOT_RING_RADIUS,
+    traverserHitRadius: TRAVERSER_HIT_RADIUS,
+    containerRef,
+    renderTick,
+    graphDataView,
+    nodeByIdRef,
+    linkByIdRef,
+    cardById,
+    edgeById,
+    traverserByEdgeId,
+    traverserById,
+    userById,
+    rootActiveNodeIds,
+    eligibleTraverserEdgeIds,
+    graphRef,
+    createTraverserForEdge,
+    createTraverserForRoot,
+    onTraverserCreate,
+    onTraverserUpdate,
+    onTraverserDelete,
+    onCardChange,
+    showToast,
+    closeEdgeStartPicker,
+    suppressNextBackgroundClick,
+    tuning: traverserTuning,
+  });
+
+  // Pick the active traverser system based on view mode
+  const traverser = viewMode === '3D' ? traverser3D : traverser2D;
+  const {
+    pendingBurn,
+    previewBurn,
+    setPreviewBurn,
+    cancelPendingBurn,
+    confirmPendingBurn,
+    clearDetachedDrag,
+    draggingUserId,
+    draggingTraverserId,
+    draggingUserGhost,
+    detachedDrag,
+    handleUserDragStart,
+    handleUserDragEnd,
+    handleUserDragOver,
+    handleUserDrop,
+    handleTraverserPointerDown,
+    handleTraverserOverlayPointerDown,
+    traverserOverlays,
+  } = traverser;
+
   useEffect(() => {
     if (graphRef.current && typeof graphRef.current.refresh === 'function') {
       graphRef.current.refresh();
     }
   }, [draggingUserId, pendingBurn?.targetNodeId]);
+
+  // ============================================================
+  // Hook 3b: Three.js traverser rendering (3D scene objects)
+  // ============================================================
+  useThreeTraverserRendering({
+    graphRef,
+    containerRef,
+    viewMode,
+    data,
+    nodeByIdRef,
+    linkByIdRef,
+    pendingBurn,
+    previewBurn,
+    detachedDrag,
+    nodeRadius,
+    rootRingRadius: ROOT_RING_RADIUS,
+    renderTick,
+    fuseAnimationTime,
+    graphTheme,
+    draggingUserId,
+    draggingTraverserId,
+    eligibleTraverserEdgeIds,
+    rootActiveNodeIds,
+    rootTraverserByNodeId,
+    traverserByEdgeId,
+    isBurntNodeId,
+    graphDataView,
+  });
 
   // ============================================================
   // Hook 4: Interaction handlers (undo, delete, connections, etc.)
@@ -621,7 +687,7 @@ export default function DagbanGraph({
   const hasActiveFuses = useMemo(() => (data.traversers?.length ?? 0) > 0, [data.traversers]);
 
   useEffect(() => {
-    if (viewMode !== '2D' || !hasActiveFuses) {
+    if (!hasActiveFuses) {
       if (fuseAnimationRef.current) {
         cancelAnimationFrame(fuseAnimationRef.current);
         fuseAnimationRef.current = null;
@@ -641,7 +707,7 @@ export default function DagbanGraph({
         fuseAnimationRef.current = null;
       }
     };
-  }, [viewMode, hasActiveFuses]);
+  }, [hasActiveFuses]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -729,6 +795,19 @@ export default function DagbanGraph({
       }
     };
   }, [viewMode, css2DRendererInstance]);
+
+  // Bump renderTick on orbit control changes in 3D mode (so overlays track camera)
+  useEffect(() => {
+    if (viewMode !== '3D') return;
+    const graph = graphRef.current;
+    if (!graph || typeof graph.controls !== 'function') return;
+    const controls = graph.controls();
+    if (!controls || typeof controls.addEventListener !== 'function') return;
+    const handler = () => bumpRenderTick();
+    controls.addEventListener('change', handler);
+    return () => controls.removeEventListener('change', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, css2DRendererInstance, bumpRenderTick]);
 
   // Keyboard shortcuts handler
   useEffect(() => {
@@ -888,10 +967,17 @@ export default function DagbanGraph({
   };
 
   const pendingBurnAnchor = useMemo(() => {
-    if (!pendingBurn || viewMode !== '2D') return null;
+    if (!pendingBurn) return null;
     if (pendingBurn.anchor) return pendingBurn.anchor;
     const node = nodeByIdRef.current.get(pendingBurn.targetNodeId);
     if (!node || node.x === undefined || node.y === undefined) return null;
+    if (viewMode === '3D') {
+      // In 3D, project the node's 3D position to screen coordinates
+      const g = graphRef.current;
+      if (!g || typeof g.graph2ScreenCoords !== 'function') return null;
+      const screen = g.graph2ScreenCoords(node.x, node.y, node.z ?? 0);
+      return screen ? { x: screen.x, y: screen.y } : null;
+    }
     return getScreenCoords(node.x, node.y);
   }, [pendingBurn?.targetNodeId, pendingBurn?.anchor, viewMode, renderTick, getScreenCoords]);
 

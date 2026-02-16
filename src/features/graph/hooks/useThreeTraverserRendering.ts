@@ -1,0 +1,456 @@
+'use client';
+
+/**
+ * 3D traverser rendering via 2D canvas overlay.
+ *
+ * Instead of managing Three.js scene objects (sprites, lines, torus geometry),
+ * we overlay a transparent <canvas> on the 3D graph and draw fuse gradients
+ * and root rings in screen space — identical to the 2D renderer's visual style.
+ *
+ * Avatars are handled by HTML overlays (GraphOverlays) via traverserOverlays
+ * from useTraverserSystem3D, so this hook only draws:
+ *   - Fuse gradient lines on edges (source → traverser position)
+ *   - Root progress rings around nodes (background ring + progress arc)
+ */
+
+import { useEffect, useRef, useCallback } from 'react';
+import type { Traverser, Edge } from '@/lib/types';
+import type { GraphNodeData, GraphLinkData, ViewMode } from '../types';
+import type { PendingBurnState, PreviewBurnState, DetachedDragState } from './useTraverserLogic';
+import { clamp } from './useTraverserLogic';
+import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
+import type { GraphTheme } from './useGraphCoordinates';
+
+// ---------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------
+
+export type UseThreeTraverserRenderingProps = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  graphRef: React.RefObject<any>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  viewMode: ViewMode;
+  data: { traversers?: Traverser[]; edges: Edge[] };
+  nodeByIdRef: React.RefObject<Map<string, GraphNodeData>>;
+  linkByIdRef: React.RefObject<Map<string, GraphLinkData>>;
+  pendingBurn: PendingBurnState;
+  previewBurn: PreviewBurnState;
+  detachedDrag: DetachedDragState;
+  nodeRadius: number;
+  rootRingRadius: number;
+  renderTick: number;
+  fuseAnimationTime: number;
+  graphTheme: GraphTheme;
+  // Drag highlighting
+  draggingUserId: string | null;
+  draggingTraverserId: string | null;
+  eligibleTraverserEdgeIds: Set<string>;
+  rootActiveNodeIds: Set<string>;
+  rootTraverserByNodeId: Map<string, Traverser>;
+  traverserByEdgeId: Map<string, Traverser>;
+  isBurntNodeId: (id: string) => boolean;
+  graphDataView: { nodes: GraphNodeData[]; links: GraphLinkData[] };
+};
+
+// ---------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------
+
+const ROOT_START_ANGLE = -Math.PI / 2;
+const BG_RING_STYLE = 'rgba(255, 255, 255, 0.12)';
+const HIGHLIGHT_COLOR = 'rgba(56, 189, 248, 0.7)';
+
+// ---------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------
+
+export function useThreeTraverserRendering({
+  graphRef,
+  containerRef,
+  viewMode,
+  data,
+  nodeByIdRef,
+  linkByIdRef,
+  pendingBurn,
+  previewBurn,
+  detachedDrag,
+  nodeRadius,
+  rootRingRadius,
+  renderTick,
+  fuseAnimationTime,
+  graphTheme,
+  draggingUserId,
+  draggingTraverserId,
+  eligibleTraverserEdgeIds,
+  rootActiveNodeIds,
+  rootTraverserByNodeId,
+  traverserByEdgeId,
+  isBurntNodeId,
+  graphDataView,
+}: UseThreeTraverserRenderingProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // --- Create / destroy the overlay canvas ---
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText =
+      'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;';
+    container.appendChild(canvas);
+    canvasRef.current = canvas;
+
+    return () => {
+      container.removeChild(canvas);
+      canvasRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Gradient helpers ---
+
+  const gradientStops = useCallback(() => {
+    return [
+      { stop: 0, color: graphTheme.fuseRed },
+      { stop: 0.45, color: graphTheme.fuseOrange },
+      { stop: 0.78, color: graphTheme.fuseYellow },
+      { stop: 1, color: graphTheme.fuseRed },
+    ];
+  }, [graphTheme]);
+
+  const getShiftedStops = useCallback((phase: number) => {
+    const stops = gradientStops();
+    const epsilon = 0.0001;
+    let startIndex = stops.findIndex(s => s.stop >= phase);
+    if (startIndex === -1) startIndex = 0;
+    const rotated = [...stops.slice(startIndex), ...stops.slice(0, startIndex)].map(s => {
+      let shifted = s.stop - phase;
+      if (shifted < 0) shifted += 1;
+      return { stop: shifted, color: s.color };
+    });
+    const output: Array<{ stop: number; color: string }> = [];
+    const first = rotated[0];
+    const last = rotated[rotated.length - 1];
+    if (first.stop > epsilon) output.push({ stop: 0, color: last.color });
+    output.push(...rotated);
+    if (last.stop < 1 - epsilon) output.push({ stop: 1, color: first.color });
+    return output;
+  }, [gradientStops]);
+
+  // --- Project 3D → screen ---
+
+  const toScreen = useCallback((x: number, y: number, z: number): { sx: number; sy: number } | null => {
+    const g = graphRef.current;
+    if (!g || typeof g.graph2ScreenCoords !== 'function') return null;
+    const result = g.graph2ScreenCoords(x, y, z);
+    if (!result) return null;
+    return { sx: result.x, sy: result.y };
+  }, [graphRef]);
+
+  /** Compute screen-space ring radius using the camera's right vector (view-plane-aligned). */
+  const getScreenRingRadius = useCallback((
+    nx: number, ny: number, nz: number, center: { sx: number; sy: number },
+  ): number | null => {
+    const g = graphRef.current;
+    if (!g) return null;
+    const camera = typeof g.camera === 'function' ? g.camera() : null;
+    if (!camera) return null;
+
+    // Camera right vector (first column of the camera's world matrix)
+    const e = camera.matrixWorld.elements;
+    const rx = e[0], ry = e[1], rz = e[2];
+    const rLen = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    if (rLen < 1e-6) return null;
+
+    // Offset in the camera's right direction by rootRingRadius
+    const edge = toScreen(
+      nx + (rx / rLen) * rootRingRadius,
+      ny + (ry / rLen) * rootRingRadius,
+      nz + (rz / rLen) * rootRingRadius,
+    );
+    if (!edge) return null;
+    return Math.sqrt((edge.sx - center.sx) ** 2 + (edge.sy - center.sy) ** 2);
+  }, [graphRef, rootRingRadius, toScreen]);
+
+  // --- Draw one frame ---
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || viewMode !== '3D') return;
+    const g = graphRef.current;
+    if (!g) return;
+
+    // Resize canvas to match container pixel size
+    const container = containerRef.current;
+    if (!container) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // --- Draw drag highlighting (eligible edges + root rings) ---
+    const isDragging = Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId);
+    if (isDragging) {
+      // Highlight eligible edges with cyan glow
+      for (const edge of data.edges) {
+        const isEligible = eligibleTraverserEdgeIds.has(edge.id);
+        const isCandidateEdge = detachedDrag?.candidateEdgeId === edge.id;
+        if (!isEligible && !isCandidateEdge) continue;
+        if (isBurntNodeId(edge.target)) continue;
+
+        const link = linkByIdRef.current?.get(edge.id);
+        if (!link) continue;
+        const sourceNode = typeof link.source === 'string' ? nodeByIdRef.current?.get(link.source) : link.source;
+        const targetNode = typeof link.target === 'string' ? nodeByIdRef.current?.get(link.target) : link.target;
+        if (!sourceNode || !targetNode ||
+            sourceNode.x === undefined || sourceNode.y === undefined ||
+            targetNode.x === undefined || targetNode.y === undefined) continue;
+
+        const srcScreen = toScreen(sourceNode.x, sourceNode.y, sourceNode.z ?? 0);
+        const tgtScreen = toScreen(targetNode.x, targetNode.y, targetNode.z ?? 0);
+        if (!srcScreen || !tgtScreen) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(srcScreen.sx, srcScreen.sy);
+        ctx.lineTo(tgtScreen.sx, tgtScreen.sy);
+        ctx.strokeStyle = HIGHLIGHT_COLOR;
+        ctx.lineWidth = isCandidateEdge ? 3 : 2;
+        ctx.stroke();
+      }
+
+      // Highlight root-eligible nodes with cyan ring
+      for (const node of graphDataView.nodes) {
+        if (!rootActiveNodeIds.has(node.id)) continue;
+        if (node.x === undefined || node.y === undefined) continue;
+        const rootTraverser = rootTraverserByNodeId.get(node.id);
+        const rootAvailable = !rootTraverser || rootTraverser.id === detachedDrag?.traverserId;
+        const isCandidateRoot = detachedDrag?.candidateRootNodeId === node.id;
+        if (!rootAvailable && !isCandidateRoot) continue;
+
+        const nx = node.x ?? 0, ny = node.y ?? 0, nz = node.z ?? 0;
+        const center = toScreen(nx, ny, nz);
+        if (!center) continue;
+        const screenRadius = getScreenRingRadius(nx, ny, nz, center);
+        if (!screenRadius || screenRadius < 1) continue;
+
+        ctx.beginPath();
+        ctx.arc(center.sx, center.sy, screenRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = HIGHLIGHT_COLOR;
+        ctx.lineWidth = isCandidateRoot ? 3 : 2;
+        ctx.stroke();
+      }
+    }
+
+    const traversers = data.traversers ?? [];
+    if (!traversers.length) return;
+
+    const phase = (fuseAnimationTime * 0.00018) % 1;
+    const shiftedStops = getShiftedStops(phase);
+
+    // Collect root rings to draw (deduplicate by nodeId)
+    const rootRingsToDraw = new Map<string, { cx: number; cy: number; screenRadius: number; progress: number }>();
+
+    for (const traverser of traversers) {
+      const isRoot = traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX);
+      const isDetached = detachedDrag?.traverserId === traverser.id;
+
+      if (isRoot) {
+        const rootNodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+        const node = nodeByIdRef.current?.get(rootNodeId);
+        if (!node || node.x === undefined || node.y === undefined) continue;
+
+        const nx = node.x ?? 0;
+        const ny = node.y ?? 0;
+        const nz = node.z ?? 0;
+
+        const center = toScreen(nx, ny, nz);
+        if (!center) continue;
+
+        // Compute screen-space ring radius using camera-right offset (stable under rotation)
+        const screenRadius = getScreenRingRadius(nx, ny, nz, center);
+        if (!screenRadius || screenRadius < 1) continue;
+
+        const pos = clamp(traverser.position, 0, 1);
+
+        // Keep the largest progress for this node
+        const existing = rootRingsToDraw.get(rootNodeId);
+        if (!existing || pos > existing.progress) {
+          rootRingsToDraw.set(rootNodeId, {
+            cx: center.sx,
+            cy: center.sy,
+            screenRadius,
+            progress: isDetached ? 0 : pos,
+          });
+        }
+      } else {
+        // --- Edge fuse ---
+        if (isDetached) continue;
+
+        const link = linkByIdRef.current?.get(traverser.edgeId);
+        if (!link) continue;
+
+        const sourceNode = typeof link.source === 'string'
+          ? nodeByIdRef.current?.get(link.source)
+          : link.source;
+        const targetNode = typeof link.target === 'string'
+          ? nodeByIdRef.current?.get(link.target)
+          : link.target;
+
+        if (!sourceNode || !targetNode ||
+            sourceNode.x === undefined || sourceNode.y === undefined ||
+            targetNode.x === undefined || targetNode.y === undefined) continue;
+
+        const sx = sourceNode.x ?? 0;
+        const sy = sourceNode.y ?? 0;
+        const sz = sourceNode.z ?? 0;
+        const tx = targetNode.x ?? 0;
+        const ty = targetNode.y ?? 0;
+        const tz = targetNode.z ?? 0;
+
+        // Compute 3D traverser render point (clamped off node edges)
+        const pos = clamp(traverser.position, 0, 1);
+        const dx = tx - sx;
+        const dy = ty - sy;
+        const dz = tz - sz;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < 0.01) continue;
+
+        const safeOffset = Math.min(nodeRadius, dist * 0.45);
+        const offsetT = safeOffset / dist;
+        const startT = offsetT;
+        const endT = clamp(pos, offsetT, 1 - offsetT);
+
+        const fuseStart3D = {
+          x: sx + dx * startT,
+          y: sy + dy * startT,
+          z: sz + dz * startT,
+        };
+        const fuseEnd3D = {
+          x: sx + dx * endT,
+          y: sy + dy * endT,
+          z: sz + dz * endT,
+        };
+
+        const screenStart = toScreen(fuseStart3D.x, fuseStart3D.y, fuseStart3D.z);
+        const screenEnd = toScreen(fuseEnd3D.x, fuseEnd3D.y, fuseEnd3D.z);
+        if (!screenStart || !screenEnd) continue;
+
+        // Draw fuse gradient line
+        const lineDist = Math.sqrt(
+          (screenEnd.sx - screenStart.sx) ** 2 + (screenEnd.sy - screenStart.sy) ** 2,
+        );
+        if (lineDist < 1) continue;
+
+        const gradient = ctx.createLinearGradient(
+          screenStart.sx, screenStart.sy,
+          screenEnd.sx, screenEnd.sy,
+        );
+        shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+
+        ctx.beginPath();
+        ctx.moveTo(screenStart.sx, screenStart.sy);
+        ctx.lineTo(screenEnd.sx, screenEnd.sy);
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
+    // --- Draw root rings ---
+    for (const [, ring] of rootRingsToDraw) {
+      // Background ring (full circle, faint)
+      ctx.beginPath();
+      ctx.arc(ring.cx, ring.cy, ring.screenRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = BG_RING_STYLE;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Progress arc
+      if (ring.progress > 0) {
+        ctx.beginPath();
+        ctx.arc(
+          ring.cx, ring.cy, ring.screenRadius,
+          ROOT_START_ANGLE,
+          ROOT_START_ANGLE + ring.progress * Math.PI * 2,
+        );
+
+        // Conic gradient for the ring (matches 2D behavior)
+        const conicFactory = (ctx as CanvasRenderingContext2D & {
+          createConicGradient?: (startAngle: number, x: number, y: number) => CanvasGradient;
+        }).createConicGradient;
+        if (typeof conicFactory === 'function') {
+          const ringGradient = conicFactory.call(
+            ctx,
+            ROOT_START_ANGLE + phase * Math.PI * 2,
+            ring.cx, ring.cy,
+          );
+          gradientStops().forEach(({ stop, color }) => ringGradient.addColorStop(stop, color));
+          ctx.strokeStyle = ringGradient;
+        } else {
+          ctx.strokeStyle = graphTheme.fuseOrange;
+        }
+
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+    }
+  }, [
+    viewMode,
+    graphRef,
+    containerRef,
+    data.traversers,
+    data.edges,
+    nodeByIdRef,
+    linkByIdRef,
+    detachedDrag,
+    nodeRadius,
+    rootRingRadius,
+    fuseAnimationTime,
+    graphTheme,
+    toScreen,
+    getScreenRingRadius,
+    getShiftedStops,
+    gradientStops,
+    draggingUserId,
+    eligibleTraverserEdgeIds,
+    rootActiveNodeIds,
+    rootTraverserByNodeId,
+    traverserByEdgeId,
+    isBurntNodeId,
+    graphDataView,
+  ]);
+
+  // Continuously redraw via rAF in 3D mode (camera orbit/pan doesn't trigger renderTick)
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
+  useEffect(() => {
+    if (viewMode !== '3D') {
+      // Clear canvas when leaving 3D mode
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      return;
+    }
+
+    let rafId: number;
+    const loop = () => {
+      drawRef.current();
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [viewMode]);
+}

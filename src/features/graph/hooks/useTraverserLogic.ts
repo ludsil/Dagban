@@ -22,6 +22,7 @@ export type DetachedDragState = {
   traverserId: string;
   x: number;
   y: number;
+  z?: number;
   candidateEdgeId: string | null;
   candidatePosition: number | null;
   candidateRootNodeId?: string | null;
@@ -237,7 +238,7 @@ export function useTraverserLogic({
 
   // --- Finding functions ---
 
-  const findClosestEdge = useCallback((point: { x: number; y: number }, allowedEdgeIds?: Set<string>, maxDistanceOverride?: number) => {
+  const findClosestEdge = useCallback((point: { x: number; y: number; z?: number }, allowedEdgeIds?: Set<string>, maxDistanceOverride?: number) => {
     const zoom = coords.getZoomScale();
     const maxDistance = (maxDistanceOverride ?? tuning.dragEdgeSearchRadius) / zoom;
     let closest: { edgeId: string; position: number; distance: number } | null = null;
@@ -247,14 +248,16 @@ export function useTraverserLogic({
       const edgeNodes = coords.getEdgeNodes(edge.id);
       if (!edgeNodes) continue;
       const { sourceNode, targetNode } = edgeNodes;
-      const projection = projectPointToSegment(
-        point.x,
-        point.y,
-        sourceNode.x!,
-        sourceNode.y!,
-        targetNode.x!,
-        targetNode.y!
-      );
+      // Use screen-space projection in 3D (handles z-axis correctly)
+      const projection = coords.projectToEdgeScreen?.(point, sourceNode, targetNode)
+        ?? projectPointToSegment(
+          point.x,
+          point.y,
+          sourceNode.x!,
+          sourceNode.y!,
+          targetNode.x!,
+          targetNode.y!
+        );
       if (projection.distance > maxDistance) continue;
       if (!closest || projection.distance < closest.distance) {
         closest = { edgeId: edge.id, position: projection.t, distance: projection.distance };
@@ -264,19 +267,18 @@ export function useTraverserLogic({
     return closest;
   }, [data.edges, coords, tuning.dragEdgeSearchRadius]);
 
-  const findClosestRootNode = useCallback((point: { x: number; y: number }) => {
+  const findClosestRootNode = useCallback((point: { x: number; y: number; z?: number }) => {
     if (rootActiveNodeIds.size === 0) return null;
     const rootSnapMultiplier = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
     const captureMargin = nodeRadius * rootSnapMultiplier;
-    const captureRadius = rootRingRadius + captureMargin;
     let closest: { nodeId: string; distance: number } | null = null;
 
     for (const node of graphDataView.nodes as GraphNodeData[]) {
       if (!rootActiveNodeIds.has(node.id)) continue;
       if (node.x === undefined || node.y === undefined) continue;
-      const dist = Math.hypot(point.x - node.x, point.y - node.y);
-      if (dist > captureRadius) continue;
-      const ringDistance = Math.abs(dist - rootRingRadius);
+      // Use screen-space ring distance when available (3D), else world-space
+      const ringDistance = coords.getRootRingDetachDelta?.(node, point)
+        ?? Math.abs(Math.hypot(point.x - node.x, point.y - node.y) - rootRingRadius);
       if (ringDistance > captureMargin) continue;
       if (!closest || ringDistance < closest.distance) {
         closest = { nodeId: node.id, distance: ringDistance };
@@ -290,6 +292,7 @@ export function useTraverserLogic({
     nodeRadius,
     displayMode,
     rootRingRadius,
+    coords,
     tuning.rootSnapMultiplier.balls,
     tuning.rootSnapMultiplier.labels,
   ]);
@@ -345,7 +348,7 @@ export function useTraverserLogic({
   // --- Core drag logic (called by view-specific wrappers) ---
 
   const handleTraverserDragMove = useCallback((
-    graphCoords: { x: number; y: number },
+    graphCoords: { x: number; y: number; z?: number },
     screenCoords: { x: number; y: number },
     prevScreenCoords: { x: number; y: number } | null,
   ) => {
@@ -359,10 +362,9 @@ export function useTraverserLogic({
       const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
       const node = nodeByIdRef.current?.get(nodeId);
       if (!node || node.x === undefined || node.y === undefined) return;
-      const dx = graphCoords.x - node.x;
-      const dy = graphCoords.y - node.y;
-      const dist = Math.hypot(dx, dy);
-      const detachDelta = Math.abs(dist - rootRingRadius);
+      // Use screen-space detach delta in 3D (avoids perspective distortion of world-space ring)
+      const detachDelta = coords.getRootRingDetachDelta?.(node, graphCoords)
+        ?? Math.abs(Math.hypot(graphCoords.x - node.x, graphCoords.y - node.y) - rootRingRadius);
 
       if ((detachedDrag && detachedDrag.traverserId === traverser.id) || detachDelta > DETACH_DISTANCE) {
         if (pendingBurn) {
@@ -396,12 +398,14 @@ export function useTraverserLogic({
 
         let targetX = graphCoords.x;
         let targetY = graphCoords.y;
+        let targetZ = graphCoords.z;
         if (selectedRootId) {
           const rootNode = nodeByIdRef.current?.get(selectedRootId);
           if (rootNode) {
             const render = coords.getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
             targetX = render.x;
             targetY = render.y;
+            targetZ = render.z;
           }
         } else if (selectedCandidate) {
           const candidateNodes = coords.getEdgeNodes(selectedCandidate.edgeId);
@@ -413,6 +417,7 @@ export function useTraverserLogic({
             );
             targetX = render.x;
             targetY = render.y;
+            targetZ = render.z;
           }
         }
 
@@ -422,10 +427,12 @@ export function useTraverserLogic({
           const strength = hasMagnetTarget ? tuning.magnetStrength.detachTarget : tuning.magnetStrength.detachFree;
           const startX = prev?.traverserId === traverser.id ? prev.x : currentRender.x;
           const startY = prev?.traverserId === traverser.id ? prev.y : currentRender.y;
+          const startZ = prev?.traverserId === traverser.id ? (prev.z ?? 0) : (currentRender.z ?? 0);
           return {
             traverserId: traverser.id,
             x: startX + (targetX - startX) * strength,
             y: startY + (targetY - startY) * strength,
+            z: startZ + ((targetZ ?? 0) - startZ) * strength,
             candidateEdgeId: selectedCandidate?.edgeId ?? null,
             candidatePosition: selectedCandidate?.position ?? null,
             candidateRootNodeId: selectedRootId ?? null,
@@ -467,24 +474,28 @@ export function useTraverserLogic({
     const edgeNodes = coords.getEdgeNodes(traverser.edgeId);
     if (!edgeNodes) return;
     const { sourceNode, targetNode } = edgeNodes;
-    const projection = projectPointToSegment(
-      graphCoords.x,
-      graphCoords.y,
-      sourceNode.x!,
-      sourceNode.y!,
-      targetNode.x!,
-      targetNode.y!
-    );
-    const lineDistance = distanceToLine(
-      graphCoords.x,
-      graphCoords.y,
-      sourceNode.x!,
-      sourceNode.y!,
-      targetNode.x!,
-      targetNode.y!
-    );
-    const sourceScreen = coords.getScreenCoords(sourceNode.x!, sourceNode.y!);
-    const targetScreen = coords.getScreenCoords(targetNode.x!, targetNode.y!);
+    // Use screen-space projection in 3D (handles z-axis correctly)
+    const projection = coords.projectToEdgeScreen?.(graphCoords, sourceNode, targetNode)
+      ?? projectPointToSegment(
+        graphCoords.x,
+        graphCoords.y,
+        sourceNode.x!,
+        sourceNode.y!,
+        targetNode.x!,
+        targetNode.y!
+      );
+    const lineDistance = coords.projectToEdgeScreen
+      ? projection.distance  // screen-space projection already gives unclamped distance
+      : distanceToLine(
+        graphCoords.x,
+        graphCoords.y,
+        sourceNode.x!,
+        sourceNode.y!,
+        targetNode.x!,
+        targetNode.y!
+      );
+    const sourceScreen = coords.getScreenCoords(sourceNode.x!, sourceNode.y!, sourceNode.z);
+    const targetScreen = coords.getScreenCoords(targetNode.x!, targetNode.y!, targetNode.z);
     if (prevScreenCoords && sourceScreen && targetScreen) {
       const edgeDx = targetScreen.x - sourceScreen.x;
       const edgeDy = targetScreen.y - sourceScreen.y;
@@ -557,12 +568,14 @@ export function useTraverserLogic({
 
       let targetX = graphCoords.x;
       let targetY = graphCoords.y;
+      let targetZ = graphCoords.z;
       if (selectedRootId) {
         const rootNode = nodeByIdRef.current?.get(selectedRootId);
         if (rootNode) {
           const render = coords.getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
           targetX = render.x;
           targetY = render.y;
+          targetZ = render.z;
         }
       } else if (selectedCandidate) {
         const candidateNodes = coords.getEdgeNodes(selectedCandidate.edgeId);
@@ -574,6 +587,7 @@ export function useTraverserLogic({
           );
           targetX = render.x;
           targetY = render.y;
+          targetZ = render.z;
         }
       }
 
@@ -588,12 +602,15 @@ export function useTraverserLogic({
         const strength = hasMagnetTarget ? tuning.magnetStrength.detachTarget : tuning.magnetStrength.detachFree;
         const startX = prev?.traverserId === traverser.id ? prev.x : (fallbackRender?.x ?? targetX);
         const startY = prev?.traverserId === traverser.id ? prev.y : (fallbackRender?.y ?? targetY);
+        const startZ = prev?.traverserId === traverser.id ? (prev.z ?? 0) : (fallbackRender?.z ?? targetZ ?? 0);
         const nextX = startX + (targetX - startX) * strength;
         const nextY = startY + (targetY - startY) * strength;
+        const nextZ = startZ + ((targetZ ?? 0) - startZ) * strength;
         return {
           traverserId: traverser.id,
           x: nextX,
           y: nextY,
+          z: nextZ,
           candidateEdgeId: selectedCandidate?.edgeId ?? null,
           candidatePosition: selectedCandidate?.position ?? null,
           candidateRootNodeId: selectedRootId ?? null,
@@ -749,7 +766,7 @@ export function useTraverserLogic({
       const rootNode = nodeByIdRef.current?.get(selectedRootId);
       if (rootNode) {
         const render = coords.getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
-        const screen = coords.getScreenCoords(render.x, render.y);
+        const screen = coords.getScreenCoords(render.x, render.y, render.z);
         if (screen) {
           targetX = screen.x;
           targetY = screen.y;
@@ -763,7 +780,7 @@ export function useTraverserLogic({
           candidateNodes.targetNode,
           selectedCandidate.position
         );
-        const screen = coords.getScreenCoords(render.x, render.y);
+        const screen = coords.getScreenCoords(render.x, render.y, render.z);
         if (screen) {
           targetX = screen.x;
           targetY = screen.y;

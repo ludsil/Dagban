@@ -78,7 +78,7 @@ export function GraphOverlays({
 }: GraphOverlaysProps) {
   return (
     <>
-      {viewMode === '2D' && traverserOverlays.length > 0 && (
+      {traverserOverlays.length > 0 && (
         <div className="traverser-overlay-layer">
           {traverserOverlays.map(traverser => (
             <button
@@ -106,7 +106,7 @@ export function GraphOverlays({
         </div>
       )}
 
-      {viewMode === '2D' && draggingUserId && draggingUserGhost && (
+      {draggingUserId && draggingUserGhost && (
         <div
           className="dragging-user-ghost"
           style={{ left: `${draggingUserGhost.x}px`, top: `${draggingUserGhost.y}px` }}
@@ -115,7 +115,7 @@ export function GraphOverlays({
         </div>
       )}
 
-      {pendingBurn && pendingBurnAnchor && viewMode === '2D' && (
+      {pendingBurn && pendingBurnAnchor && (
         <div
           className="burn-confirm"
           style={{ left: `${pendingBurnAnchor.x}px`, top: `${pendingBurnAnchor.y}px` }}
@@ -139,7 +139,7 @@ export function GraphOverlays({
         onDelete={onEdgeDelete}
       />
 
-      {edgeStartPicker && viewMode === '2D' && (
+      {edgeStartPicker && (
         <div
           className="edge-start-picker"
           style={{ left: `${edgeStartPicker.x}px`, top: `${edgeStartPicker.y}px` }}
