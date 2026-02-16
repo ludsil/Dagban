@@ -95,12 +95,6 @@ export interface ToastState {
   action?: { label: string; onClick: () => void };
 }
 
-// Command palette state
-export interface CommandPaletteState {
-  visible: boolean;
-  query: string;
-}
-
 // View and display modes
 export type ViewMode = '2D' | '3D';
 export type DisplayMode = 'balls' | 'labels' | 'full';

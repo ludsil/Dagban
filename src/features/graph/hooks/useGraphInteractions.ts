@@ -275,6 +275,21 @@ export function useGraphInteractions({
 
   // --- Card creation ---
 
+  // Fast root-node spawn for hotkey flow (blank title/description, editable later).
+  const createEmptyRootNode = useCallback(() => {
+    if (!onCardCreate) return;
+    const now = new Date().toISOString();
+    const newCard: Card = {
+      id: generateId(),
+      title: '',
+      description: undefined,
+      categoryId: themedCategories.length > 0 ? themedCategories[0].id : '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    onCardCreate(newCard);
+  }, [onCardCreate, themedCategories]);
+
   const openRootNodeCreation = useCallback((initialTitle?: string) => {
     // Center on screen
     const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
@@ -794,6 +809,7 @@ export function useGraphInteractions({
     completeConnection,
 
     // Card creation
+    createEmptyRootNode,
     openRootNodeCreation,
     openDownstreamCreation,
     openUpstreamCreation,

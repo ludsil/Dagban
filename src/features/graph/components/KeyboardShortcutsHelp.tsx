@@ -1,37 +1,52 @@
 'use client';
 
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
 interface KeyboardShortcutsHelpProps {
   visible: boolean;
   onClose: () => void;
 }
 
 export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHelpProps) {
-  if (!visible) return null;
+  const shortcuts: { keys: string[]; action: string; context?: string; separator?: string }[] = [
+    { keys: ['M'], action: 'Hotkey map' },
+    { keys: ['N'], action: 'New blank root node' },
+    { keys: ['/'], action: 'Search' },
+    { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },
+  ];
 
   return (
-    <div className="shortcuts-help">
-      <div className="shortcuts-help-header">
-        <span>Keyboard Shortcuts</span>
-        <button className="shortcuts-help-close" onClick={onClose}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-      <div className="shortcuts-help-list">
-        <div className="shortcut-item">
-          <kbd>Cmd</kbd>+<kbd>Z</kbd>
-          <span>Undo last action</span>
+    <Dialog open={visible} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Hotkeys</DialogTitle>
+          <DialogDescription>
+            Press <kbd className="mx-1 rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[11px] text-white/90">M</kbd>
+            to open or close this map.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="shortcuts-help-list">
+          {shortcuts.map((shortcut) => (
+            <div
+              key={`${shortcut.keys.join('+')}:${shortcut.action}:${shortcut.context ?? 'base'}`}
+              className="shortcut-item"
+            >
+              <div className="shortcut-meta">
+                <span className="shortcut-action">{shortcut.action}</span>
+                {shortcut.context && <span className="shortcut-context">{shortcut.context}</span>}
+              </div>
+              <div className="shortcut-keys">
+                {shortcut.keys.map((key, index) => (
+                  <span key={`${shortcut.action}:${key}:${index}`} className="flex items-center gap-1.5">
+                    {index > 0 && <span className="text-white/35">{shortcut.separator ?? '+'}</span>}
+                    <kbd>{key}</kbd>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="shortcut-item">
-          <kbd>Cmd</kbd>+<kbd>K</kbd>
-          <span>Open command palette</span>
-        </div>
-        <div className="shortcut-item">
-          <kbd>?</kbd>
-          <span>Show this help</span>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

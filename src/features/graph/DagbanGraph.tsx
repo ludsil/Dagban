@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button';
 import {
   CardDetailPanel,
   CardCreationForm,
-  CommandPalette,
   ToastNotification,
   KeyboardShortcutsHelp,
   GraphCanvasLayer,
@@ -35,7 +34,6 @@ import {
   EdgeContextMenuState,
   HoverTooltipState,
   ToastState,
-  CommandPaletteState,
   ConnectionModeState,
   ViewMode,
   DisplayMode,
@@ -149,12 +147,6 @@ export default function DagbanGraph({
     visible: false,
     message: '',
     type: 'info',
-  });
-
-  // Command palette state
-  const [commandPalette, setCommandPalette] = useState<CommandPaletteState>({
-    visible: false,
-    query: '',
   });
 
   // Keyboard shortcuts help state
@@ -596,6 +588,7 @@ export default function DagbanGraph({
     startUpstreamConnection,
     cancelConnectionMode,
     completeConnection,
+    createEmptyRootNode,
     openRootNodeCreation,
     openDownstreamCreation,
     openUpstreamCreation,
@@ -671,14 +664,6 @@ export default function DagbanGraph({
       openRootNodeCreation();
     }
   }, [triggerNewNode, openRootNodeCreation]);
-
-  // Handle command palette node selection
-  const handleCommandPaletteSelectNode = useCallback((node: GraphNodeData) => {
-    if (graphRef.current && node.x !== undefined && node.y !== undefined) {
-      graphRef.current.centerAt(node.x, node.y, 500);
-      graphRef.current.zoom(2, 500);
-    }
-  }, []);
 
   // ============================================================
   // Effects: Fuse animation, wheel/pointer, resize, 3D camera
@@ -850,19 +835,22 @@ export default function DagbanGraph({
         return;
       }
 
-      // Skip if command palette is open (it handles its own keys)
-      if (commandPalette.visible) return;
-
       // Cmd+Z / Ctrl+Z - Undo
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
       }
 
-      // Cmd+K / Ctrl+K - Command palette
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      // N - New root node
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        setCommandPalette({ visible: true, query: '' });
+        createEmptyRootNode();
+      }
+
+      // M - Hotkey map
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        setShowShortcutsHelp(prev => !prev);
       }
 
       // ? - Show keyboard shortcuts help
@@ -876,7 +864,6 @@ export default function DagbanGraph({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     hoverTooltip.nodeId,
-    commandPalette.visible,
     connectionMode.active,
     graphDataView.nodes,
     pendingBurn,
@@ -887,6 +874,7 @@ export default function DagbanGraph({
     closeEdgeStartPicker,
     handleDeleteNode,
     handleUndo,
+    createEmptyRootNode,
     cancelConnectionMode,
     showToast,
   ]);
@@ -1189,16 +1177,6 @@ export default function DagbanGraph({
 
       {/* Toast Notification */}
       <ToastNotification state={toast} onClose={hideToast} />
-
-      {/* Command Palette */}
-      <CommandPalette
-        state={commandPalette}
-        nodes={graphDataView.nodes}
-        onClose={() => setCommandPalette({ visible: false, query: '' })}
-        onSelectNode={handleCommandPaletteSelectNode}
-        onQueryChange={(query) => setCommandPalette(prev => ({ ...prev, query }))}
-        onNewNode={() => openRootNodeCreation(commandPalette.query)}
-      />
 
       {/* Keyboard Shortcuts Help */}
       <KeyboardShortcutsHelp
