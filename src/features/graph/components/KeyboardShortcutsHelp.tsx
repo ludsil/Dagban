@@ -8,7 +8,7 @@ interface KeyboardShortcutsHelpProps {
 }
 
 export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHelpProps) {
-  const shortcuts = [
+  const shortcuts: { keys: string[]; action: string; context?: string; separator?: string }[] = [
     { keys: ['M'], action: 'Hotkey map' },
     { keys: ['N'], action: 'New blank root node' },
     { keys: ['/'], action: 'Search' },
