@@ -7,7 +7,7 @@ import { convertMiserablesToDagban } from '@/lib/miserables-converter';
 import miserablesData from '@/lib/miserables.json';
 import { saveGraph, usePersistedGraph } from '@/lib/storage';
 import { useGraphUndo, type GraphUpdateOptions } from '@/lib/graph-undo';
-import type { DagbanGraph as GraphData, Card, Traverser, User } from '@/lib/types';
+import type { DagbanGraph as GraphData, Card, Category, Traverser, User } from '@/lib/types';
 import { createUserId } from '@/lib/users';
 
 type DatasetMode = 'sample' | 'miserables';
@@ -47,6 +47,20 @@ function GraphHost({
       categories: prev.categories.map(cat =>
         cat.id === categoryId ? { ...cat, ...updates } : cat
       ),
+    }));
+  }, [applyGraphUpdate]);
+
+  const handleCategoryAdd = useCallback((category: Category) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      categories: [...prev.categories, category],
+    }));
+  }, [applyGraphUpdate]);
+
+  const handleCategoryDelete = useCallback((categoryId: string) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      categories: prev.categories.filter(cat => cat.id !== categoryId),
     }));
   }, [applyGraphUpdate]);
 
@@ -193,6 +207,8 @@ function GraphHost({
       data={graph}
       onCardChange={handleCardChange}
       onCategoryChange={handleCategoryChange}
+      onCategoryAdd={handleCategoryAdd}
+      onCategoryDelete={handleCategoryDelete}
       onCardCreate={handleCardCreate}
       onCardDelete={handleCardDelete}
       onEdgeCreate={handleEdgeCreate}

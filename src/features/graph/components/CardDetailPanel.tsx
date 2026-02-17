@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { Card, User } from '@/lib/types';
+import { Card, User, Category } from '@/lib/types';
 import { getContrastColors } from '@/lib/colors';
 import { SelectedNodeInfo, GraphNodeData } from '../types';
 import {
@@ -17,7 +17,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Link, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link, Plus, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -25,11 +25,13 @@ interface CardDetailPanelProps {
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
   onAssigneeChange?: (cardId: string, assigneeId: string | null) => void;
   users?: User[];
+  categories?: Category[];
   onCreateDownstream?: (parentNode: GraphNodeData) => void;
   onCreateUpstream?: (childNode: GraphNodeData) => void;
   onLinkDownstream?: (sourceNode: GraphNodeData) => void;
   onLinkUpstream?: (targetNode: GraphNodeData) => void;
   onDelete?: (node: GraphNodeData) => void;
+  onOpenCategoryManager?: () => void;
 }
 
 export function CardDetailPanel({
@@ -38,11 +40,13 @@ export function CardDetailPanel({
   onCardChange,
   onAssigneeChange,
   users = [],
+  categories = [],
   onCreateDownstream,
   onCreateUpstream,
   onLinkDownstream,
   onLinkUpstream,
   onDelete,
+  onOpenCategoryManager,
 }: CardDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -56,8 +60,15 @@ export function CardDetailPanel({
   const [description, setDescription] = useState(card.description || '');
   const [assignee, setAssignee] = useState(card.assignee || '');
   const [shiftHeld, setShiftHeld] = useState(false);
+  const [localCategoryId, setLocalCategoryId] = useState(card.categoryId);
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
-  const colors = useMemo(() => getContrastColors(node.color), [node.color]);
+
+  // Resolve current color from local category selection for instant feedback
+  const currentColor = useMemo(() => {
+    const cat = categories.find(c => c.id === localCategoryId);
+    return cat?.color || node.color;
+  }, [localCategoryId, categories, node.color]);
+  const colors = useMemo(() => getContrastColors(currentColor), [currentColor]);
 
   // Track shift key state
   useEffect(() => {
@@ -252,140 +263,183 @@ export function CardDetailPanel({
     cardRef.current = { ...cardRef.current, assignee: nextAssignee || undefined };
   }, [card.id, onAssigneeChange]);
 
+  const handleCategoryChange = useCallback((value: string) => {
+    if (value === '__add_new__') {
+      onOpenCategoryManager?.();
+      return;
+    }
+    setLocalCategoryId(value);
+    onCardChange?.(card.id, { categoryId: value });
+  }, [card.id, onCardChange, onOpenCategoryManager]);
+
+  const currentCategory = categories.find(c => c.id === localCategoryId);
+
   return (
-    <div
-      ref={panelRef}
-      className="postit-panel"
-      style={{
-        left: `${left}px`,
-        top: `${top}px`,
-        backgroundColor: node.color,
-        '--postit-title': colors.title,
-        '--postit-body': colors.body,
-        '--postit-muted': colors.muted,
-        '--postit-action-border': colors.actionBorder,
-        '--postit-action-text': colors.actionText,
-        '--postit-badge-bg': colors.badgeBg,
-      } as React.CSSProperties}
-    >
-      {/* Assignee avatar in top right corner */}
-      <div className="postit-assignee-corner">
-        <Select
-          value={assignee || '__unassigned__'}
-          onValueChange={handleAssigneeChange}
-        >
-          <SelectTrigger
-            size="sm"
-            className="h-6 w-6 rounded-full p-0 border-none shadow-none cursor-pointer focus:ring-0 focus:outline-none focus-visible:ring-0 focus-visible:outline-none [&>svg]:hidden"
-            aria-label="Assign user"
+    <>
+      <div
+        ref={panelRef}
+        className="postit-panel"
+        style={{
+          left: `${left}px`,
+          top: `${top}px`,
+          backgroundColor: currentColor,
+          '--postit-title': colors.title,
+          '--postit-body': colors.body,
+          '--postit-muted': colors.muted,
+          '--postit-action-border': colors.actionBorder,
+          '--postit-action-text': colors.actionText,
+          '--postit-badge-bg': colors.badgeBg,
+        } as React.CSSProperties}
+      >
+        {/* Assignee avatar in top right corner */}
+        <div className="postit-assignee-corner">
+          <Select
+            value={assignee || '__unassigned__'}
+            onValueChange={handleAssigneeChange}
           >
-            <UserAvatar user={assigneeUser} name={assigneeLabel} size="sm" />
-          </SelectTrigger>
-          <SelectContent align="end" position="popper" className="min-w-[180px]">
-            <SelectItem value="__unassigned__">
-              <span className="flex items-center gap-2">
-                <UserAvatar size="sm" showPlaceholderIcon />
-                <span>Unassigned</span>
-              </span>
-            </SelectItem>
-            {users.map(user => (
-              <SelectItem key={user.id} value={user.id}>
+            <SelectTrigger
+              size="sm"
+              className="h-6 w-6 rounded-full p-0 border-none shadow-none cursor-pointer focus:ring-0 focus:outline-none focus-visible:ring-0 focus-visible:outline-none [&>svg]:hidden"
+              aria-label="Assign user"
+            >
+              <UserAvatar user={assigneeUser} name={assigneeLabel} size="sm" />
+            </SelectTrigger>
+            <SelectContent align="end" position="popper" className="min-w-[180px]">
+              <SelectItem value="__unassigned__">
                 <span className="flex items-center gap-2">
-                  <UserAvatar user={user} size="sm" />
-                  <span>{user.name}</span>
+                  <UserAvatar size="sm" showPlaceholderIcon />
+                  <span>Unassigned</span>
                 </span>
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Title - large, editable */}
-      <textarea
-        ref={titleRef}
-        className="postit-title"
-        value={title}
-        onChange={handleTitleChange}
-        onKeyDown={handleTitleKeyDown}
-        placeholder="Untitled"
-        rows={1}
-      />
-
-      {/* Free text area */}
-      <textarea
-        ref={descriptionRef}
-        className="postit-content"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="Add notes..."
-      />
-
-      {/* Bottom action bar */}
-      <div className="postit-actions">
-        <div className="postit-actions-left">
-          <Tooltip delayDuration={100}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className={`postit-action-icon${shiftHeld ? ' shift-active' : ''}`}
-                onClick={handleAddTask}
-              >
-                <ArrowUp className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={8}>
-              <p>{shiftHeld ? 'Link existing downstream task' : 'Add downstream task'}</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip delayDuration={100}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className={`postit-action-icon${shiftHeld ? ' shift-active' : ''}`}
-                onClick={handleAddDep}
-              >
-                <ArrowDown className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={8}>
-              <p>{shiftHeld ? 'Link existing dependency' : 'Add dependency'}</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip delayDuration={100}>
-            <TooltipTrigger asChild>
-              <span className="postit-shift-hint">
-                <span>⇧</span>
-                <Link className="size-2.5" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={8}>
-              <p>Hold Shift to link existing nodes</p>
-            </TooltipContent>
-          </Tooltip>
+              {users.map(user => (
+                <SelectItem key={user.id} value={user.id}>
+                  <span className="flex items-center gap-2">
+                    <UserAvatar user={user} size="sm" />
+                    <span>{user.name}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="postit-actions-right">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="postit-delete-icon"
-                onClick={handleDelete}
+
+        {/* Title - large, editable */}
+        <textarea
+          ref={titleRef}
+          className="postit-title"
+          value={title}
+          onChange={handleTitleChange}
+          onKeyDown={handleTitleKeyDown}
+          placeholder="Untitled"
+          rows={1}
+        />
+
+        {/* Free text area */}
+        <textarea
+          ref={descriptionRef}
+          className="postit-content"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Add notes..."
+        />
+
+        {/* Bottom action bar */}
+        <div className="postit-actions">
+          <div className="postit-actions-left">
+            <Tooltip delayDuration={100}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className={`postit-action-icon${shiftHeld ? ' shift-active' : ''}`}
+                  onClick={handleAddTask}
+                >
+                  <ArrowUp className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8}>
+                <p>{shiftHeld ? 'Link existing downstream task' : 'Add downstream task'}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip delayDuration={100}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className={`postit-action-icon${shiftHeld ? ' shift-active' : ''}`}
+                  onClick={handleAddDep}
+                >
+                  <ArrowDown className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8}>
+                <p>{shiftHeld ? 'Link existing dependency' : 'Add dependency'}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip delayDuration={100}>
+              <TooltipTrigger asChild>
+                <span className="postit-shift-hint">
+                  <span>⇧</span>
+                  <Link className="size-2.5" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8}>
+                <p>Hold Shift to link existing nodes</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="postit-actions-right">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="postit-delete-icon"
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Delete node</p>
+              </TooltipContent>
+            </Tooltip>
+            <Select
+              value={localCategoryId}
+              onValueChange={handleCategoryChange}
+            >
+              <SelectTrigger
+                size="sm"
+                className="postit-category-trigger"
+                aria-label="Change category"
               >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Delete node</p>
-            </TooltipContent>
-          </Tooltip>
-          <div className="postit-status-badge">
-            {node.status}
+                <span className="postit-category-label">
+                  {currentCategory?.name || 'Category'}
+                </span>
+              </SelectTrigger>
+              <SelectContent align="end" position="popper" className="min-w-[160px]">
+                {categories.map(cat => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="postit-category-dot-inline"
+                        style={{ backgroundColor: cat.color }}
+                      />
+                      <span>{cat.name}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectItem value="__add_new__">
+                  <span className="flex items-center gap-2">
+                    <Plus className="size-3 opacity-60" />
+                    <span>Add category</span>
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

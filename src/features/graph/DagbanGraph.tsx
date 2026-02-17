@@ -22,6 +22,7 @@ import {
   CardCreationForm,
   ToastNotification,
   KeyboardShortcutsHelp,
+  CategoryManager,
   GraphCanvasLayer,
   GraphHudLeft,
   GraphHudRight,
@@ -82,6 +83,9 @@ function clamp(value: number, min: number, max: number): number {
 export default function DagbanGraph({
   data,
   onCardChange,
+  onCategoryChange,
+  onCategoryAdd,
+  onCategoryDelete,
   onCardCreate,
   onCardDelete,
   onEdgeCreate,
@@ -153,6 +157,9 @@ export default function DagbanGraph({
 
   // Keyboard shortcuts help state
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+  // Category manager dialog state
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   // Add user dialog state
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
@@ -888,6 +895,12 @@ export default function DagbanGraph({
         e.preventDefault();
         setShowShortcutsHelp(prev => !prev);
       }
+
+      // C - Category manager
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        setShowCategoryManager(prev => !prev);
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1020,11 +1033,16 @@ export default function DagbanGraph({
     return getScreenCoords(node.x, node.y);
   }, [pendingBurn?.targetNodeId, pendingBurn?.anchor, viewMode, renderTick, getScreenCoords]);
 
+  const handleOpenCategoryManager = useCallback(() => {
+    setShowCategoryManager(true);
+  }, []);
+
   const projectHudProps = useMemo(() => ({
     onDownloadGraph: handleDownloadGraph,
     onUploadGraph: handleUploadGraph,
     onNewRootNode: openRootNodeCreation,
-  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation]);
+    onOpenCategoryManager: handleOpenCategoryManager,
+  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation, handleOpenCategoryManager]);
 
   const userHudProps = useMemo(() => ({
     users: data.users,
@@ -1215,11 +1233,13 @@ export default function DagbanGraph({
           onCardChange={onCardChange}
           onAssigneeChange={handleCardAssigneeChange}
           users={data.users}
+          categories={data.categories}
           onCreateDownstream={openDownstreamCreation}
           onCreateUpstream={openUpstreamCreation}
           onLinkDownstream={startDownstreamConnection}
           onLinkUpstream={startUpstreamConnection}
           onDelete={handleDeleteNode}
+          onOpenCategoryManager={handleOpenCategoryManager}
         />
       )}
 
@@ -1230,6 +1250,15 @@ export default function DagbanGraph({
       <KeyboardShortcutsHelp
         visible={showShortcutsHelp}
         onClose={() => setShowShortcutsHelp(false)}
+      />
+
+      {/* Category Manager */}
+      <CategoryManager
+        visible={showCategoryManager}
+        onClose={() => setShowCategoryManager(false)}
+        categories={data.categories}
+        onCategoryAdd={onCategoryAdd}
+        onCategoryDelete={onCategoryDelete}
       />
 
     </div>

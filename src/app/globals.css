@@ -1218,6 +1218,54 @@ html, body {
   font-weight: 600;
 }
 
+/* Category selector in bottom action bar */
+.postit-category-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: auto;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: none;
+  box-shadow: none;
+  background-color: var(--postit-badge-bg, rgba(255, 255, 255, 0.15));
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.postit-category-trigger:hover {
+  background-color: var(--postit-action-border, rgba(255, 255, 255, 0.25));
+}
+
+.postit-category-trigger:focus,
+.postit-category-trigger:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.postit-category-trigger > svg {
+  display: none;
+}
+
+.postit-category-dot-inline {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.postit-category-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  color: var(--postit-title, rgba(255, 255, 255, 0.95));
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Post-it creation form specific styles */
 .postit-creation {
   min-height: 300px;
@@ -2969,6 +3017,350 @@ html, body {
   height: 1px;
   background-color: rgba(255, 255, 255, 0.08);
   margin: 4px 0;
+}
+
+/* Category management in dropdown */
+.category-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.category-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.category-row-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.category-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.category-row-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s ease, color 0.1s ease, background 0.1s ease;
+}
+
+.category-row:hover .category-row-delete {
+  opacity: 1;
+}
+
+.category-row-delete:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.category-add-form {
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.category-add-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  outline: none;
+}
+
+.category-add-input:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.category-add-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.category-color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.category-color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease;
+}
+
+.category-color-swatch:hover {
+  transform: scale(1.2);
+}
+
+.category-color-swatch.active {
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
+.category-add-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.category-add-confirm,
+.category-add-cancel {
+  border: none;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.category-add-confirm {
+  background: rgba(255, 255, 255, 0.9);
+  color: #0b0b0b;
+}
+
+.category-add-confirm:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+.category-add-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.category-add-cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Category Manager dialog */
+.catmgr-dialog {
+  max-width: 320px;
+  gap: 0;
+  padding: 16px;
+}
+
+.catmgr-header {
+  padding-bottom: 10px;
+}
+
+.catmgr-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.catmgr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-bottom: 10px;
+}
+
+.catmgr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.catmgr-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.catmgr-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.catmgr-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catmgr-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
+}
+
+.catmgr-row:hover .catmgr-delete {
+  opacity: 1;
+}
+
+.catmgr-delete:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.catmgr-empty {
+  text-align: center;
+  padding: 12px 0;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+}
+
+.catmgr-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.catmgr-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catmgr-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.catmgr-input:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.catmgr-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.catmgr-add-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.85);
+  color: #0b0b0b;
+  transition: background 0.1s;
+}
+
+.catmgr-add-btn:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+.catmgr-add-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.catmgr-color-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.catmgr-dot-btn {
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s;
+}
+
+.catmgr-dot-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.catmgr-color-grid {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  padding: 6px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+}
+
+.catmgr-grid-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s;
+}
+
+.catmgr-grid-swatch:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+
+.catmgr-grid-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transition: transform 0.1s;
 }
 
 .header-chevron {

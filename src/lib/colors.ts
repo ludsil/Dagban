@@ -1,6 +1,27 @@
 // Modular color system for Dagban graph visualizations
 
 /**
+ * Standard color palette for card categories.
+ */
+export const STANDARD_COLORS: { id: string; name: string; color: string }[] = [
+  { id: 'red', name: 'Red', color: '#B2131D' },
+  { id: 'blue', name: 'Blue', color: '#0041FE' },
+  { id: 'teal', name: 'Teal', color: '#1BA5E9' },
+  { id: 'purple', name: 'Purple', color: '#53007F' },
+  { id: 'yellow', name: 'Yellow', color: '#EADF29' },
+  { id: 'orange', name: 'Orange', color: '#FC890E' },
+  { id: 'green', name: 'Green', color: '#157F00' },
+  { id: 'light-pink', name: 'Light Pink', color: '#CBA4FA' },
+  { id: 'violet', name: 'Violet', color: '#1F01C7' },
+  { id: 'light-grey', name: 'Light Grey', color: '#525492' },
+  { id: 'dark-green', name: 'Dark Green', color: '#0F6145' },
+  { id: 'brown', name: 'Brown', color: '#4E2903' },
+  { id: 'light-green', name: 'Light Green', color: '#94FE8F' },
+  { id: 'dark-grey', name: 'Dark Grey', color: '#232323' },
+  { id: 'pink', name: 'Pink', color: '#E35BAE' },
+];
+
+/**
  * Color scale definitions for different visualization modes.
  * Each scale is a tuple of [lightColor, darkColor] for gradient interpolation.
  */

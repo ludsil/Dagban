@@ -5,6 +5,7 @@ export { EdgeContextMenu } from './EdgeContextMenu';
 export { CardCreationForm } from './CardCreationForm';
 export { ToastNotification } from './ToastNotification';
 export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
+export { CategoryManager } from './CategoryManager';
 export { ProjectHud } from './ProjectHud';
 export { GraphCanvasLayer } from './GraphCanvasLayer';
 export { GraphHudLeft } from './GraphHudLeft';

@@ -127,7 +127,7 @@ export function getEmptyGraph(): DagbanGraph {
     users: placeholderUsers,
     traversers: [],
     categories: [
-      { id: 'default', name: 'General', color: '#3b82f6' },
+      { id: 'default', name: 'General', color: '#0041FE' },
     ],
     cards: [
       {

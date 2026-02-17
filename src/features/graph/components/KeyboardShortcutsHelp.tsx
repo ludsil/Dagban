@@ -10,6 +10,7 @@ interface KeyboardShortcutsHelpProps {
 export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHelpProps) {
   const shortcuts: { keys: string[]; action: string; context?: string; separator?: string }[] = [
     { keys: ['M'], action: 'Hotkey map' },
+    { keys: ['C'], action: 'Category manager' },
     { keys: ['N'], action: 'New blank root node' },
     { keys: ['/'], action: 'Search' },
     { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },

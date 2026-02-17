@@ -5,10 +5,10 @@ export const sampleGraph: DagbanGraph = {
   users: placeholderUsers,
   traversers: [],
   categories: [
-    { id: 'design', name: 'Design', color: '#8b5cf6' },      // purple
-    { id: 'frontend', name: 'Frontend', color: '#3b82f6' },   // blue
-    { id: 'backend', name: 'Backend', color: '#10b981' },     // green
-    { id: 'devops', name: 'DevOps', color: '#f59e0b' },       // amber
+    { id: 'design', name: 'Design', color: '#53007F' },
+    { id: 'frontend', name: 'Frontend', color: '#0041FE' },
+    { id: 'backend', name: 'Backend', color: '#157F00' },
+    { id: 'devops', name: 'DevOps', color: '#FC890E' },
   ],
   cards: [
     {
