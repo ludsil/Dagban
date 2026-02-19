@@ -18,7 +18,7 @@ import {
   SelectSeparator,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Link, Palette, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link, Shapes, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -164,7 +164,6 @@ export function CardDetailPanel({
   }, [card.title]);
 
   // Handle Escape and Enter keys to close panel
-  // Note: Click outside is handled by onBackgroundClick in DagbanGraph
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -185,6 +184,23 @@ export function CardDetailPanel({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [onClose, saveChanges]);
+
+  // Single-click outside to dismiss — even when a Radix dropdown is open
+  useEffect(() => {
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement;
+      // Inside the panel itself — ignore
+      if (panelRef.current?.contains(target)) return;
+      // Inside a Radix portal (Select dropdown, Popover, etc.) — ignore
+      if (target.closest('[data-radix-popper-content-wrapper]') || target.closest('[data-radix-select-content]')) return;
+      // Outside everything — close panel
+      saveChanges();
+      onClose();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [saveChanges, onClose]);
 
   // Handle Add task button - creates new downstream, or links existing with shift
   const handleAddTask = useCallback((e: React.MouseEvent) => {
@@ -437,7 +453,7 @@ export function CardDetailPanel({
                 <SelectSeparator />
                 <SelectItem value="__add_new__">
                   <span className="flex items-center gap-2">
-                    <Palette className="size-3 opacity-60" />
+                    <Shapes className="size-3 opacity-60" />
                     <span>Manage categories</span>
                   </span>
                 </SelectItem>

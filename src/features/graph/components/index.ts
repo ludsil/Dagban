@@ -14,6 +14,7 @@ export { FilterHud } from './FilterHud';
 export { FilterSidebar } from './FilterSidebar';
 export { UserHud } from './UserHud';
 export { UserAvatar } from './UserAvatar';
+export { UserManager } from './UserManager';
 
 // Re-export types
 export * from '../types';

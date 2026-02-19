@@ -183,6 +183,24 @@ function GraphHost({
     });
   }, [applyGraphUpdate]);
 
+  const handleUserDelete = useCallback((userId: string) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      users: prev.users.filter(u => u.id !== userId),
+      // Unassign cards that referenced this user
+      cards: prev.cards.map(c => c.assignee === userId ? { ...c, assignee: undefined } : c),
+      // Remove traversers owned by this user
+      traversers: prev.traversers.filter(t => t.userId !== userId),
+    }));
+  }, [applyGraphUpdate]);
+
+  const handleUserChange = useCallback((userId: string, updates: Partial<User>) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      users: prev.users.map(u => u.id === userId ? { ...u, ...updates } : u),
+    }));
+  }, [applyGraphUpdate]);
+
   const handleTraverserCreate = useCallback((traverser: Traverser) => {
     applyGraphUpdate(prev => {
       if (prev.traversers.some(existing => existing.edgeId === traverser.edgeId)) return prev;
@@ -229,6 +247,8 @@ function GraphHost({
       onEdgeCreate={handleEdgeCreate}
       onEdgeDelete={handleEdgeDelete}
       onUserAdd={handleUserAdd}
+      onUserDelete={handleUserDelete}
+      onUserChange={handleUserChange}
       onTraverserCreate={handleTraverserCreate}
       onTraverserUpdate={handleTraverserUpdate}
       onTraverserDelete={handleTraverserDelete}

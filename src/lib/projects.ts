@@ -1,5 +1,5 @@
 // Project management types and storage utilities
-import { DagbanGraph, placeholderUsers } from './types';
+import { DagbanGraph, defaultUser } from './types';
 import { STANDARD_COLORS } from './colors';
 
 export interface Project {
@@ -133,7 +133,7 @@ export function getEmptyGraph(): DagbanGraph {
   const cat1 = STANDARD_COLORS[idx1];
   const cat2 = STANDARD_COLORS[idx2];
   return {
-    users: placeholderUsers,
+    users: [{ ...defaultUser }],
     traversers: [],
     categories: [
       { id: cat1.id, name: 'Untitled 1', color: cat1.color },

@@ -41,6 +41,8 @@ export type UseCanvasRenderingProps = {
   getTraverserRenderPoint: (source: GraphNodeData, target: GraphNodeData, position: number) => { x: number; y: number; startX: number; startY: number; clampedT: number; offsetT: number };
   getFuseGradient: (ctx: CanvasRenderingContext2D, startX: number, startY: number, endX: number, endY: number) => CanvasGradient;
   getFuseRingGradient: (ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => string | CanvasGradient;
+  // Cycle detection
+  cycleEdgeIds: Set<string>;
   // Refs
   nodeBckgDimensionsRef: React.RefObject<Map<string, [number, number]>>;
 };
@@ -73,6 +75,7 @@ export function useCanvasRendering({
   getFuseGradient,
   getFuseRingGradient,
   nodeBckgDimensionsRef,
+  cycleEdgeIds,
 }: UseCanvasRenderingProps) {
   // Custom node rendering for 2D - matches text-nodes example exactly
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -194,14 +197,23 @@ export function useCanvasRendering({
       const label = node.title;
       const fontSize = 12 / globalScale;
       ctx.font = `${fontSize}px Sans-Serif`;
-      const textWidth = ctx.measureText(label).width;
+      const metrics = label ? ctx.measureText(label) : null;
+      const textWidth = metrics?.width ?? 0;
+
+      // Use actual glyph bounds for precise vertical centering
+      const ascent = metrics?.actualBoundingBoxAscent ?? fontSize * 0.75;
+      const descent = metrics?.actualBoundingBoxDescent ?? fontSize * 0.25;
+      const textHeight = ascent + descent;
+      const vertPad = fontSize * 0.35;
 
       // For full mode, add space for avatar using standardized config
       const avatarConfig = getAvatarConfig(fontSize);
       const avatarSpace = displayMode === 'full' ? avatarConfig.size + avatarConfig.gap : 0;
       const totalWidth = textWidth + avatarSpace;
 
-      const bckgDimensions: [number, number] = [totalWidth + avatarConfig.padding * 2, fontSize * 1.2];
+      const bckgDimensions: [number, number] = label
+        ? [totalWidth + avatarConfig.padding * 2, textHeight + vertPad * 2]
+        : [NODE_RADIUS * 2, NODE_RADIUS * 2];
 
       // Draw ball behind the label (matches 3D sphere + label)
       if (rootTraverser && rootProgress !== null) {
@@ -234,24 +246,29 @@ export function useCanvasRendering({
         ctx.stroke();
       }
 
-      // Draw dark background (matches html-nodes example)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(x - bckgDimensions[0] / 2, y - bckgDimensions[1] / 2, bckgDimensions[0], bckgDimensions[1]);
+      if (label) {
+        // Draw dark background (matches html-nodes example)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(x - bckgDimensions[0] / 2, y - bckgDimensions[1] / 2, bckgDimensions[0], bckgDimensions[1]);
 
-      // Draw text (centered, or left-aligned if full mode with avatar)
-      ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = drawColor;
+        // Draw text with precise vertical centering using actual glyph metrics.
+        // textBaseline 'alphabetic' + computed baseline = visually centered text.
+        // Baseline position: rect center + half(ascent - descent) to shift visual center to y.
+        ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = drawColor;
+        const baselineY = y + (ascent - descent) / 2;
 
-      if (displayMode === 'full') {
-        // Text on left side
-        ctx.fillText(label, x - bckgDimensions[0] / 2 + avatarConfig.padding, y);
+        if (displayMode === 'full') {
+          // Text on left side
+          ctx.fillText(label, x - bckgDimensions[0] / 2 + avatarConfig.padding, baselineY);
 
-        // Assignee avatar on right side using standardized utility
-        const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
-        drawAvatar(ctx, getAssigneeName(node.card.assignee), avatarX, y, fontSize, globalScale);
-      } else {
-        ctx.fillText(label, x, y);
+          // Assignee avatar on right side using standardized utility
+          const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
+          drawAvatar(ctx, getAssigneeName(node.card.assignee), avatarX, y, fontSize, globalScale);
+        } else {
+          ctx.fillText(label, x, baselineY);
+        }
       }
 
       if (isRootCandidate) {
@@ -337,7 +354,7 @@ export function useCanvasRendering({
       ctx.beginPath();
       ctx.moveTo(render.startX, render.startY);
       ctx.lineTo(render.x, render.y);
-      ctx.strokeStyle = getFuseGradient(ctx, render.startX, render.startY, render.x, render.y);
+      ctx.strokeStyle = getFuseGradient(ctx, render.x, render.y, render.startX, render.startY);
       ctx.lineWidth = Math.max(2 / globalScale, 1);
       ctx.stroke();
     }
@@ -376,6 +393,32 @@ export function useCanvasRendering({
       ctx.fillStyle = baseStroke;
       ctx.fill();
     }
+
+    // Warning triangle on cycle edges
+    if (cycleEdgeIds.has(link.edge.id)) {
+      const midX = (source.x + target.x) / 2;
+      const midY = (source.y + target.y) / 2;
+      const edgeAngle = Math.atan2(target.y - source.y, target.x - source.x);
+      const offset = Math.max(6 / globalScale, 3);
+      const cx = midX + -Math.sin(edgeAngle) * offset;
+      const cy = midY + Math.cos(edgeAngle) * offset;
+
+      const triSize = Math.max(5 / globalScale, 2.5);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - triSize);
+      ctx.lineTo(cx - triSize * 0.87, cy + triSize * 0.5);
+      ctx.lineTo(cx + triSize * 0.87, cy + triSize * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.fill();
+
+      // Exclamation mark
+      const bangSize = triSize * 0.45;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(cx - bangSize * 0.15, cy - bangSize * 0.6, bangSize * 0.3, bangSize * 0.7);
+      ctx.fillRect(cx - bangSize * 0.15, cy + bangSize * 0.3, bangSize * 0.3, bangSize * 0.25);
+    }
+
   }, [
     arrowMode,
     nodeRadius,
@@ -390,6 +433,7 @@ export function useCanvasRendering({
     getTraverserRenderPoint,
     detachedDrag?.traverserId,
     detachedDrag?.candidateEdgeId,
+    cycleEdgeIds,
   ]);
 
   const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {

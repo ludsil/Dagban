@@ -11,6 +11,7 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
   const shortcuts: { keys: string[]; action: string; context?: string; separator?: string }[] = [
     { keys: ['M'], action: 'Hotkey map' },
     { keys: ['C'], action: 'Category manager' },
+    { keys: ['U'], action: 'User manager' },
     { keys: ['N'], action: 'New blank root node' },
     { keys: ['/'], action: 'Search' },
     { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },

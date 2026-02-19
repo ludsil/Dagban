@@ -8,7 +8,10 @@ export interface User {
   color?: string;
 }
 
-// Placeholder users for development
+// Default user for new projects
+export const defaultUser: User = { id: 'user1', name: 'User1' };
+
+// Placeholder users for development/sample data
 export const placeholderUsers: User[] = [
   { id: 'alice', name: 'Alice Chen' },
   { id: 'bob', name: 'Bob Smith' },

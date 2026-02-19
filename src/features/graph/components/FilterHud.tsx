@@ -2,8 +2,10 @@
 
 import { useMemo, useRef, useEffect, useState } from 'react';
 import { ViewMode, DisplayMode, ColorMode, ArrowMode } from '../types';
-import { Card, Category, Edge, User } from '@/lib/types';
-import { UserAvatar } from './UserAvatar';
+import { Card, Category, Edge } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Layers, Eye, Paintbrush, Settings, Filter, Clock } from 'lucide-react';
 
 interface FilterHudProps {
   viewMode: ViewMode;
@@ -19,9 +21,6 @@ interface FilterHudProps {
   devDatasetMode?: 'sample' | 'miserables';
   onDevDatasetModeChange?: (mode: 'sample' | 'miserables') => void;
   cards?: Card[];
-  users?: User[];
-  selectedAssignees?: Set<string>;
-  onAssigneeToggle?: (assignee: string) => void;
   categories?: Category[];
   edges?: Edge[];
   searchQuery?: string;
@@ -51,9 +50,6 @@ export function FilterHud({
   devDatasetMode,
   onDevDatasetModeChange,
   cards,
-  users = [],
-  selectedAssignees,
-  onAssigneeToggle,
   categories,
   edges,
   searchQuery = '',
@@ -69,19 +65,10 @@ export function FilterHud({
   burntAgeMax = 30,
 }: FilterHudProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
 
-  const toggleSection = (section: string) => {
-    setCollapsedSections(prev => {
-      const next = new Set(prev);
-      if (next.has(section)) {
-        next.delete(section);
-      } else {
-        next.add(section);
-      }
-      return next;
-    });
-  };
+  const toggleWorkspace = (ws: string) =>
+    setActiveWorkspace(prev => (prev === ws ? null : ws));
 
   // Handle global hotkeys to focus search
   useEffect(() => {
@@ -98,28 +85,6 @@ export function FilterHud({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  const assignees = useMemo(() => {
-    return [...users].sort((a, b) => a.name.localeCompare(b.name));
-  }, [users]);
-
-  // Count cards per assignee
-  const assigneeCounts = useMemo(() => {
-    if (!cards) return new Map<string, number>();
-    const counts = new Map<string, number>();
-    cards.forEach(card => {
-      if (card.assignee) {
-        counts.set(card.assignee, (counts.get(card.assignee) || 0) + 1);
-      }
-    });
-    return counts;
-  }, [cards]);
-
-  // Count unassigned cards
-  const unassignedCount = useMemo(() => {
-    if (!cards) return 0;
-    return cards.filter(card => !card.assignee).length;
-  }, [cards]);
 
   // Compute blocker counts
   const blockerCounts = useMemo(() => {
@@ -146,10 +111,16 @@ export function FilterHud({
     return counts;
   }, [cards, categories]);
 
+  // Active filter badge count
+  const activeFilterCount =
+    (selectedCategories?.size || 0) +
+    (selectedStatuses?.size || 0) +
+    (blockerThreshold > 0 ? 1 : 0);
+
   return (
     <div className="settings-panel">
+      {/* Row 1: Search bar */}
       <div className="settings-top-row">
-        {/* Search bar at top */}
         {onSearchChange && (
           <div className="settings-search">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -176,241 +147,276 @@ export function FilterHud({
         )}
       </div>
 
-      <div className="settings-row">
-        <span className="settings-label">View</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${viewMode === '2D' ? 'active' : ''}`}
-            onClick={() => onViewModeChange('2D')}
-          >
-            2D
-          </button>
-          <button
-            className={`toggle-btn ${viewMode === '3D' ? 'active' : ''}`}
-            onClick={() => onViewModeChange('3D')}
-          >
-            3D
-          </button>
-        </div>
-      </div>
-      <div className="settings-row">
-        <span className="settings-label">Display</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${displayMode === 'balls' ? 'active' : ''}`}
-            onClick={() => onDisplayModeChange('balls')}
-          >
-            Balls
-          </button>
-          <button
-            className={`toggle-btn ${displayMode === 'labels' ? 'active' : ''}`}
-            onClick={() => onDisplayModeChange('labels')}
-          >
-            Labels
-          </button>
-          <button
-            className={`toggle-btn ${displayMode === 'full' ? 'active' : ''}`}
-            onClick={() => onDisplayModeChange('full')}
-          >
-            Full
-          </button>
-        </div>
-      </div>
-      <div className="settings-row">
-        <span className="settings-label">Node Size</span>
-        <div className="toggle-group">
-          {[4, 5, 6, 7, 8].map(size => (
-            <button
-              key={size}
-              className={`toggle-btn ${nodeRadius === size ? 'active' : ''}`}
-              onClick={() => onNodeRadiusChange(size)}
-            >
-              {size}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="settings-row">
-        <span className="settings-label">Color</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${colorMode === 'category' ? 'active' : ''}`}
-            onClick={() => onColorModeChange('category')}
-          >
-            Category
-          </button>
-          <button
-            className={`toggle-btn toggle-btn-indegree ${colorMode === 'indegree' ? 'active' : ''}`}
-            onClick={() => onColorModeChange('indegree')}
-            title="How many dependencies block this node"
-          >
-            Indegree
-          </button>
-          <button
-            className={`toggle-btn toggle-btn-outdegree ${colorMode === 'outdegree' ? 'active' : ''}`}
-            onClick={() => onColorModeChange('outdegree')}
-            title="How many nodes this one blocks"
-          >
-            Outdegree
-          </button>
-        </div>
-      </div>
-      <div className="settings-row">
-        <span className="settings-label">Arrows</span>
-        <div className="toggle-group">
-          <button
-            className={`toggle-btn ${arrowMode === 'end' ? 'active' : ''}`}
-            onClick={() => onArrowModeChange('end')}
-          >
-            End
-          </button>
-          <button
-            className={`toggle-btn ${arrowMode === 'middle' ? 'active' : ''}`}
-            onClick={() => onArrowModeChange('middle')}
-          >
-            Middle
-          </button>
-          <button
-            className={`toggle-btn ${arrowMode === 'none' ? 'active' : ''}`}
-            onClick={() => onArrowModeChange('none')}
-          >
-            None
-          </button>
-        </div>
-      </div>
-      {devDatasetMode && onDevDatasetModeChange && (
-        <div className="settings-row">
-          <span className="settings-label">Dataset</span>
-          <div className="toggle-group">
-            <button
-              className={`toggle-btn ${devDatasetMode === 'sample' ? 'active' : ''}`}
-              onClick={() => onDevDatasetModeChange('sample')}
-            >
-              Sample
-            </button>
-            <button
-              className={`toggle-btn ${devDatasetMode === 'miserables' ? 'active' : ''}`}
-              onClick={() => onDevDatasetModeChange('miserables')}
-            >
-              Miserables
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Category filter */}
-      {categories && selectedCategories && onCategoryToggle && categories.length > 0 && (
-        <div className="filter-section">
-          <div className="filter-section-header" onClick={() => toggleSection('category')}>
-            <span className="filter-section-title">Category</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span className="filter-section-count">{categories.length}</span>
-              <svg className={`filter-section-toggle ${collapsedSections.has('category') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </div>
-          </div>
-          <div className={`filter-section-content ${collapsedSections.has('category') ? 'collapsed' : ''}`}>
-            <div className="filter-category-list">
-              {categories.map(category => (
-                <button
-                  key={category.id}
-                  className={`filter-category-item ${selectedCategories.has(category.id) ? 'selected' : ''}`}
-                  onClick={() => onCategoryToggle(category.id)}
-                >
-                  <div className="filter-category-dot" style={{ backgroundColor: category.color }} />
-                  <span className="filter-category-name">{category.name}</span>
-                  <span className="filter-category-count">{categoryCounts.get(category.id) || 0}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Status filter */}
-      {selectedStatuses && onStatusToggle && (
-        <div className="filter-section">
-          <div className="filter-section-header" onClick={() => toggleSection('status')}>
-            <span className="filter-section-title">Status</span>
-            <svg className={`filter-section-toggle ${collapsedSections.has('status') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </div>
-          <div className={`filter-section-content ${collapsedSections.has('status') ? 'collapsed' : ''}`}>
-            <div className="filter-status-list">
-              <button
-                className={`filter-status-item ${selectedStatuses.has('active') ? 'selected' : ''}`}
-                onClick={() => onStatusToggle('active')}
+      {/* Row 2: Discrete icon buttons */}
+      <TooltipProvider delayDuration={300}>
+        <div className="hud-button-bar">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={viewMode === '3D' ? 'outline' : 'ghost'}
+                size="icon-sm"
+                className="rounded-sm"
+                onClick={() => onViewModeChange(viewMode === '2D' ? '3D' : '2D')}
               >
-                <div className="filter-status-dot active" />
-                <span className="filter-status-name">Active</span>
-              </button>
-              <button
-                className={`filter-status-item ${selectedStatuses.has('blocked') ? 'selected' : ''}`}
-                onClick={() => onStatusToggle('blocked')}
+                <Layers className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Toggle {viewMode === '2D' ? '3D' : '2D'} view</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={displayMode !== 'balls' ? 'outline' : 'ghost'}
+                size="icon-sm"
+                className="rounded-sm"
+                onClick={() => {
+                  const modes: DisplayMode[] = ['balls', 'labels', 'full'];
+                  const idx = modes.indexOf(displayMode);
+                  onDisplayModeChange(modes[(idx + 1) % modes.length]);
+                }}
               >
-                <div className="filter-status-dot blocked" />
-                <span className="filter-status-name">Blocked</span>
-              </button>
-              <button
-                className={`filter-status-item ${selectedStatuses.has('done') ? 'selected' : ''}`}
-                onClick={() => onStatusToggle('done')}
+                <Eye className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Display: {displayMode}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeWorkspace === 'color' ? 'outline' : 'ghost'}
+                size="icon-sm"
+                className="rounded-sm"
+                onClick={() => toggleWorkspace('color')}
               >
-                <div className="filter-status-dot done" />
-                <span className="filter-status-name">Done</span>
-              </button>
-            </div>
-          </div>
+                <Paintbrush className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Color mode</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeWorkspace === 'filter' ? 'outline' : 'ghost'}
+                size="icon-sm"
+                className="rounded-sm relative"
+                onClick={() => toggleWorkspace('filter')}
+              >
+                <Filter className="size-4" />
+                {activeFilterCount > 0 && <span className="hud-ws-badge">{activeFilterCount}</span>}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Filters</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeWorkspace === 'adjust' ? 'outline' : 'ghost'}
+                size="icon-sm"
+                className="rounded-sm"
+                onClick={() => toggleWorkspace('adjust')}
+              >
+                <Clock className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Burnt age</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeWorkspace === 'customize' ? 'outline' : 'ghost'}
+                size="icon-sm"
+                className="rounded-sm"
+                onClick={() => toggleWorkspace('customize')}
+              >
+                <Settings className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Customize</TooltipContent>
+          </Tooltip>
         </div>
-      )}
+      </TooltipProvider>
 
-      {/* Blocker rate filter */}
-      {onBlockerThresholdChange && maxBlockerCount > 0 && (
-        <div className="filter-section">
-          <div className="filter-section-header" onClick={() => toggleSection('blocker')}>
-            <span className="filter-section-title">Blocker Rate</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span className="filter-section-value">≥{blockerThreshold}</span>
-              <svg className={`filter-section-toggle ${collapsedSections.has('blocker') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </div>
-          </div>
-          <div className={`filter-section-content ${collapsedSections.has('blocker') ? 'collapsed' : ''}`}>
+      {/* Row 3: Expandable workspace */}
+      {activeWorkspace === 'customize' && (
+        <div className="hud-workspace">
+          <div>
+            <div className="hud-workspace-label">Node Size: {nodeRadius}</div>
             <div className="filter-slider-container">
               <input
                 type="range"
                 className="filter-slider"
-                min={0}
-                max={maxBlockerCount}
-                value={blockerThreshold}
-                onChange={(e) => onBlockerThresholdChange(parseInt(e.target.value))}
+                min={4}
+                max={8}
+                value={nodeRadius}
+                onChange={(e) => onNodeRadiusChange(parseInt(e.target.value))}
               />
             </div>
+          </div>
+          <div>
+            <div className="hud-workspace-label">Arrow Position</div>
+            <div className="hud-option-row">
+              {(['end', 'middle', 'none'] as ArrowMode[]).map(mode => (
+                <Button
+                  key={mode}
+                  variant={arrowMode === mode ? 'default' : 'ghost'}
+                  size="xs"
+                  className="rounded-sm capitalize"
+                  onClick={() => onArrowModeChange(mode)}
+                >
+                  {mode}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {devDatasetMode && onDevDatasetModeChange && (
+            <div>
+              <div className="hud-workspace-label">Dataset</div>
+              <div className="hud-option-row">
+                <Button
+                  variant={devDatasetMode === 'sample' ? 'default' : 'ghost'}
+                  size="xs"
+                  className="rounded-sm"
+                  onClick={() => onDevDatasetModeChange('sample')}
+                >
+                  Sample
+                </Button>
+                <Button
+                  variant={devDatasetMode === 'miserables' ? 'default' : 'ghost'}
+                  size="xs"
+                  className="rounded-sm"
+                  onClick={() => onDevDatasetModeChange('miserables')}
+                >
+                  Miserables
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeWorkspace === 'color' && (
+        <div className="hud-workspace">
+          <div>
+            <div className="hud-workspace-label">Color By</div>
+            <TooltipProvider delayDuration={300}>
+              <div className="hud-option-row">
+                <Button
+                  variant={colorMode === 'category' ? 'default' : 'ghost'}
+                  size="xs"
+                  className="rounded-sm"
+                  onClick={() => onColorModeChange('category')}
+                >
+                  Category
+                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={colorMode === 'indegree' ? 'default' : 'ghost'}
+                      size="xs"
+                      className="rounded-sm"
+                      onClick={() => onColorModeChange('indegree')}
+                    >
+                      Enablers
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">In-degree: number of incoming edges</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={colorMode === 'outdegree' ? 'default' : 'ghost'}
+                      size="xs"
+                      className="rounded-sm"
+                      onClick={() => onColorModeChange('outdegree')}
+                    >
+                      Blockers
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Out-degree: number of outgoing edges</TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
           </div>
         </div>
       )}
 
-      {/* Burnt age filter */}
-      {onBurntAgeThresholdChange && (
-        <div className="filter-section">
-          <div className="filter-section-header" onClick={() => toggleSection('burnt')}>
-            <span className="filter-section-title">Burnt Age</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span className="filter-section-value">
-                {burntAgeThreshold === 0
-                  ? 'Hide'
-                  : burntAgeThreshold >= burntAgeMax
-                    ? 'All'
-                    : `${burntAgeThreshold}d`}
-              </span>
-              <svg className={`filter-section-toggle ${collapsedSections.has('burnt') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
+      {activeWorkspace === 'filter' && (
+        <div className="hud-workspace">
+          {/* Category filter */}
+          {categories && selectedCategories && onCategoryToggle && categories.length > 0 && (
+            <div>
+              <div className="hud-workspace-label">Category</div>
+              <div className="filter-category-list">
+                {categories.map(category => (
+                  <button
+                    key={category.id}
+                    className={`filter-category-item ${selectedCategories.has(category.id) ? 'selected' : ''}`}
+                    onClick={() => onCategoryToggle(category.id)}
+                  >
+                    <div className="filter-category-dot" style={{ backgroundColor: category.color }} />
+                    <span className="filter-category-name">{category.name}</span>
+                    <span className="filter-category-count">{categoryCounts.get(category.id) || 0}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className={`filter-section-content ${collapsedSections.has('burnt') ? 'collapsed' : ''}`}>
+          )}
+
+          {/* Status filter */}
+          {selectedStatuses && onStatusToggle && (
+            <div>
+              <div className="hud-workspace-label">Status</div>
+              <div className="filter-status-list">
+                <button
+                  className={`filter-status-item ${selectedStatuses.has('active') ? 'selected' : ''}`}
+                  onClick={() => onStatusToggle('active')}
+                >
+                  <div className="filter-status-dot active" />
+                  <span className="filter-status-name">Active</span>
+                </button>
+                <button
+                  className={`filter-status-item ${selectedStatuses.has('blocked') ? 'selected' : ''}`}
+                  onClick={() => onStatusToggle('blocked')}
+                >
+                  <div className="filter-status-dot blocked" />
+                  <span className="filter-status-name">Blocked</span>
+                </button>
+                <button
+                  className={`filter-status-item ${selectedStatuses.has('done') ? 'selected' : ''}`}
+                  onClick={() => onStatusToggle('done')}
+                >
+                  <div className="filter-status-dot done" />
+                  <span className="filter-status-name">Done</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Blocker rate slider */}
+          {onBlockerThresholdChange && maxBlockerCount > 0 && (
+            <div>
+              <div className="hud-workspace-label">Blocker Rate ≥{blockerThreshold}</div>
+              <div className="filter-slider-container">
+                <input
+                  type="range"
+                  className="filter-slider"
+                  min={0}
+                  max={maxBlockerCount}
+                  value={blockerThreshold}
+                  onChange={(e) => onBlockerThresholdChange(parseInt(e.target.value))}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeWorkspace === 'adjust' && (
+        <div className="hud-workspace">
+          <div>
+            <div className="hud-workspace-label">
+              Burnt Age: {burntAgeThreshold === 0 ? 'Hide' : burntAgeThreshold >= burntAgeMax ? 'All' : `${burntAgeThreshold}d`}
+            </div>
             <div className="filter-slider-container">
               <input
                 type="range"
@@ -418,63 +424,12 @@ export function FilterHud({
                 min={0}
                 max={burntAgeMax}
                 value={burntAgeThreshold}
-                onChange={(e) => onBurntAgeThresholdChange(parseInt(e.target.value))}
+                onChange={(e) => onBurntAgeThresholdChange?.(parseInt(e.target.value))}
               />
               <div className="filter-slider-labels">
                 <span>Hide</span>
                 <span>All</span>
               </div>
-              <div className="filter-slider-hint">
-                {burntAgeThreshold === 0
-                  ? 'Hide all burnt nodes'
-                  : burntAgeThreshold >= burntAgeMax
-                    ? 'Show all burnt nodes'
-                    : `Show burnt nodes from last ${burntAgeThreshold} days`}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Assignee filter */}
-      {cards && selectedAssignees && onAssigneeToggle && (assignees.length > 0 || unassignedCount > 0) && (
-        <div className="filter-section">
-          <div className="filter-section-header" onClick={() => toggleSection('assignee')}>
-            <span className="filter-section-title">Assignee</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span className="filter-section-count">{assignees.length + (unassignedCount > 0 ? 1 : 0)}</span>
-              <svg className={`filter-section-toggle ${collapsedSections.has('assignee') ? 'collapsed' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </div>
-          </div>
-          <div className={`filter-section-content ${collapsedSections.has('assignee') ? 'collapsed' : ''}`}>
-            <div className="filter-assignee-list">
-              {assignees.map(assignee => (
-                <button
-                  key={assignee.id}
-                  className={`filter-assignee-item ${selectedAssignees.has(assignee.id) ? 'selected' : ''}`}
-                  onClick={() => onAssigneeToggle(assignee.id)}
-                >
-                  <div className="filter-assignee-avatar">
-                    <UserAvatar user={assignee} size="sm" />
-                  </div>
-                  <span className="filter-assignee-name">{assignee.name}</span>
-                  <span className="filter-assignee-count">{assigneeCounts.get(assignee.id) || 0}</span>
-                </button>
-              ))}
-              {unassignedCount > 0 && (
-                <button
-                  className={`filter-assignee-item ${selectedAssignees.has('__unassigned__') ? 'selected' : ''}`}
-                  onClick={() => onAssigneeToggle('__unassigned__')}
-                >
-                  <div className="filter-assignee-avatar unassigned">
-                    <UserAvatar size="sm" showPlaceholderIcon />
-                  </div>
-                  <span className="filter-assignee-name">Unassigned</span>
-                  <span className="filter-assignee-count">{unassignedCount}</span>
-                </button>
-              )}
             </div>
           </div>
         </div>
