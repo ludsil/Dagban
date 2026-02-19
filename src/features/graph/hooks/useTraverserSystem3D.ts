@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DagbanGraph as GraphData, Card, Traverser, User, Edge } from '@/lib/types';
-import type { GraphNodeData, GraphLinkData, ViewMode, DisplayMode, ToastState, TraverserCoordinateProvider } from '../types';
+import type { GraphNodeData, GraphLinkData, ViewMode, DisplayMode, TraverserCoordinateProvider } from '../types';
 import type { TraverserTuning } from '../traverserTuning';
 import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
 import { useTraverserLogic, clamp } from './useTraverserLogic';
@@ -49,7 +49,6 @@ export type UseTraverserSystem3DProps = {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
-  showToast: (message: string, type?: ToastState['type'], action?: ToastState['action']) => void;
   closeEdgeStartPicker: () => void;
   suppressNextBackgroundClick: () => void;
   tuning?: Partial<TraverserTuning>;
@@ -85,7 +84,6 @@ export function useTraverserSystem3D({
   onTraverserUpdate,
   onTraverserDelete,
   onCardChange,
-  showToast,
   closeEdgeStartPicker,
   suppressNextBackgroundClick,
   tuning: tuningOverrides,
@@ -399,7 +397,6 @@ export function useTraverserSystem3D({
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    showToast,
     closeEdgeStartPicker,
     suppressNextBackgroundClick,
     tuning: tuningOverrides,

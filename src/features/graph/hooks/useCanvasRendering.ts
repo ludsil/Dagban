@@ -41,6 +41,8 @@ export type UseCanvasRenderingProps = {
   getTraverserRenderPoint: (source: GraphNodeData, target: GraphNodeData, position: number) => { x: number; y: number; startX: number; startY: number; clampedT: number; offsetT: number };
   getFuseGradient: (ctx: CanvasRenderingContext2D, startX: number, startY: number, endX: number, endY: number) => CanvasGradient;
   getFuseRingGradient: (ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => string | CanvasGradient;
+  // Cycle detection
+  cycleEdgeIds: Set<string>;
   // Refs
   nodeBckgDimensionsRef: React.RefObject<Map<string, [number, number]>>;
 };
@@ -73,6 +75,7 @@ export function useCanvasRendering({
   getFuseGradient,
   getFuseRingGradient,
   nodeBckgDimensionsRef,
+  cycleEdgeIds,
 }: UseCanvasRenderingProps) {
   // Custom node rendering for 2D - matches text-nodes example exactly
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -380,6 +383,35 @@ export function useCanvasRendering({
       ctx.fillStyle = baseStroke;
       ctx.fill();
     }
+
+    // Draw cycle warning triangle on edges that participate in a cycle
+    if (cycleEdgeIds.has(link.edge.id)) {
+      const midX = (source.x + target.x) / 2;
+      const midY = (source.y + target.y) / 2;
+      // Offset perpendicular to the edge so it doesn't overlap the arrow
+      const edgeAngle = Math.atan2(target.y - source.y, target.x - source.x);
+      const perpX = -Math.sin(edgeAngle);
+      const perpY = Math.cos(edgeAngle);
+      const offset = Math.max(6 / globalScale, 3);
+      const cx = midX + perpX * offset;
+      const cy = midY + perpY * offset;
+
+      const triSize = Math.max(5 / globalScale, 2.5);
+      // Upright equilateral triangle (point up)
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - triSize);
+      ctx.lineTo(cx - triSize * 0.87, cy + triSize * 0.5);
+      ctx.lineTo(cx + triSize * 0.87, cy + triSize * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.fill();
+
+      // Exclamation mark inside
+      const bangSize = triSize * 0.45;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(cx - bangSize * 0.15, cy - bangSize * 0.6, bangSize * 0.3, bangSize * 0.7);
+      ctx.fillRect(cx - bangSize * 0.15, cy + bangSize * 0.3, bangSize * 0.3, bangSize * 0.25);
+    }
   }, [
     arrowMode,
     nodeRadius,
@@ -394,6 +426,7 @@ export function useCanvasRendering({
     getTraverserRenderPoint,
     detachedDrag?.traverserId,
     detachedDrag?.candidateEdgeId,
+    cycleEdgeIds,
   ]);
 
   const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {

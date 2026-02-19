@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { DagbanGraph as GraphData, Card, Category, Traverser } from '@/lib/types';
+import { findCycleEdgeIds } from '@/lib/cycle-detection';
 
 import { useTraverserSystem } from './hooks/useTraverserSystem';
 import { useTraverserSystem3D } from './hooks/useTraverserSystem3D';
@@ -170,6 +171,9 @@ export default function DagbanGraph({
   // User manager dialog state
   const [showUserManager, setShowUserManager] = useState(false);
 
+  // Cycle tooltip state (for hovering cycle warning triangles)
+  const [cycleTooltip, setCycleTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  const lastPointerPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
@@ -252,6 +256,30 @@ export default function DagbanGraph({
     burntAgeThreshold,
   });
 
+  // Cycle detection — edges participating in graph cycles
+  const cycleEdgeIds = useMemo(() => findCycleEdgeIds(data.edges), [data.edges]);
+
+  // Track pointer position for cycle tooltip
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handler = (e: PointerEvent) => {
+      const rect = container.getBoundingClientRect();
+      lastPointerPosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+    container.addEventListener('pointermove', handler);
+    return () => container.removeEventListener('pointermove', handler);
+  }, []);
+
+  // Handle link hover for cycle tooltip
+  const handleLinkHover = useCallback((link: GraphLinkData | null) => {
+    if (link && cycleEdgeIds.has(link.edge.id)) {
+      setCycleTooltip({ visible: true, x: lastPointerPosRef.current.x, y: lastPointerPosRef.current.y });
+    } else {
+      setCycleTooltip(prev => prev.visible ? { ...prev, visible: false } : prev);
+    }
+  }, [cycleEdgeIds]);
+
   // Show toast notification
   const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
     setToast({ visible: true, message, type, action });
@@ -275,7 +303,6 @@ export default function DagbanGraph({
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      showToast('Downloaded graph JSON', 'success');
     } catch (error) {
       console.error('Failed to download graph JSON', error);
       showToast('Failed to download graph JSON', 'warning');
@@ -305,7 +332,6 @@ export default function DagbanGraph({
           return;
         }
         onGraphImport(parsed as GraphData);
-        showToast('Graph imported', 'success');
       } catch (error) {
         console.error('Failed to import graph JSON', error);
         showToast('Failed to import graph JSON', 'warning');
@@ -470,7 +496,6 @@ export default function DagbanGraph({
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    showToast,
     closeEdgeStartPicker,
     suppressNextBackgroundClick,
     tuning: traverserTuning,
@@ -502,7 +527,6 @@ export default function DagbanGraph({
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    showToast,
     closeEdgeStartPicker,
     suppressNextBackgroundClick,
     tuning: traverserTuning,
@@ -834,7 +858,7 @@ export default function DagbanGraph({
         if (pendingBurn) { cancelPendingBurn(); return; }
         if (previewBurn) { setPreviewBurn(null); return; }
         if (edgeStartPicker) { closeEdgeStartPicker(); return; }
-        if (connectionMode.active) { cancelConnectionMode(); showToast('Connection cancelled', 'info'); return; }
+        if (connectionMode.active) { cancelConnectionMode(); return; }
         if (focusedNodeId || selectedNode) {
           setFocusedNodeId(null);
           setSelectedNode(null);
@@ -932,7 +956,6 @@ export default function DagbanGraph({
     handleUndo,
     createEmptyRootNode,
     cancelConnectionMode,
-    showToast,
     focusedNodeId,
     selectedNode,
   ]);
@@ -974,6 +997,7 @@ export default function DagbanGraph({
     getFuseGradient,
     getFuseRingGradient,
     nodeBckgDimensionsRef,
+    cycleEdgeIds,
   });
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
@@ -1004,6 +1028,7 @@ export default function DagbanGraph({
     onNodeClick: handleNodeClick,
     onLinkClick: handleLinkClick,
     onNodeHover: handleNodeHover,
+    onLinkHover: handleLinkHover,
     onBackgroundClick: handleBackgroundClick,
     onNodeDrag: handleNodeDrag,
     onNodeDragEnd: handleNodeDragEnd,
@@ -1218,6 +1243,19 @@ export default function DagbanGraph({
 
       {/* Toast Notification */}
       <ToastNotification state={toast} onClose={hideToast} />
+
+      {/* Cycle tooltip */}
+      {cycleTooltip.visible && (
+        <div
+          className="cycle-tooltip"
+          style={{
+            left: `${cycleTooltip.x + 12}px`,
+            top: `${cycleTooltip.y - 8}px`,
+          }}
+        >
+          Cycle detected — this edge is part of a loop
+        </div>
+      )}
 
       {/* Keyboard Shortcuts Help */}
       <KeyboardShortcutsHelp

@@ -56,7 +56,6 @@ export type UseTraverserLogicProps = {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
-  showToast: (message: string, type?: 'info' | 'success' | 'warning', action?: { label: string; onClick: () => void }) => void;
   closeEdgeStartPicker: () => void;
   suppressNextBackgroundClick: () => void;
   tuning?: Partial<TraverserTuning>;
@@ -138,7 +137,6 @@ export function useTraverserLogic({
   onTraverserUpdate,
   onTraverserDelete,
   onCardChange,
-  showToast,
   closeEdgeStartPicker,
   suppressNextBackgroundClick,
   tuning: tuningOverrides,
@@ -215,7 +213,6 @@ export function useTraverserLogic({
 
     setPendingBurn(null);
     setPreviewBurn(null);
-    showToast('Node burnt', 'success');
   }, [
     pendingBurn,
     cardById,
@@ -225,7 +222,6 @@ export function useTraverserLogic({
     data.edges,
     traverserByEdgeId,
     createTraverserForEdge,
-    showToast,
   ]);
 
   const updateTraverserPosition = useCallback((traverser: Traverser, nextPosition: number) => {
@@ -679,7 +675,7 @@ export function useTraverserLogic({
           const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${detachedDrag.candidateRootNodeId}`;
           const existing = traverserByEdgeId.get(rootEdgeId);
           if (existing && existing.id !== traverser.id) {
-            showToast('Root already has active progress', 'warning');
+            // Root already has active progress — silently reject
           } else if (onTraverserUpdate) {
             onTraverserUpdate(traverser.id, {
               edgeId: rootEdgeId,
@@ -690,7 +686,7 @@ export function useTraverserLogic({
         } else if (detachedDrag.candidateEdgeId) {
           const existing = traverserByEdgeId.get(detachedDrag.candidateEdgeId);
           if (existing && existing.id !== traverser.id) {
-            showToast('That edge already has a traverser', 'warning');
+            // Edge already has a traverser — silently reject
           } else if (onTraverserUpdate) {
             onTraverserUpdate(traverser.id, {
               edgeId: detachedDrag.candidateEdgeId,
@@ -700,7 +696,6 @@ export function useTraverserLogic({
           }
         } else if (onTraverserDelete) {
           onTraverserDelete(traverser.id);
-          showToast('Traverser removed', 'info');
         }
         setDetachedDrag(null);
         setPreviewBurn(null);
@@ -723,7 +718,6 @@ export function useTraverserLogic({
     traverserByEdgeId,
     onTraverserUpdate,
     onTraverserDelete,
-    showToast,
     beginPendingBurn,
     suppressNextBackgroundClick,
     SELECTION_THRESHOLD,
@@ -822,7 +816,6 @@ export function useTraverserLogic({
       if (!onTraverserCreate) return;
       const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${rootCandidate.nodeId}`;
       if (traverserByEdgeId.has(rootEdgeId)) {
-        showToast('Root already has active progress', 'info');
         setDraggingUserId(null);
         return;
       }
@@ -832,28 +825,23 @@ export function useTraverserLogic({
       onTraverserCreate(traverser);
       closeEdgeStartPicker();
       setDraggingUserId(null);
-      showToast('Root progress started', 'success');
       return;
     }
 
     if (!onTraverserCreate) return;
 
     if (eligibleTraverserEdgeIds.size === 0) {
-      showToast('No available edges yet. Drop on a root node to start.', 'info');
       return;
     }
 
     const closestAny = findClosestEdge(graphCoords, undefined, tuning.ghostEdgeSearchRadius);
     if (!closestAny) {
-      showToast('Drop on an available edge to add a traverser', 'warning');
       return;
     }
     if (traverserByEdgeId.has(closestAny.edgeId)) {
-      showToast('That edge already has a traverser', 'warning');
       return;
     }
     if (!eligibleTraverserEdgeIds.has(closestAny.edgeId)) {
-      showToast('That node is blocked or already complete', 'warning');
       return;
     }
 
@@ -879,7 +867,6 @@ export function useTraverserLogic({
     createTraverserForRoot,
     beginPendingBurn,
     edgeById,
-    showToast,
     SELECTION_THRESHOLD,
     eligibleTraverserEdgeIds,
     findClosestRootNode,

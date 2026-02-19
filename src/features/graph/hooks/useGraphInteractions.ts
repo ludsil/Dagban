@@ -178,23 +178,12 @@ export function useGraphInteractions({
       showToast('Nothing to undo', 'warning');
       return;
     }
-    showToast('Undone', 'success');
   }, [onUndo, showToast]);
 
   const handleDeleteNode = useCallback((node: GraphNodeData) => {
     if (!onCardDelete) return;
-
-    // Delete the card
     onCardDelete(node.id);
-
-    // Show toast with undo option
-    showToast(`Deleted "${node.title}"`, 'info', {
-      label: 'Undo',
-      onClick: () => {
-        handleUndo();
-      },
-    });
-  }, [onCardDelete, showToast, handleUndo]);
+  }, [onCardDelete]);
 
   // --- Connection mode (creating edges by clicking) ---
 
@@ -204,8 +193,7 @@ export function useGraphInteractions({
       sourceNode,
       direction: 'downstream',
     });
-    showToast(`Click a node to make it downstream of "${sourceNode.title}"`, 'info');
-  }, [showToast]);
+  }, []);
 
   const startUpstreamConnection = useCallback((targetNode: GraphNodeData) => {
     if (isBurntNodeId(targetNode.id)) {
@@ -217,7 +205,6 @@ export function useGraphInteractions({
       sourceNode: targetNode, // Store the target node here, we'll swap in completeConnection
       direction: 'upstream',
     });
-    showToast(`Click a node to make it upstream of "${targetNode.title}"`, 'info');
   }, [isBurntNodeId, showToast]);
 
   const cancelConnectionMode = useCallback(() => {
@@ -269,9 +256,6 @@ export function useGraphInteractions({
 
     // Create the edge
     onEdgeCreate(sourceId, targetId);
-    const sourceNode = data.cards.find(c => c.id === sourceId);
-    const targetNode = data.cards.find(c => c.id === targetId);
-    showToast(`Connected "${sourceNode?.title}" -> "${targetNode?.title}"`, 'success');
     cancelConnectionMode();
   }, [connectionMode.sourceNode, connectionMode.direction, onEdgeCreate, data.edges, data.cards, isBurntNodeId, showToast, cancelConnectionMode]);
 
@@ -429,18 +413,12 @@ export function useGraphInteractions({
   }, []);
 
   const handleEdgeAssign = useCallback((edgeId: string, anchor: { x: number; y: number }) => {
-    if (!onTraverserCreate) {
-      showToast('Assigning traversers is not available here', 'warning');
-      return;
-    }
+    if (!onTraverserCreate) return;
     openEdgeStartPicker(edgeId, anchor.x, anchor.y);
-  }, [onTraverserCreate, openEdgeStartPicker, showToast]);
+  }, [onTraverserCreate, openEdgeStartPicker]);
 
   const handleEdgeDetachTraverser = useCallback((traverserId: string) => {
-    if (!onTraverserDelete) {
-      showToast('Detaching traversers is not available here', 'warning');
-      return;
-    }
+    if (!onTraverserDelete) return;
     onTraverserDelete(traverserId);
     if (pendingBurn?.traverserId === traverserId) {
       cancelPendingBurn();
@@ -448,10 +426,8 @@ export function useGraphInteractions({
     if (detachedDrag?.traverserId === traverserId) {
       clearDetachedDrag();
     }
-    showToast('Traverser removed', 'info');
   }, [
     onTraverserDelete,
-    showToast,
     pendingBurn?.traverserId,
     cancelPendingBurn,
     detachedDrag?.traverserId,
@@ -459,10 +435,7 @@ export function useGraphInteractions({
   ]);
 
   const handleEdgeDelete = useCallback((edgeId: string) => {
-    if (!onEdgeDelete) {
-      showToast('Edge deletion is not available here', 'warning');
-      return;
-    }
+    if (!onEdgeDelete) return;
     const edge = edgeById.get(edgeId);
     onEdgeDelete(edgeId);
     if (edgeStartPicker?.edgeId === edgeId) {
@@ -479,7 +452,6 @@ export function useGraphInteractions({
     }
   }, [
     onEdgeDelete,
-    showToast,
     edgeById,
     edgeStartPicker?.edgeId,
     previewBurn?.edgeId,
@@ -552,7 +524,6 @@ export function useGraphInteractions({
           showToast('Connection already exists', 'warning');
         } else {
           onEdgeCreate(focusedNodeId, node.id);
-          showToast(`Connected → "${node.title}"`, 'success');
         }
       }
       // Always advance focus to clicked node (enables chaining)
@@ -682,7 +653,6 @@ export function useGraphInteractions({
 
     // Create the edge (source -> target, so target becomes downstream)
     onEdgeCreate(sourceNode.id, targetNode.id);
-    showToast(`Connected "${sourceNode.title}" -> "${targetNode.title}"`, 'success');
   }, [onEdgeCreate, data.edges, isBurntNodeId, showToast]);
 
   const handleNodeDrag = useCallback((node: GraphNodeData) => {
