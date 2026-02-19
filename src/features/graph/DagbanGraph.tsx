@@ -173,7 +173,6 @@ export default function DagbanGraph({
 
   // Cycle tooltip state (for hovering cycle warning triangles)
   const [cycleTooltip, setCycleTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
-  const lastPointerPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
@@ -258,27 +257,6 @@ export default function DagbanGraph({
 
   // Cycle detection — edges participating in graph cycles
   const cycleEdgeIds = useMemo(() => findCycleEdgeIds(data.edges), [data.edges]);
-
-  // Track pointer position for cycle tooltip
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const handler = (e: PointerEvent) => {
-      const rect = container.getBoundingClientRect();
-      lastPointerPosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    };
-    container.addEventListener('pointermove', handler);
-    return () => container.removeEventListener('pointermove', handler);
-  }, []);
-
-  // Handle link hover for cycle tooltip
-  const handleLinkHover = useCallback((link: GraphLinkData | null) => {
-    if (link && cycleEdgeIds.has(link.edge.id)) {
-      setCycleTooltip({ visible: true, x: lastPointerPosRef.current.x, y: lastPointerPosRef.current.y });
-    } else {
-      setCycleTooltip(prev => prev.visible ? { ...prev, visible: false } : prev);
-    }
-  }, [cycleEdgeIds]);
 
   // Show toast notification
   const showToast = useCallback((message: string, type: ToastState['type'] = 'info', action?: ToastState['action']) => {
@@ -422,6 +400,44 @@ export default function DagbanGraph({
     fuseAnimationTime,
     graphTheme,
   });
+
+  // Cycle tooltip: hit-test against triangle positions on pointermove
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || cycleEdgeIds.size === 0) return;
+    const handler = (e: PointerEvent) => {
+      const rect = container.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const HIT_RADIUS = 14; // px screen-space hit area
+      for (const edgeId of cycleEdgeIds) {
+        const link = linkByIdRef.current.get(edgeId);
+        if (!link) continue;
+        const s = link.source as GraphNodeData;
+        const t = link.target as GraphNodeData;
+        if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
+        // Triangle position mirrors useCanvasRendering: midpoint + perpendicular offset
+        const midX = (s.x + t.x) / 2;
+        const midY = (s.y + t.y) / 2;
+        const edgeAngle = Math.atan2(t.y - s.y, t.x - s.x);
+        const scale = getZoomScale?.() ?? 1;
+        const offset = Math.max(6 / scale, 3);
+        const cx = midX + -Math.sin(edgeAngle) * offset;
+        const cy = midY + Math.cos(edgeAngle) * offset;
+        const screen = getScreenCoords(cx, cy);
+        if (!screen) continue;
+        const dx = screenX - screen.x;
+        const dy = screenY - screen.y;
+        if (dx * dx + dy * dy < HIT_RADIUS * HIT_RADIUS) {
+          setCycleTooltip({ visible: true, x: screenX, y: screenY });
+          return;
+        }
+      }
+      setCycleTooltip(prev => prev.visible ? { ...prev, visible: false } : prev);
+    };
+    container.addEventListener('pointermove', handler);
+    return () => container.removeEventListener('pointermove', handler);
+  }, [cycleEdgeIds, getScreenCoords, getZoomScale]);
 
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
@@ -1028,7 +1044,6 @@ export default function DagbanGraph({
     onNodeClick: handleNodeClick,
     onLinkClick: handleLinkClick,
     onNodeHover: handleNodeHover,
-    onLinkHover: handleLinkHover,
     onBackgroundClick: handleBackgroundClick,
     onNodeDrag: handleNodeDrag,
     onNodeDragEnd: handleNodeDragEnd,
