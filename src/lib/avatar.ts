@@ -38,10 +38,10 @@ export function getInitials(assignee: string): string {
  * @param radius Avatar radius
  * @param globalScale Current zoom scale
  */
-// Matches dark theme --muted: oklch(0.269 0 0) ≈ #3b3b3b
-const AVATAR_BG = '#3b3b3b';
-// Matches dark theme --muted-foreground: oklch(0.708 0 0) ≈ #a8a8a8
-const AVATAR_FG = '#a8a8a8';
+// Matches dark theme --muted: oklch(0.269 0 0)
+const AVATAR_BG = '#373737';
+// Matches dark theme --muted-foreground: oklch(0.708 0 0)
+const AVATAR_FG = '#a3a3a3';
 
 export function drawAvatarCircle(
   ctx: CanvasRenderingContext2D,
@@ -76,10 +76,16 @@ export function drawAvatarInitials(
 ): void {
   ctx.save();
   ctx.fillStyle = AVATAR_FG;
-  ctx.font = `500 ${fontSize * 0.55}px Sans-Serif`;
+  const initFontSize = fontSize * 0.6;
+  ctx.font = `500 ${initFontSize}px Sans-Serif`;
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(initials, x, y);
+  // Use actual glyph metrics for precise vertical centering (same approach as label text)
+  ctx.textBaseline = 'alphabetic';
+  const metrics = ctx.measureText(initials);
+  const ascent = metrics.actualBoundingBoxAscent ?? initFontSize * 0.75;
+  const descent = metrics.actualBoundingBoxDescent ?? initFontSize * 0.25;
+  const baselineY = y + (ascent - descent) / 2;
+  ctx.fillText(initials, x, baselineY);
   ctx.restore();
 }
 
