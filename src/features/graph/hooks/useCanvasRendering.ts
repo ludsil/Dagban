@@ -43,8 +43,6 @@ export type UseCanvasRenderingProps = {
   getFuseRingGradient: (ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => string | CanvasGradient;
   // Cycle detection
   cycleEdgeIds: Set<string>;
-  // Ref for cycle triangle canvas-pixel positions (written during render, read by tooltip hit-test)
-  cycleTrianglePosRef: React.RefObject<Map<string, { canvasX: number; canvasY: number }>>;
   // Refs
   nodeBckgDimensionsRef: React.RefObject<Map<string, [number, number]>>;
 };
@@ -78,7 +76,6 @@ export function useCanvasRendering({
   getFuseRingGradient,
   nodeBckgDimensionsRef,
   cycleEdgeIds,
-  cycleTrianglePosRef,
 }: UseCanvasRenderingProps) {
   // Custom node rendering for 2D - matches text-nodes example exactly
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -408,13 +405,6 @@ export function useCanvasRendering({
       const offset = Math.max(6 / globalScale, 3);
       const cx = midX + perpX * offset;
       const cy = midY + perpY * offset;
-
-      // Store canvas-pixel position for tooltip hit-testing
-      const t = ctx.getTransform();
-      cycleTrianglePosRef.current.set(link.edge.id, {
-        canvasX: t.a * cx + t.c * cy + t.e,
-        canvasY: t.b * cx + t.d * cy + t.f,
-      });
 
       const triSize = Math.max(5 / globalScale, 2.5);
       // Upright equilateral triangle (point up)

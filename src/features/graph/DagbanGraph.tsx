@@ -125,7 +125,6 @@ export default function DagbanGraph({
   const suppressBackgroundClickRef = useRef(false);
   const renderRafRef = useRef<number | null>(null);
   const dragConnectAnimationRef = useRef<number | null>(null);
-  const cycleTrianglePosRef = useRef<Map<string, { canvasX: number; canvasY: number }>>(new Map());
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
@@ -172,8 +171,9 @@ export default function DagbanGraph({
   // User manager dialog state
   const [showUserManager, setShowUserManager] = useState(false);
 
-  // Cycle tooltip state (for hovering cycle warning triangles)
-  const [cycleTooltip, setCycleTooltip] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  // Cycle tooltip: track hovered cycle edge + mouse position separately
+  const [hoveredCycleEdgeId, setHoveredCycleEdgeId] = useState<string | null>(null);
+  const mousePosRef = useRef({ x: 0, y: 0 });
 
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
@@ -402,31 +402,26 @@ export default function DagbanGraph({
     graphTheme,
   });
 
-  // Cycle tooltip: hit-test triangle canvas-pixel positions written by linkCanvasObject.
-  const handleCycleTooltipMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (cycleEdgeIds.size === 0 || cycleTrianglePosRef.current.size === 0) {
-      if (cycleTooltip.visible) setCycleTooltip(prev => ({ ...prev, visible: false }));
-      return;
+  // Track mouse position for cycle tooltip (document-level, always fires)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      mousePosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+    document.addEventListener('mousemove', handler);
+    return () => document.removeEventListener('mousemove', handler);
+  }, []);
+
+  // Cycle tooltip: use react-force-graph's own onLinkHover callback
+  const handleLinkHover = useCallback((link: GraphLinkData | null) => {
+    if (link && cycleEdgeIds.has(link.edge.id)) {
+      setHoveredCycleEdgeId(link.edge.id);
+    } else {
+      setHoveredCycleEdgeId(null);
     }
-    const canvas = containerRef.current?.querySelector('canvas');
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const canvasX = (e.clientX - rect.left) * scaleX;
-    const canvasY = (e.clientY - rect.top) * scaleY;
-    const HIT_RADIUS = 16 * scaleX; // 16 CSS-px hit area in canvas pixels
-    for (const [edgeId, pos] of cycleTrianglePosRef.current) {
-      if (!cycleEdgeIds.has(edgeId)) continue;
-      const dx = canvasX - pos.canvasX;
-      const dy = canvasY - pos.canvasY;
-      if (dx * dx + dy * dy < HIT_RADIUS * HIT_RADIUS) {
-        setCycleTooltip({ visible: true, x: e.clientX - rect.left, y: e.clientY - rect.top });
-        return;
-      }
-    }
-    if (cycleTooltip.visible) setCycleTooltip(prev => ({ ...prev, visible: false }));
-  }, [cycleEdgeIds, cycleTooltip.visible]);
+  }, [cycleEdgeIds]);
 
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
@@ -1003,7 +998,6 @@ export default function DagbanGraph({
     getFuseRingGradient,
     nodeBckgDimensionsRef,
     cycleEdgeIds,
-    cycleTrianglePosRef,
   });
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
@@ -1034,6 +1028,8 @@ export default function DagbanGraph({
     onNodeClick: handleNodeClick,
     onLinkClick: handleLinkClick,
     onNodeHover: handleNodeHover,
+    onLinkHover: handleLinkHover,
+    linkHoverPrecision: 20,
     onBackgroundClick: handleBackgroundClick,
     onNodeDrag: handleNodeDrag,
     onNodeDragEnd: handleNodeDragEnd,
@@ -1174,7 +1170,6 @@ export default function DagbanGraph({
       onDragOver={handleUserDragOver}
       onDrop={handleUserDrop}
       onPointerDown={handleTraverserPointerDown}
-      onPointerMove={handleCycleTooltipMove}
     >
       <GraphHudLeft projectHud={projectHud} projectHudProps={projectHudProps} />
       <GraphHudRight
@@ -1251,12 +1246,12 @@ export default function DagbanGraph({
       <ToastNotification state={toast} onClose={hideToast} />
 
       {/* Cycle tooltip */}
-      {cycleTooltip.visible && (
+      {hoveredCycleEdgeId && (
         <div
           className="cycle-tooltip"
           style={{
-            left: `${cycleTooltip.x + 12}px`,
-            top: `${cycleTooltip.y - 8}px`,
+            left: `${mousePosRef.current.x + 12}px`,
+            top: `${mousePosRef.current.y - 8}px`,
           }}
         >
           Cycle detected — this edge is part of a loop
