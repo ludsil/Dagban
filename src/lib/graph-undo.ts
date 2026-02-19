@@ -21,6 +21,7 @@ export function useGraphUndo(
   setGraph: (nextGraph: DagbanGraph | ((prev: DagbanGraph) => DagbanGraph)) => void
 ) {
   const undoStackRef = useRef<DagbanGraph[]>([]);
+  const redoStackRef = useRef<DagbanGraph[]>([]);
   const pendingUndoRef = useRef<DagbanGraph | null>(null);
   const batchTokenRef = useRef(0);
   const transientLockRef = useRef(false);
@@ -31,6 +32,7 @@ export function useGraphUndo(
     if (undoStackRef.current.length > MAX_UNDO) {
       undoStackRef.current.shift();
     }
+    redoStackRef.current = [];
   }, []);
 
   const flushPendingUndo = useCallback(() => {
@@ -94,12 +96,26 @@ export function useGraphUndo(
     transientLockRef.current = false;
     const snapshot = undoStackRef.current.pop();
     if (!snapshot) return false;
-    setGraph(snapshot);
+    setGraph(prev => {
+      redoStackRef.current.push(prev);
+      return snapshot;
+    });
     return true;
   }, [setGraph, flushPendingUndo]);
 
+  const handleRedo = useCallback(() => {
+    const snapshot = redoStackRef.current.pop();
+    if (!snapshot) return false;
+    setGraph(prev => {
+      undoStackRef.current.push(prev);
+      return snapshot;
+    });
+    return true;
+  }, [setGraph]);
+
   const clearUndo = useCallback(() => {
     undoStackRef.current = [];
+    redoStackRef.current = [];
     pendingUndoRef.current = null;
     batchTokenRef.current += 1;
     if (transientTimerRef.current) {
@@ -120,6 +136,7 @@ export function useGraphUndo(
   return {
     applyGraphUpdate,
     handleUndo,
+    handleRedo,
     clearUndo,
   };
 }

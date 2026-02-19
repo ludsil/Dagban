@@ -217,15 +217,16 @@ export function usePersistedGraph(
     }, 500);
   }, [projectId]);
 
-  // Cleanup on unmount
+  // Flush pending save on unmount (e.g., project switch)
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
+        saveGraph(graphRef.current, projectId);
       }
     };
-  }, []);
+  }, [projectId]);
 
   return [graph, setGraph];
 }

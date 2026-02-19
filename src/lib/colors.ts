@@ -4,21 +4,21 @@
  * Standard color palette for card categories.
  */
 export const STANDARD_COLORS: { id: string; name: string; color: string }[] = [
-  { id: 'red', name: 'Red', color: '#B2131D' },
-  { id: 'blue', name: 'Blue', color: '#0041FE' },
-  { id: 'teal', name: 'Teal', color: '#1BA5E9' },
-  { id: 'purple', name: 'Purple', color: '#53007F' },
-  { id: 'yellow', name: 'Yellow', color: '#EADF29' },
-  { id: 'orange', name: 'Orange', color: '#FC890E' },
-  { id: 'green', name: 'Green', color: '#157F00' },
-  { id: 'light-pink', name: 'Light Pink', color: '#CBA4FA' },
-  { id: 'violet', name: 'Violet', color: '#1F01C7' },
+  { id: 'red', name: 'Red', color: '#C93A43' },
+  { id: 'blue', name: 'Blue', color: '#335ED9' },
+  { id: 'light-blue', name: 'Light Blue', color: '#41A6D8' },
+  { id: 'purple', name: 'Purple', color: '#531972' },
+  { id: 'yellow', name: 'Yellow', color: '#F2EA6E' },
+  { id: 'dark-green', name: 'Dark Green', color: '#0C6144' },
+  { id: 'orange', name: 'Orange', color: '#F8A041' },
+  { id: 'green', name: 'Green', color: '#45A433' },
+  { id: 'light-pink', name: 'Light Pink', color: '#DFC4FF' },
+  { id: 'violet', name: 'Violet', color: '#34229A' },
   { id: 'light-grey', name: 'Light Grey', color: '#525492' },
-  { id: 'dark-green', name: 'Dark Green', color: '#0F6145' },
-  { id: 'brown', name: 'Brown', color: '#4E2903' },
+  { id: 'brown', name: 'Brown', color: '#372A1D' },
   { id: 'light-green', name: 'Light Green', color: '#94FE8F' },
-  { id: 'dark-grey', name: 'Dark Grey', color: '#232323' },
-  { id: 'pink', name: 'Pink', color: '#E35BAE' },
+  { id: 'beige', name: 'Beige', color: '#F6EBD9' },
+  { id: 'pink', name: 'Pink', color: '#E077B7' },
 ];
 
 /**

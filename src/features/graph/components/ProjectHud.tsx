@@ -10,13 +10,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ChevronDown, Download, Palette, Plus, Upload } from 'lucide-react';
+import { Check, ChevronDown, Download, Palette, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 
 interface ProjectHudProps {
   onDownloadGraph: () => void;
   onUploadGraph: (file: File) => void;
   onNewRootNode: () => void;
   onOpenCategoryManager?: () => void;
+  projectName?: string;
+  projects?: { id: string; name: string }[];
+  onProjectSwitch?: (projectId: string) => void;
+  onProjectCreate?: (name: string) => void;
+  onProjectDelete?: (projectId: string) => void;
+  onProjectRename?: (projectId: string, name: string) => void;
 }
 
 export function ProjectHud({
@@ -24,11 +30,18 @@ export function ProjectHud({
   onUploadGraph,
   onNewRootNode,
   onOpenCategoryManager,
+  projectName,
+  projects,
+  onProjectSwitch,
+  onProjectCreate,
+  onProjectDelete,
+  onProjectRename,
 }: ProjectHudProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [logoMenuOpen, setLogoMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [currentProject] = useState('Default Project');
+
+  const displayName = projectName || 'Default Project';
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -39,6 +52,27 @@ export function ProjectHud({
     if (!file) return;
     onUploadGraph(file);
     event.target.value = '';
+  };
+
+  const handleNewProject = () => {
+    setDropdownOpen(false);
+    // Use setTimeout to let the dropdown close before showing prompt
+    setTimeout(() => {
+      const name = window.prompt('New project name');
+      if (name?.trim()) {
+        onProjectCreate?.(name.trim());
+      }
+    }, 100);
+  };
+
+  const handleRenameProject = (projectId: string, currentName: string) => {
+    setDropdownOpen(false);
+    setTimeout(() => {
+      const name = window.prompt('Rename project', currentName);
+      if (name?.trim()) {
+        onProjectRename?.(projectId, name.trim());
+      }
+    }, 100);
   };
 
   const dropdownContentClass = 'graph-dropdown-content';
@@ -91,17 +125,61 @@ export function ProjectHud({
       <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="header-project-btn gap-1">
-            <span className="header-project-name">{currentProject}</span>
+            <span className="header-project-name">{displayName}</span>
             <ChevronDown className={`size-3 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className={dropdownContentClass}>
+        <DropdownMenuContent align="start" className={dropdownContentClass} style={{ minWidth: 200 }}>
           <DropdownMenuLabel className="graph-dropdown-label">
-            Project
+            Projects
           </DropdownMenuLabel>
           <DropdownMenuSeparator className="graph-dropdown-separator" />
-          <DropdownMenuItem className={dropdownItemClass} onClick={() => setDropdownOpen(false)}>
-            Default Project
+          {projects?.map((project) => (
+            <DropdownMenuItem
+              key={project.id}
+              className={dropdownItemClass}
+              onClick={() => {
+                onProjectSwitch?.(project.id);
+                setDropdownOpen(false);
+              }}
+            >
+              {project.name === displayName && (
+                <Check className="graph-dropdown-icon" />
+              )}
+              <span className={project.name !== displayName ? 'pl-[22px]' : ''}>{project.name}</span>
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  className="project-action-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRenameProject(project.id, project.name);
+                  }}
+                  title="Rename"
+                >
+                  <Pencil className="size-3" />
+                </button>
+                {projects.length > 1 && (
+                  <button
+                    className="project-action-btn project-action-btn-danger"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onProjectDelete?.(project.id);
+                    }}
+                    title="Delete"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                )}
+              </div>
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator className="graph-dropdown-separator" />
+          <DropdownMenuItem
+            className={dropdownItemClass}
+            onClick={handleNewProject}
+          >
+            <Plus className="graph-dropdown-icon" />
+            <span>New project</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

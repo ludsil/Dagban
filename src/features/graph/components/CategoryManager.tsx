@@ -62,6 +62,7 @@ interface CategoryManagerProps {
   categories: Category[];
   onCategoryAdd?: (category: Category) => void;
   onCategoryDelete?: (categoryId: string) => void;
+  onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
 }
 
 export function CategoryManager({
@@ -70,16 +71,29 @@ export function CategoryManager({
   categories,
   onCategoryAdd,
   onCategoryDelete,
+  onCategoryChange,
 }: CategoryManagerProps) {
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(STANDARD_COLORS[0].color);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (visible) {
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [visible]);
+
+  useEffect(() => {
+    if (editingId) {
+      requestAnimationFrame(() => {
+        renameRef.current?.focus();
+        renameRef.current?.select();
+      });
+    }
+  }, [editingId]);
 
   const handleAdd = () => {
     if (!newName.trim() || !onCategoryAdd) return;
@@ -88,6 +102,14 @@ export function CategoryManager({
     setNewName('');
     setNewColor(STANDARD_COLORS[0].color);
     requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const handleRenameCommit = () => {
+    if (editingId && editingName.trim() && onCategoryChange) {
+      onCategoryChange(editingId, { name: editingName.trim() });
+    }
+    setEditingId(null);
+    setEditingName('');
   };
 
   return (
@@ -101,8 +123,35 @@ export function CategoryManager({
           <div className="catmgr-list">
             {categories.map(cat => (
               <div key={cat.id} className="catmgr-row">
-                <span className="catmgr-dot" style={{ backgroundColor: cat.color }} />
-                <span className="catmgr-name">{cat.name}</span>
+                <ColorPickerDot
+                  color={cat.color}
+                  onChange={(color) => onCategoryChange?.(cat.id, { color })}
+                />
+                {editingId === cat.id ? (
+                  <input
+                    ref={renameRef}
+                    className="catmgr-rename-input"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') handleRenameCommit();
+                      if (e.key === 'Escape') { setEditingId(null); setEditingName(''); }
+                    }}
+                    onBlur={handleRenameCommit}
+                  />
+                ) : (
+                  <span
+                    className="catmgr-name catmgr-name-editable"
+                    onClick={() => {
+                      setEditingId(cat.id);
+                      setEditingName(cat.name);
+                    }}
+                    title="Click to rename"
+                  >
+                    {cat.name}
+                  </span>
+                )}
                 {onCategoryDelete && (
                   <button
                     className="catmgr-delete"

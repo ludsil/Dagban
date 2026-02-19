@@ -1266,79 +1266,6 @@ html, body {
   white-space: nowrap;
 }
 
-/* Post-it creation form specific styles */
-.postit-creation {
-  min-height: 300px;
-}
-
-.postit-creation-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.postit-close {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-
-.postit-close:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.postit-cancel-btn {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.6);
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.postit-cancel-btn:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.25);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.postit-create-btn {
-  background-color: #4ade80;
-  border: none;
-  color: rgba(0, 0, 0, 0.9);
-  padding: 8px 20px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.postit-create-btn:hover {
-  background-color: #22c55e;
-}
-
-.postit-create-btn:disabled {
-  background-color: rgba(74, 222, 128, 0.3);
-  color: rgba(0, 0, 0, 0.4);
-  cursor: not-allowed;
-}
-
 /* Node Hover Tooltip - dark theme matching */
 .node-hover-tooltip {
   position: fixed;
@@ -3212,6 +3139,32 @@ html, body {
   white-space: nowrap;
 }
 
+.catmgr-name-editable {
+  cursor: text;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.catmgr-name-editable:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.catmgr-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+}
+
+.catmgr-rename-input:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
 .catmgr-delete {
   display: flex;
   align-items: center;
@@ -3363,12 +3316,56 @@ html, body {
   transition: transform 0.1s;
 }
 
+
 .header-chevron {
   transition: transform 0.15s ease;
 }
 
 .header-chevron.open {
   transform: rotate(180deg);
+}
+
+.project-rename-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: white;
+  font-size: 13px;
+  outline: none;
+}
+
+.project-rename-input:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.project-rename-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.project-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.project-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.project-action-btn-danger:hover {
+  background: rgba(220, 38, 38, 0.2);
+  color: #ef4444;
 }
 
 .dark {

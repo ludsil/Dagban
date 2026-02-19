@@ -1,34 +1,49 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DagbanGraph from '@/components/DagbanGraph';
-import { sampleGraph } from '@/lib/sample-data';
 import { convertMiserablesToDagban } from '@/lib/miserables-converter';
 import miserablesData from '@/lib/miserables.json';
 import { saveGraph, usePersistedGraph } from '@/lib/storage';
 import { useGraphUndo, type GraphUpdateOptions } from '@/lib/graph-undo';
 import type { DagbanGraph as GraphData, Card, Category, Traverser, User } from '@/lib/types';
 import { createUserId } from '@/lib/users';
+import { getProjects, createProject, deleteProject, updateProject, ensureDefaultProject, getEmptyGraph, type Project } from '@/lib/projects';
 
 type DatasetMode = 'sample' | 'miserables';
 
 function GraphHost({
   datasetMode,
   onDatasetModeChange,
+  projectId,
+  projectName,
+  projects,
+  onProjectSwitch,
+  onProjectCreate,
+  onProjectDelete,
+  onProjectRename,
 }: {
   datasetMode: DatasetMode;
   onDatasetModeChange: (mode: DatasetMode) => void;
+  projectId: string;
+  projectName: string;
+  projects: Project[];
+  onProjectSwitch: (projectId: string) => void;
+  onProjectCreate: (name: string) => void;
+  onProjectDelete: (projectId: string) => void;
+  onProjectRename: (projectId: string, name: string) => void;
 }) {
   const miserablesGraph = useMemo(() => convertMiserablesToDagban(miserablesData), []);
+  const emptyGraph = useMemo(() => getEmptyGraph(), []);
   const initialGraph = datasetMode === 'miserables'
     ? miserablesGraph
-    : sampleGraph;
-  const projectId = datasetMode === 'miserables'
+    : emptyGraph;
+  const effectiveProjectId = datasetMode === 'miserables'
     ? 'miserables-temp'
-    : 'default';
+    : projectId;
 
-  const [graph, setGraph] = usePersistedGraph(initialGraph, projectId);
-  const { applyGraphUpdate, handleUndo } = useGraphUndo(setGraph);
+  const [graph, setGraph] = usePersistedGraph(initialGraph, effectiveProjectId);
+  const { applyGraphUpdate, handleUndo, handleRedo } = useGraphUndo(setGraph);
 
   // Handle card updates
   const handleCardChange = useCallback((cardId: string, updates: Partial<GraphData['cards'][0]>) => {
@@ -99,9 +114,9 @@ function GraphHost({
     });
 
     if (nextGraphSnapshot) {
-      saveGraph(nextGraphSnapshot, projectId);
+      saveGraph(nextGraphSnapshot, effectiveProjectId);
     }
-  }, [applyGraphUpdate, projectId]);
+  }, [applyGraphUpdate, effectiveProjectId]);
 
   // Handle card deletion (also removes connected edges)
   const handleCardDelete = useCallback((cardId: string) => {
@@ -219,6 +234,13 @@ function GraphHost({
       onTraverserDelete={handleTraverserDelete}
       onGraphImport={handleGraphImport}
       onUndo={handleUndo}
+      onRedo={handleRedo}
+      projectName={projectName}
+      projects={projects}
+      onProjectSwitch={onProjectSwitch}
+      onProjectCreate={onProjectCreate}
+      onProjectDelete={onProjectDelete}
+      onProjectRename={onProjectRename}
       devDatasetMode={datasetMode}
       onDevDatasetModeChange={onDatasetModeChange}
     />
@@ -227,13 +249,62 @@ function GraphHost({
 
 export default function Home() {
   const [datasetMode, setDatasetMode] = useState<DatasetMode>('sample');
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // Load projects on mount — must run before GraphHost renders
+  useEffect(() => {
+    const defaultProject = ensureDefaultProject();
+    const allProjects = getProjects();
+    setProjects(allProjects);
+    setProjectId(defaultProject.id);
+  }, []);
+
+  const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
+  const projectName = currentProject?.name || 'Default Project';
+
+  const handleProjectSwitch = useCallback((id: string) => {
+    setProjectId(id);
+  }, []);
+
+  const handleProjectCreate = useCallback((name: string) => {
+    const project = createProject(name);
+    // Save an empty graph for the new project
+    saveGraph(getEmptyGraph(), project.id);
+    setProjects(getProjects());
+    setProjectId(project.id);
+  }, []);
+
+  const handleProjectDelete = useCallback((id: string) => {
+    deleteProject(id);
+    const remaining = getProjects();
+    setProjects(remaining);
+    if (id === projectId && remaining.length > 0) {
+      setProjectId(remaining[0].id);
+    }
+  }, [projectId]);
+
+  const handleProjectRename = useCallback((id: string, name: string) => {
+    updateProject(id, { name });
+    setProjects(getProjects());
+  }, []);
+
+  // Don't render until projects are loaded from localStorage
+  if (!projectId) return <div className="w-screen h-screen" />;
 
   return (
     <div className="w-screen h-screen">
       <GraphHost
-        key={datasetMode}
+        key={`${datasetMode}-${projectId}`}
         datasetMode={datasetMode}
         onDatasetModeChange={setDatasetMode}
+        projectId={projectId}
+        projectName={projectName}
+        projects={projects}
+        onProjectSwitch={handleProjectSwitch}
+        onProjectCreate={handleProjectCreate}
+        onProjectDelete={handleProjectDelete}
+        onProjectRename={handleProjectRename}
       />
     </div>
   );

@@ -14,6 +14,7 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
     { keys: ['N'], action: 'New blank root node' },
     { keys: ['/'], action: 'Search' },
     { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },
+    { keys: ['Cmd/Ctrl', 'Shift', 'Z'], action: 'Redo' },
     { keys: ['Shift', 'Click'], action: 'Connect selected → clicked node', separator: '+' },
     { keys: ['Space'], action: 'Hold to show free edges & nodes' },
     { keys: ['Esc'], action: 'Deselect node' },

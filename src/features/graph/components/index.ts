@@ -2,7 +2,6 @@
 export { CardDetailPanel } from './CardDetailPanel';
 export { NodeContextMenu } from './NodeContextMenu';
 export { EdgeContextMenu } from './EdgeContextMenu';
-export { CardCreationForm } from './CardCreationForm';
 export { ToastNotification } from './ToastNotification';
 export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 export { CategoryManager } from './CategoryManager';

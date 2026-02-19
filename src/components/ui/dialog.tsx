@@ -31,7 +31,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-0 z-[1400] bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-[2100] bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}
@@ -49,7 +49,7 @@ const DialogContent = React.forwardRef<
       ref={ref}
       data-slot="dialog-content"
       className={cn(
-        "fixed left-1/2 top-1/2 z-[1450] grid w-full max-w-sm -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-[var(--graph-modal-border)] bg-[var(--graph-modal-bg)] p-5 text-[var(--graph-modal-text)] shadow-lg outline-none",
+        "fixed left-1/2 top-1/2 z-[2150] grid w-full max-w-sm -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-[var(--graph-modal-border)] bg-[var(--graph-modal-bg)] p-5 text-[var(--graph-modal-text)] shadow-lg outline-none",
         className
       )}
       {...props}

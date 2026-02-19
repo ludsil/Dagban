@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 // Import extracted components
 import {
   CardDetailPanel,
-  CardCreationForm,
   ToastNotification,
   KeyboardShortcutsHelp,
   CategoryManager,
@@ -31,7 +30,6 @@ import {
   GraphNodeData,
   GraphLinkData,
   SelectedNodeInfo,
-  CardCreationState,
   EdgeContextMenuState,
   HoverTooltipState,
   ToastState,
@@ -64,6 +62,13 @@ interface Props {
   onTraverserDelete?: (traverserId: string) => void;
   onGraphImport?: (graph: GraphData) => void;
   onUndo?: () => boolean;
+  onRedo?: () => boolean;
+  projectName?: string;
+  projects?: { id: string; name: string }[];
+  onProjectSwitch?: (projectId: string) => void;
+  onProjectCreate?: (name: string) => void;
+  onProjectDelete?: (projectId: string) => void;
+  onProjectRename?: (projectId: string, name: string) => void;
   projectHud?: React.ReactNode;
   showSettingsProp?: boolean;
   triggerNewNode?: boolean;
@@ -96,6 +101,13 @@ export default function DagbanGraph({
   onTraverserDelete,
   onGraphImport,
   onUndo,
+  onRedo,
+  projectName,
+  projects,
+  onProjectSwitch,
+  onProjectCreate,
+  onProjectDelete,
+  onProjectRename,
   projectHud,
   showSettingsProp = true,
   triggerNewNode = false,
@@ -126,16 +138,8 @@ export default function DagbanGraph({
   const [fuseAnimationTime, setFuseAnimationTime] = useState(0);
   const fuseAnimationRef = useRef<number | null>(null);
 
-  // Card creation form state
-  const [cardCreation, setCardCreation] = useState<CardCreationState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    title: '',
-    description: '',
-    parentNodeId: null,
-    childNodeId: null,
-  });
+  // Pending node selection (for newly created cards)
+  const [pendingSelectNodeId, setPendingSelectNodeId] = useState<string | null>(null);
 
   // Hover tooltip state (tracks which node is hovered for keyboard shortcuts)
   const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState>({
@@ -602,8 +606,6 @@ export default function DagbanGraph({
     openRootNodeCreation,
     openDownstreamCreation,
     openUpstreamCreation,
-    closeCardCreation,
-    handleCardCreation,
     handleCardAssigneeChange,
     handleEdgeStartPickUser,
     openEdgeStartPicker,
@@ -630,7 +632,6 @@ export default function DagbanGraph({
     edgeContextMenu,
     selectedNode,
     focusedNodeId,
-    cardCreation,
     dragConnect,
     nodeRadius,
     cardById,
@@ -643,7 +644,7 @@ export default function DagbanGraph({
     setHoverTooltip,
     setEdgeContextMenu,
     setEdgeStartPicker,
-    setCardCreation,
+    setPendingSelectNodeId,
     setConnectionMode,
     setDragConnect,
     setRenderTick,
@@ -676,6 +677,18 @@ export default function DagbanGraph({
       openRootNodeCreation();
     }
   }, [triggerNewNode, openRootNodeCreation]);
+
+  // Auto-select newly created node once it appears in graph data
+  useEffect(() => {
+    if (!pendingSelectNodeId) return;
+    const node = graphDataView.nodes.find((n: GraphNodeData) => n.id === pendingSelectNodeId);
+    if (!node) return;
+    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 : 400;
+    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 : 300;
+    setSelectedNode({ node, screenX: centerX, screenY: centerY });
+    setFocusedNodeId(node.id);
+    setPendingSelectNodeId(null);
+  }, [pendingSelectNodeId, graphDataView.nodes]);
 
   // Clear focusedNodeId if the focused node is deleted or filtered out
   useEffect(() => {
@@ -878,6 +891,12 @@ export default function DagbanGraph({
         handleUndo();
       }
 
+      // Cmd+Shift+Z / Ctrl+Shift+Z - Redo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        onRedo?.();
+      }
+
       // N - New root node
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
@@ -1037,12 +1056,33 @@ export default function DagbanGraph({
     setShowCategoryManager(true);
   }, []);
 
+  const handleDuplicateNode = useCallback((node: GraphNodeData) => {
+    if (!onCardCreate) return;
+    const card = node.card;
+    const newCard: Card = {
+      id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      title: card.title + ' (copy)',
+      description: card.description,
+      categoryId: card.categoryId,
+      assignee: card.assignee,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    onCardCreate(newCard);
+  }, [onCardCreate]);
+
   const projectHudProps = useMemo(() => ({
     onDownloadGraph: handleDownloadGraph,
     onUploadGraph: handleUploadGraph,
     onNewRootNode: openRootNodeCreation,
     onOpenCategoryManager: handleOpenCategoryManager,
-  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation, handleOpenCategoryManager]);
+    projectName,
+    projects,
+    onProjectSwitch,
+    onProjectCreate,
+    onProjectDelete,
+    onProjectRename,
+  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation, handleOpenCategoryManager, projectName, projects, onProjectSwitch, onProjectCreate, onProjectDelete, onProjectRename]);
 
   const userHudProps = useMemo(() => ({
     users: data.users,
@@ -1215,16 +1255,7 @@ export default function DagbanGraph({
         dragConnect={dragConnect}
       />
 
-      {/* Card Creation Form */}
-      <CardCreationForm
-        state={cardCreation}
-        onClose={closeCardCreation}
-        onSubmit={handleCardCreation}
-        onTitleChange={(title) => setCardCreation(prev => ({ ...prev, title }))}
-        onDescriptionChange={(description) => setCardCreation(prev => ({ ...prev, description }))}
-      />
-
-      {/* Card Detail Panel (left-click on node) */}
+      {/* Card Detail Panel (left-click on node, or newly created node) */}
       {selectedNode && (
         <CardDetailPanel
           key={selectedNode.node.id}
@@ -1239,6 +1270,7 @@ export default function DagbanGraph({
           onLinkDownstream={startDownstreamConnection}
           onLinkUpstream={startUpstreamConnection}
           onDelete={handleDeleteNode}
+          onDuplicate={handleDuplicateNode}
           onOpenCategoryManager={handleOpenCategoryManager}
         />
       )}
@@ -1259,6 +1291,7 @@ export default function DagbanGraph({
         categories={data.categories}
         onCategoryAdd={onCategoryAdd}
         onCategoryDelete={onCategoryDelete}
+        onCategoryChange={onCategoryChange}
       />
 
     </div>

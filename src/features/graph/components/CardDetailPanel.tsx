@@ -17,7 +17,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Link, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Copy, Link, Plus, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -31,6 +31,7 @@ interface CardDetailPanelProps {
   onLinkDownstream?: (sourceNode: GraphNodeData) => void;
   onLinkUpstream?: (targetNode: GraphNodeData) => void;
   onDelete?: (node: GraphNodeData) => void;
+  onDuplicate?: (node: GraphNodeData) => void;
   onOpenCategoryManager?: () => void;
 }
 
@@ -46,6 +47,7 @@ export function CardDetailPanel({
   onLinkDownstream,
   onLinkUpstream,
   onDelete,
+  onDuplicate,
   onOpenCategoryManager,
 }: CardDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -63,11 +65,14 @@ export function CardDetailPanel({
   const [localCategoryId, setLocalCategoryId] = useState(card.categoryId);
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
 
-  // Resolve current color from local category selection for instant feedback
+  // Resolve current color — use burnt color if card is burnt, otherwise category color
+  const isBurnt = Boolean(card.burntAt);
+  const BURNT_COLOR = '#111827';
   const currentColor = useMemo(() => {
+    if (isBurnt) return BURNT_COLOR;
     const cat = categories.find(c => c.id === localCategoryId);
     return cat?.color || node.color;
-  }, [localCategoryId, categories, node.color]);
+  }, [isBurnt, localCategoryId, categories, node.color]);
   const colors = useMemo(() => getContrastColors(currentColor), [currentColor]);
 
   // Track shift key state
@@ -215,6 +220,13 @@ export function CardDetailPanel({
       onDelete(node);
     }
   }, [onClose, onDelete, node]);
+
+  // Handle Duplicate button
+  const handleDuplicate = useCallback(() => {
+    saveChanges();
+    onClose();
+    onDuplicate?.(node);
+  }, [saveChanges, onClose, onDuplicate, node]);
 
   // Calculate panel position - position to the right of the node, or left if near edge
   const panelWidth = 260;
@@ -389,7 +401,22 @@ export function CardDetailPanel({
             </Tooltip>
           </div>
           <div className="postit-actions-right">
-            <Tooltip>
+            <Tooltip delayDuration={100}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="postit-action-icon"
+                  onClick={handleDuplicate}
+                >
+                  <Copy className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Duplicate node</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip delayDuration={100}>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
