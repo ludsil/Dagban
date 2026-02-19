@@ -171,10 +171,6 @@ export default function DagbanGraph({
   // User manager dialog state
   const [showUserManager, setShowUserManager] = useState(false);
 
-  // Cycle tooltip: track hovered cycle edge + mouse position separately
-  const [hoveredCycleEdgeId, setHoveredCycleEdgeId] = useState<string | null>(null);
-  const mousePosRef = useRef({ x: 0, y: 0 });
-
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
     active: false,
@@ -401,27 +397,6 @@ export default function DagbanGraph({
     fuseAnimationTime,
     graphTheme,
   });
-
-  // Track mouse position for cycle tooltip (document-level, always fires)
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      mousePosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    };
-    document.addEventListener('mousemove', handler);
-    return () => document.removeEventListener('mousemove', handler);
-  }, []);
-
-  // Cycle tooltip: use react-force-graph's own onLinkHover callback
-  const handleLinkHover = useCallback((link: GraphLinkData | null) => {
-    if (link && cycleEdgeIds.has(link.edge.id)) {
-      setHoveredCycleEdgeId(link.edge.id);
-    } else {
-      setHoveredCycleEdgeId(null);
-    }
-  }, [cycleEdgeIds]);
 
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
@@ -1028,8 +1003,6 @@ export default function DagbanGraph({
     onNodeClick: handleNodeClick,
     onLinkClick: handleLinkClick,
     onNodeHover: handleNodeHover,
-    onLinkHover: handleLinkHover,
-    linkHoverPrecision: 20,
     onBackgroundClick: handleBackgroundClick,
     onNodeDrag: handleNodeDrag,
     onNodeDragEnd: handleNodeDragEnd,
@@ -1244,19 +1217,6 @@ export default function DagbanGraph({
 
       {/* Toast Notification */}
       <ToastNotification state={toast} onClose={hideToast} />
-
-      {/* Cycle tooltip */}
-      {hoveredCycleEdgeId && (
-        <div
-          className="cycle-tooltip"
-          style={{
-            left: `${mousePosRef.current.x + 12}px`,
-            top: `${mousePosRef.current.y - 8}px`,
-          }}
-        >
-          Cycle detected — this edge is part of a loop
-        </div>
-      )}
 
       {/* Keyboard Shortcuts Help */}
       <KeyboardShortcutsHelp

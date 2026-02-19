@@ -394,20 +394,19 @@ export function useCanvasRendering({
       ctx.fill();
     }
 
-    // Draw cycle warning triangle on edges that participate in a cycle
+    // Draw cycle warning badge on edges that participate in a cycle
     if (cycleEdgeIds.has(link.edge.id)) {
       const midX = (source.x + target.x) / 2;
       const midY = (source.y + target.y) / 2;
-      // Offset perpendicular to the edge so it doesn't overlap the arrow
       const edgeAngle = Math.atan2(target.y - source.y, target.x - source.x);
       const perpX = -Math.sin(edgeAngle);
       const perpY = Math.cos(edgeAngle);
-      const offset = Math.max(6 / globalScale, 3);
+      const offset = Math.max(8 / globalScale, 4);
       const cx = midX + perpX * offset;
       const cy = midY + perpY * offset;
 
-      const triSize = Math.max(5 / globalScale, 2.5);
-      // Upright equilateral triangle (point up)
+      // Small triangle icon
+      const triSize = Math.max(4 / globalScale, 2);
       ctx.beginPath();
       ctx.moveTo(cx, cy - triSize);
       ctx.lineTo(cx - triSize * 0.87, cy + triSize * 0.5);
@@ -416,11 +415,15 @@ export function useCanvasRendering({
       ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
       ctx.fill();
 
-      // Exclamation mark inside
-      const bangSize = triSize * 0.45;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(cx - bangSize * 0.15, cy - bangSize * 0.6, bangSize * 0.3, bangSize * 0.7);
-      ctx.fillRect(cx - bangSize * 0.15, cy + bangSize * 0.3, bangSize * 0.3, bangSize * 0.25);
+      // "cycle" label next to triangle
+      const labelSize = Math.max(9 / globalScale, 4);
+      ctx.save();
+      ctx.font = `500 ${labelSize}px Sans-Serif`;
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('cycle', cx + triSize + triSize * 0.4, cy);
+      ctx.restore();
     }
   }, [
     arrowMode,
