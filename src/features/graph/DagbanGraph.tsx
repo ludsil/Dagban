@@ -402,37 +402,31 @@ export default function DagbanGraph({
     graphTheme,
   });
 
-  // Cycle tooltip: hit-test against triangle canvas-pixel positions written by linkCanvasObject.
-  // This bypasses all react-force-graph coordinate APIs — the positions come directly from
-  // ctx.getTransform() during rendering, so they're guaranteed to match what's on screen.
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || cycleEdgeIds.size === 0) return;
-    const handler = (e: PointerEvent) => {
-      // Find the canvas element to convert mouse position to canvas pixels
-      const canvas = container.querySelector('canvas');
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      // Convert mouse CSS-pixels to canvas-pixel coordinates
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const canvasX = (e.clientX - rect.left) * scaleX;
-      const canvasY = (e.clientY - rect.top) * scaleY;
-      const HIT_RADIUS = 16 * scaleX; // 16 CSS-px hit area in canvas pixels
-      for (const [edgeId, pos] of cycleTrianglePosRef.current) {
-        if (!cycleEdgeIds.has(edgeId)) continue;
-        const dx = canvasX - pos.canvasX;
-        const dy = canvasY - pos.canvasY;
-        if (dx * dx + dy * dy < HIT_RADIUS * HIT_RADIUS) {
-          setCycleTooltip({ visible: true, x: e.clientX - rect.left, y: e.clientY - rect.top });
-          return;
-        }
+  // Cycle tooltip: hit-test triangle canvas-pixel positions written by linkCanvasObject.
+  const handleCycleTooltipMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (cycleEdgeIds.size === 0 || cycleTrianglePosRef.current.size === 0) {
+      if (cycleTooltip.visible) setCycleTooltip(prev => ({ ...prev, visible: false }));
+      return;
+    }
+    const canvas = containerRef.current?.querySelector('canvas');
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const canvasX = (e.clientX - rect.left) * scaleX;
+    const canvasY = (e.clientY - rect.top) * scaleY;
+    const HIT_RADIUS = 16 * scaleX; // 16 CSS-px hit area in canvas pixels
+    for (const [edgeId, pos] of cycleTrianglePosRef.current) {
+      if (!cycleEdgeIds.has(edgeId)) continue;
+      const dx = canvasX - pos.canvasX;
+      const dy = canvasY - pos.canvasY;
+      if (dx * dx + dy * dy < HIT_RADIUS * HIT_RADIUS) {
+        setCycleTooltip({ visible: true, x: e.clientX - rect.left, y: e.clientY - rect.top });
+        return;
       }
-      setCycleTooltip(prev => prev.visible ? { ...prev, visible: false } : prev);
-    };
-    container.addEventListener('pointermove', handler);
-    return () => container.removeEventListener('pointermove', handler);
-  }, [cycleEdgeIds]);
+    }
+    if (cycleTooltip.visible) setCycleTooltip(prev => ({ ...prev, visible: false }));
+  }, [cycleEdgeIds, cycleTooltip.visible]);
 
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
@@ -1180,6 +1174,7 @@ export default function DagbanGraph({
       onDragOver={handleUserDragOver}
       onDrop={handleUserDrop}
       onPointerDown={handleTraverserPointerDown}
+      onPointerMove={handleCycleTooltipMove}
     >
       <GraphHudLeft projectHud={projectHud} projectHudProps={projectHudProps} />
       <GraphHudRight
