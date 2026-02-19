@@ -10,9 +10,14 @@ interface KeyboardShortcutsHelpProps {
 export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHelpProps) {
   const shortcuts: { keys: string[]; action: string; context?: string; separator?: string }[] = [
     { keys: ['M'], action: 'Hotkey map' },
+    { keys: ['C'], action: 'Category manager' },
     { keys: ['N'], action: 'New blank root node' },
     { keys: ['/'], action: 'Search' },
     { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },
+    { keys: ['Cmd/Ctrl', 'Shift', 'Z'], action: 'Redo' },
+    { keys: ['Shift', 'Click'], action: 'Connect selected → clicked node', separator: '+' },
+    { keys: ['Space'], action: 'Hold to show free edges & nodes' },
+    { keys: ['Esc'], action: 'Deselect node' },
   ];
 
   return (

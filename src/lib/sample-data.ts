@@ -5,17 +5,18 @@ export const sampleGraph: DagbanGraph = {
   users: placeholderUsers,
   traversers: [],
   categories: [
-    { id: 'design', name: 'Design', color: '#8b5cf6' },      // purple
-    { id: 'frontend', name: 'Frontend', color: '#3b82f6' },   // blue
-    { id: 'backend', name: 'Backend', color: '#10b981' },     // green
-    { id: 'devops', name: 'DevOps', color: '#f59e0b' },       // amber
+    { id: 'orange', name: 'Orange', color: '#F8A041' },
+    { id: 'beige', name: 'Beige', color: '#F6EBD9' },
+    { id: 'light-blue', name: 'Light Blue', color: '#41A6D8' },
+    { id: 'light-green', name: 'Light Green', color: '#94FE8F' },
+    { id: 'light-grey', name: 'Light Grey', color: '#525492' },
   ],
   cards: [
     {
       id: 'wireframes',
       title: 'Create wireframes',
       description: 'Design initial wireframes for the app',
-      categoryId: 'design',
+      categoryId: 'orange',
       assignee: 'alice',
       createdAt: '2024-01-01',
       updatedAt: '2024-01-01',
@@ -24,7 +25,7 @@ export const sampleGraph: DagbanGraph = {
       id: 'ui-components',
       title: 'Build UI components',
       description: 'Create reusable React components',
-      categoryId: 'frontend',
+      categoryId: 'light-blue',
       assignee: 'bob',
       createdAt: '2024-01-02',
       updatedAt: '2024-01-02',
@@ -33,7 +34,7 @@ export const sampleGraph: DagbanGraph = {
       id: 'api-design',
       title: 'Design API',
       description: 'Define REST API endpoints',
-      categoryId: 'backend',
+      categoryId: 'light-green',
       assignee: 'charlie',
       createdAt: '2024-01-01',
       updatedAt: '2024-01-01',
@@ -42,7 +43,7 @@ export const sampleGraph: DagbanGraph = {
       id: 'api-impl',
       title: 'Implement API',
       description: 'Build the backend API',
-      categoryId: 'backend',
+      categoryId: 'light-green',
       createdAt: '2024-01-03',
       updatedAt: '2024-01-03',
     },
@@ -50,7 +51,7 @@ export const sampleGraph: DagbanGraph = {
       id: 'integration',
       title: 'Frontend-Backend integration',
       description: 'Connect UI to API',
-      categoryId: 'frontend',
+      categoryId: 'beige',
       createdAt: '2024-01-04',
       updatedAt: '2024-01-04',
     },
@@ -58,7 +59,7 @@ export const sampleGraph: DagbanGraph = {
       id: 'deploy',
       title: 'Deploy to production',
       description: 'Set up CI/CD and deploy',
-      categoryId: 'devops',
+      categoryId: 'light-grey',
       createdAt: '2024-01-05',
       updatedAt: '2024-01-05',
     },

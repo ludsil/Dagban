@@ -120,6 +120,8 @@ export function GraphOverlays({
           className="burn-confirm"
           style={{ left: `${pendingBurnAnchor.x}px`, top: `${pendingBurnAnchor.y}px` }}
           onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="burn-confirm-title">Is the task done?</div>
           <div className="burn-confirm-actions">
@@ -144,6 +146,8 @@ export function GraphOverlays({
           className="edge-start-picker"
           style={{ left: `${edgeStartPicker.x}px`, top: `${edgeStartPicker.y}px` }}
           onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="edge-start-title">Start progress</div>
           <div className="edge-start-users">

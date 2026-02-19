@@ -44,6 +44,7 @@ export type UseThreeTraverserRenderingProps = {
   // Drag highlighting
   draggingUserId: string | null;
   draggingTraverserId: string | null;
+  spaceHighlightRef: React.RefObject<boolean>;
   eligibleTraverserEdgeIds: Set<string>;
   rootActiveNodeIds: Set<string>;
   rootTraverserByNodeId: Map<string, Traverser>;
@@ -81,6 +82,7 @@ export function useThreeTraverserRendering({
   graphTheme,
   draggingUserId,
   draggingTraverserId,
+  spaceHighlightRef,
   eligibleTraverserEdgeIds,
   rootActiveNodeIds,
   rootTraverserByNodeId,
@@ -178,7 +180,7 @@ export function useThreeTraverserRendering({
     ctx.clearRect(0, 0, w, h);
 
     // --- Draw drag highlighting (eligible edges + root rings) ---
-    const isDragging = Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId);
+    const isDragging = Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current;
     if (isDragging) {
       // Highlight eligible edges with cyan glow
       for (const edge of data.edges) {

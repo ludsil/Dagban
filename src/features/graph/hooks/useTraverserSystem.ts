@@ -25,7 +25,7 @@ export type UseTraverserSystemProps = {
   nodeRadius: number;
   rootRingRadius: number;
   traverserHitRadius: number;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   renderTick: number;
   graphDataView: { nodes: GraphNodeData[]; links: GraphLinkData[] };
   nodeByIdRef: React.RefObject<Map<string, GraphNodeData>>;

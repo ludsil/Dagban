@@ -339,7 +339,7 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
       const link = document.createElement('a');
       link.href = url;
       const stamp = new Date().toISOString().slice(0, 10);
-      link.download = `${project.name || 'dagban'}-${stamp}.json`;
+      link.download = `${project?.name || 'dagban'}-${stamp}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -347,7 +347,7 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
     } catch (error) {
       console.error('Failed to download graph JSON', error);
     }
-  }, [graph, project.name]);
+  }, [graph, project?.name]);
 
   const handleUploadGraph = useCallback((file: File) => {
     const reader = new FileReader();

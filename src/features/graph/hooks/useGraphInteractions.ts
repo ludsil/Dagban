@@ -4,7 +4,6 @@ import type {
   GraphNodeData,
   GraphLinkData,
   SelectedNodeInfo,
-  CardCreationState,
   EdgeContextMenuState,
   HoverTooltipState,
   ToastState,
@@ -43,7 +42,7 @@ export interface UseGraphInteractionsProps {
   edgeStartPicker: { edgeId: string; x: number; y: number } | null;
   edgeContextMenu: EdgeContextMenuState;
   selectedNode: SelectedNodeInfo | null;
-  cardCreation: CardCreationState;
+  focusedNodeId: string | null;
   dragConnect: DragConnectState;
   nodeRadius: number;
 
@@ -56,10 +55,11 @@ export interface UseGraphInteractionsProps {
 
   // State setters
   setSelectedNode: React.Dispatch<React.SetStateAction<SelectedNodeInfo | null>>;
+  setFocusedNodeId: React.Dispatch<React.SetStateAction<string | null>>;
   setHoverTooltip: React.Dispatch<React.SetStateAction<HoverTooltipState>>;
   setEdgeContextMenu: React.Dispatch<React.SetStateAction<EdgeContextMenuState>>;
   setEdgeStartPicker: React.Dispatch<React.SetStateAction<{ edgeId: string; x: number; y: number } | null>>;
-  setCardCreation: React.Dispatch<React.SetStateAction<CardCreationState>>;
+  setPendingSelectNodeId: React.Dispatch<React.SetStateAction<string | null>>;
   setConnectionMode: React.Dispatch<React.SetStateAction<ConnectionModeState>>;
   setDragConnect: React.Dispatch<React.SetStateAction<DragConnectState>>;
   setRenderTick: React.Dispatch<React.SetStateAction<number>>;
@@ -110,7 +110,7 @@ export function useGraphInteractions({
   edgeStartPicker,
   edgeContextMenu,
   selectedNode,
-  cardCreation,
+  focusedNodeId,
   dragConnect,
   nodeRadius,
   cardById,
@@ -119,10 +119,11 @@ export function useGraphInteractions({
   rootActiveNodeIds,
   eligibleTraverserEdgeIds,
   setSelectedNode,
+  setFocusedNodeId,
   setHoverTooltip,
   setEdgeContextMenu,
   setEdgeStartPicker,
-  setCardCreation,
+  setPendingSelectNodeId,
   setConnectionMode,
   setDragConnect,
   setRenderTick,
@@ -255,9 +256,10 @@ export function useGraphInteractions({
       return;
     }
 
-    // Check if edge already exists
+    // Check if edge already exists (either direction)
     const edgeExists = data.edges.some(
-      e => e.source === sourceId && e.target === targetId
+      e => (e.source === sourceId && e.target === targetId) ||
+           (e.source === targetId && e.target === sourceId)
     );
     if (edgeExists) {
       showToast('Connection already exists', 'warning');
@@ -275,8 +277,8 @@ export function useGraphInteractions({
 
   // --- Card creation ---
 
-  // Fast root-node spawn for hotkey flow (blank title/description, editable later).
-  const createEmptyRootNode = useCallback(() => {
+  // Helper: create a blank card and queue it for selection
+  const createAndSelectCard = useCallback((parentCardId?: string, childCardId?: string) => {
     if (!onCardCreate) return;
     const now = new Date().toISOString();
     const newCard: Card = {
@@ -287,93 +289,30 @@ export function useGraphInteractions({
       createdAt: now,
       updatedAt: now,
     };
-    onCardCreate(newCard);
-  }, [onCardCreate, themedCategories]);
+    onCardCreate(newCard, parentCardId, childCardId);
+    setPendingSelectNodeId(newCard.id);
+  }, [onCardCreate, themedCategories, setPendingSelectNodeId]);
 
-  const openRootNodeCreation = useCallback((initialTitle?: string) => {
-    // Center on screen
-    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
-    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
+  // Fast root-node spawn (also used by "New node" button)
+  const createEmptyRootNode = useCallback(() => {
+    createAndSelectCard();
+  }, [createAndSelectCard]);
 
-    setCardCreation({
-      visible: true,
-      x: centerX,
-      y: centerY,
-      title: initialTitle || '',
-      description: '',
-      parentNodeId: null,
-      childNodeId: null,
-    });
-  }, []);
+  const openRootNodeCreation = useCallback((_initialTitle?: string) => {
+    createAndSelectCard();
+  }, [createAndSelectCard]);
 
   const openDownstreamCreation = useCallback((parentNode: GraphNodeData) => {
-    // Position near the center of the screen
-    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
-    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
-
-    setCardCreation({
-      visible: true,
-      x: centerX,
-      y: centerY,
-      title: '',
-      description: '',
-      parentNodeId: parentNode.id,
-      childNodeId: null,
-    });
-  }, []);
+    createAndSelectCard(parentNode.id);
+  }, [createAndSelectCard]);
 
   const openUpstreamCreation = useCallback((childNode: GraphNodeData) => {
     if (isBurntNodeId(childNode.id)) {
       showToast('Cannot add dependencies to a burnt node', 'warning');
       return;
     }
-    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 - 160 : 400;
-    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 - 120 : 300;
-
-    setCardCreation({
-      visible: true,
-      x: centerX,
-      y: centerY,
-      title: '',
-      description: '',
-      parentNodeId: null,
-      childNodeId: childNode.id,
-    });
-  }, [isBurntNodeId, showToast]);
-
-  const closeCardCreation = useCallback(() => {
-    setCardCreation(prev => ({ ...prev, visible: false, title: '', description: '', parentNodeId: null, childNodeId: null }));
-  }, []);
-
-  const handleCardCreation = useCallback(() => {
-    const titleValue = typeof cardCreation.title === 'string' ? cardCreation.title : '';
-    if (!titleValue.trim() || !onCardCreate) return;
-    const descriptionValue = typeof cardCreation.description === 'string' ? cardCreation.description : '';
-
-    if (cardCreation.childNodeId && isBurntNodeId(cardCreation.childNodeId)) {
-      showToast('Cannot add dependencies to a burnt node', 'warning');
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const newCard: Card = {
-      id: generateId(),
-      title: titleValue.trim(),
-      description: descriptionValue.trim() || undefined,
-      categoryId: themedCategories.length > 0 ? themedCategories[0].id : '',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    // Create the card with optional parent (downstream) or child (upstream)
-    onCardCreate(
-      newCard,
-      cardCreation.parentNodeId || undefined,
-      cardCreation.childNodeId || undefined
-    );
-
-    closeCardCreation();
-  }, [cardCreation, themedCategories, onCardCreate, closeCardCreation, isBurntNodeId, showToast]);
+    createAndSelectCard(undefined, childNode.id);
+  }, [createAndSelectCard, isBurntNodeId, showToast]);
 
   // --- Traverser/assignee handlers ---
 
@@ -551,7 +490,6 @@ export function useGraphInteractions({
   ]);
 
   const handleLinkClick = useCallback((link: GraphLinkData, event: MouseEvent) => {
-    if (viewMode !== '2D') return;
     if (connectionMode.active) return;
     if (!onTraverserCreate && !onEdgeDelete) return;
     if (!event) return;
@@ -575,7 +513,6 @@ export function useGraphInteractions({
     cancelPendingBurn();
     suppressNextBackgroundClick();
   }, [
-    viewMode,
     connectionMode.active,
     onTraverserCreate,
     onEdgeDelete,
@@ -601,7 +538,35 @@ export function useGraphInteractions({
       return;
     }
 
-    // Otherwise show the detail panel
+    // Shift+click: create edge from focused node to clicked node
+    if (event.shiftKey && focusedNodeId && focusedNodeId !== node.id && onEdgeCreate) {
+      // Validate: no burnt target, no duplicate edge
+      if (isBurntNodeId(node.id)) {
+        showToast('Cannot add dependencies to a burnt node', 'warning');
+      } else {
+        const edgeExists = data.edges.some(
+          e => (e.source === focusedNodeId && e.target === node.id) ||
+               (e.source === node.id && e.target === focusedNodeId)
+        );
+        if (edgeExists) {
+          showToast('Connection already exists', 'warning');
+        } else {
+          onEdgeCreate(focusedNodeId, node.id);
+          showToast(`Connected → "${node.title}"`, 'success');
+        }
+      }
+      // Always advance focus to clicked node (enables chaining)
+      setFocusedNodeId(node.id);
+      setSelectedNode({
+        node,
+        screenX: event.clientX,
+        screenY: event.clientY,
+      });
+      return;
+    }
+
+    // Select node: set focus + open detail panel
+    setFocusedNodeId(node.id);
     setSelectedNode({
       node,
       screenX: event.clientX,
@@ -614,6 +579,11 @@ export function useGraphInteractions({
     pendingBurn,
     cancelPendingBurn,
     closeEdgeContextMenu,
+    focusedNodeId,
+    onEdgeCreate,
+    isBurntNodeId,
+    data.edges,
+    showToast,
   ]);
 
   const handleNodeHover = useCallback((node: GraphNodeData | null) => {
@@ -640,6 +610,7 @@ export function useGraphInteractions({
     if (selectedNode) {
       setSelectedNode(null);
     }
+    setFocusedNodeId(null);
     closeEdgeContextMenu();
     if (connectionMode.active) {
       cancelConnectionMode();
@@ -699,9 +670,10 @@ export function useGraphInteractions({
       return;
     }
 
-    // Check if edge already exists
+    // Check if edge already exists (either direction)
     const edgeExists = data.edges.some(
-      e => e.source === sourceNode.id && e.target === targetNode.id
+      e => (e.source === sourceNode.id && e.target === targetNode.id) ||
+           (e.source === targetNode.id && e.target === sourceNode.id)
     );
     if (edgeExists) {
       showToast('Connection already exists', 'warning');
@@ -751,7 +723,7 @@ export function useGraphInteractions({
         // Start animation loop
         const animate = () => {
           const elapsed = performance.now() - now;
-          const progress = Math.min(elapsed / 1000, 1); // 1.0 seconds
+          const progress = Math.min(elapsed / 650, 1); // 0.65 seconds
 
           if (progress >= 1) {
             // Connection complete
@@ -813,8 +785,6 @@ export function useGraphInteractions({
     openRootNodeCreation,
     openDownstreamCreation,
     openUpstreamCreation,
-    closeCardCreation,
-    handleCardCreation,
 
     // Traverser/assignee handlers
     createTraverserForEdge,

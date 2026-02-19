@@ -19,9 +19,9 @@ import { Button } from '@/components/ui/button';
 // Import extracted components
 import {
   CardDetailPanel,
-  CardCreationForm,
   ToastNotification,
   KeyboardShortcutsHelp,
+  CategoryManager,
   GraphCanvasLayer,
   GraphHudLeft,
   GraphHudRight,
@@ -30,7 +30,6 @@ import {
   GraphNodeData,
   GraphLinkData,
   SelectedNodeInfo,
-  CardCreationState,
   EdgeContextMenuState,
   HoverTooltipState,
   ToastState,
@@ -63,6 +62,13 @@ interface Props {
   onTraverserDelete?: (traverserId: string) => void;
   onGraphImport?: (graph: GraphData) => void;
   onUndo?: () => boolean;
+  onRedo?: () => boolean;
+  projectName?: string;
+  projects?: { id: string; name: string }[];
+  onProjectSwitch?: (projectId: string) => void;
+  onProjectCreate?: (name: string) => void;
+  onProjectDelete?: (projectId: string) => void;
+  onProjectRename?: (projectId: string, name: string) => void;
   projectHud?: React.ReactNode;
   showSettingsProp?: boolean;
   triggerNewNode?: boolean;
@@ -82,6 +88,9 @@ function clamp(value: number, min: number, max: number): number {
 export default function DagbanGraph({
   data,
   onCardChange,
+  onCategoryChange,
+  onCategoryAdd,
+  onCategoryDelete,
   onCardCreate,
   onCardDelete,
   onEdgeCreate,
@@ -92,6 +101,13 @@ export default function DagbanGraph({
   onTraverserDelete,
   onGraphImport,
   onUndo,
+  onRedo,
+  projectName,
+  projects,
+  onProjectSwitch,
+  onProjectCreate,
+  onProjectDelete,
+  onProjectRename,
   projectHud,
   showSettingsProp = true,
   triggerNewNode = false,
@@ -116,20 +132,14 @@ export default function DagbanGraph({
   const showSettings = showSettingsProp;
 
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const spaceHighlightRef = useRef(false);
   const [renderTick, setRenderTick] = useState(0);
   const [fuseAnimationTime, setFuseAnimationTime] = useState(0);
   const fuseAnimationRef = useRef<number | null>(null);
 
-  // Card creation form state
-  const [cardCreation, setCardCreation] = useState<CardCreationState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    title: '',
-    description: '',
-    parentNodeId: null,
-    childNodeId: null,
-  });
+  // Pending node selection (for newly created cards)
+  const [pendingSelectNodeId, setPendingSelectNodeId] = useState<string | null>(null);
 
   // Hover tooltip state (tracks which node is hovered for keyboard shortcuts)
   const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState>({
@@ -151,6 +161,9 @@ export default function DagbanGraph({
 
   // Keyboard shortcuts help state
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+  // Category manager dialog state
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   // Add user dialog state
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
@@ -569,6 +582,7 @@ export default function DagbanGraph({
     graphTheme,
     draggingUserId,
     draggingTraverserId,
+    spaceHighlightRef,
     eligibleTraverserEdgeIds,
     rootActiveNodeIds,
     rootTraverserByNodeId,
@@ -592,8 +606,6 @@ export default function DagbanGraph({
     openRootNodeCreation,
     openDownstreamCreation,
     openUpstreamCreation,
-    closeCardCreation,
-    handleCardCreation,
     handleCardAssigneeChange,
     handleEdgeStartPickUser,
     openEdgeStartPicker,
@@ -619,7 +631,7 @@ export default function DagbanGraph({
     edgeStartPicker,
     edgeContextMenu,
     selectedNode,
-    cardCreation,
+    focusedNodeId,
     dragConnect,
     nodeRadius,
     cardById,
@@ -628,10 +640,11 @@ export default function DagbanGraph({
     rootActiveNodeIds,
     eligibleTraverserEdgeIds,
     setSelectedNode,
+    setFocusedNodeId,
     setHoverTooltip,
     setEdgeContextMenu,
     setEdgeStartPicker,
-    setCardCreation,
+    setPendingSelectNodeId,
     setConnectionMode,
     setDragConnect,
     setRenderTick,
@@ -664,6 +677,25 @@ export default function DagbanGraph({
       openRootNodeCreation();
     }
   }, [triggerNewNode, openRootNodeCreation]);
+
+  // Auto-select newly created node once it appears in graph data
+  useEffect(() => {
+    if (!pendingSelectNodeId) return;
+    const node = graphDataView.nodes.find((n: GraphNodeData) => n.id === pendingSelectNodeId);
+    if (!node) return;
+    const centerX = typeof window !== 'undefined' ? window.innerWidth / 2 : 400;
+    const centerY = typeof window !== 'undefined' ? window.innerHeight / 2 : 300;
+    setSelectedNode({ node, screenX: centerX, screenY: centerY });
+    setFocusedNodeId(node.id);
+    setPendingSelectNodeId(null);
+  }, [pendingSelectNodeId, graphDataView.nodes]);
+
+  // Clear focusedNodeId if the focused node is deleted or filtered out
+  useEffect(() => {
+    if (focusedNodeId && !graphDataView.nodes.some((n: GraphNodeData) => n.id === focusedNodeId)) {
+      setFocusedNodeId(null);
+    }
+  }, [focusedNodeId, graphDataView.nodes]);
 
   // ============================================================
   // Effects: Fuse animation, wheel/pointer, resize, 3D camera
@@ -794,12 +826,56 @@ export default function DagbanGraph({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, css2DRendererInstance, bumpRenderTick]);
 
-  // Keyboard shortcuts handler
+  // Keyboard shortcuts handler (includes Space highlight)
   useEffect(() => {
+    const refreshGraph = () => {
+      graphRef.current?.refresh?.();
+      // refresh() can reset the canvas cursor; restore it
+      const canvas = containerRef.current?.querySelector('canvas');
+      if (canvas) (canvas as HTMLElement).style.cursor = '';
+    };
+    const startSpaceHighlight = () => {
+      if (spaceHighlightRef.current) return;
+      spaceHighlightRef.current = true;
+      refreshGraph();
+    };
+    const stopSpaceHighlight = () => {
+      if (!spaceHighlightRef.current) return;
+      spaceHighlightRef.current = false;
+      refreshGraph();
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if typing in an input or textarea
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      const isTyping = target.isConnected && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      // --- Global keys: handled even when typing in inputs ---
+
+      // Escape — blurs input, then progressively cancels state
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (isTyping && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        if (pendingBurn) { cancelPendingBurn(); return; }
+        if (previewBurn) { setPreviewBurn(null); return; }
+        if (edgeStartPicker) { closeEdgeStartPicker(); return; }
+        if (connectionMode.active) { cancelConnectionMode(); showToast('Connection cancelled', 'info'); return; }
+        if (focusedNodeId || selectedNode) {
+          setFocusedNodeId(null);
+          setSelectedNode(null);
+          return;
+        }
+        return;
+      }
+
+      // --- Below: skipped when typing in an input or textarea ---
+      if (isTyping) return;
+
+      // Space — hold to highlight eligible edges and root nodes
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        startSpaceHighlight();
         return;
       }
 
@@ -809,36 +885,16 @@ export default function DagbanGraph({
         return;
       }
 
-      if (pendingBurn && e.key === 'Escape') {
-        e.preventDefault();
-        cancelPendingBurn();
-        return;
-      }
-
-      if (previewBurn && e.key === 'Escape') {
-        e.preventDefault();
-        setPreviewBurn(null);
-        return;
-      }
-
-      if (edgeStartPicker && e.key === 'Escape') {
-        e.preventDefault();
-        closeEdgeStartPicker();
-        return;
-      }
-
-      // Escape cancels connection mode
-      if (e.key === 'Escape' && connectionMode.active) {
-        e.preventDefault();
-        cancelConnectionMode();
-        showToast('Connection cancelled', 'info');
-        return;
-      }
-
       // Cmd+Z / Ctrl+Z - Undo
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
+      }
+
+      // Cmd+Shift+Z / Ctrl+Shift+Z - Redo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        onRedo?.();
       }
 
       // N - New root node
@@ -858,10 +914,30 @@ export default function DagbanGraph({
         e.preventDefault();
         setShowShortcutsHelp(prev => !prev);
       }
+
+      // C - Category manager
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        setShowCategoryManager(prev => !prev);
+      }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.code === 'Space') {
+        stopSpaceHighlight();
+      }
+    };
+
+    const handleBlur = () => stopSpaceHighlight();
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, [
     hoverTooltip.nodeId,
     connectionMode.active,
@@ -877,6 +953,8 @@ export default function DagbanGraph({
     createEmptyRootNode,
     cancelConnectionMode,
     showToast,
+    focusedNodeId,
+    selectedNode,
   ]);
 
   // ============================================================
@@ -895,6 +973,8 @@ export default function DagbanGraph({
     connectionMode,
     dragConnect,
     draggingUserId,
+    focusedNodeId,
+    spaceHighlightRef,
     pendingBurn,
     previewBurn,
     detachedDrag,
@@ -972,11 +1052,37 @@ export default function DagbanGraph({
     return getScreenCoords(node.x, node.y);
   }, [pendingBurn?.targetNodeId, pendingBurn?.anchor, viewMode, renderTick, getScreenCoords]);
 
+  const handleOpenCategoryManager = useCallback(() => {
+    setShowCategoryManager(true);
+  }, []);
+
+  const handleDuplicateNode = useCallback((node: GraphNodeData) => {
+    if (!onCardCreate) return;
+    const card = node.card;
+    const newCard: Card = {
+      id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      title: card.title + ' (copy)',
+      description: card.description,
+      categoryId: card.categoryId,
+      assignee: card.assignee,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    onCardCreate(newCard);
+  }, [onCardCreate]);
+
   const projectHudProps = useMemo(() => ({
     onDownloadGraph: handleDownloadGraph,
     onUploadGraph: handleUploadGraph,
     onNewRootNode: openRootNodeCreation,
-  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation]);
+    onOpenCategoryManager: handleOpenCategoryManager,
+    projectName,
+    projects,
+    onProjectSwitch,
+    onProjectCreate,
+    onProjectDelete,
+    onProjectRename,
+  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation, handleOpenCategoryManager, projectName, projects, onProjectSwitch, onProjectCreate, onProjectDelete, onProjectRename]);
 
   const userHudProps = useMemo(() => ({
     users: data.users,
@@ -1149,16 +1255,7 @@ export default function DagbanGraph({
         dragConnect={dragConnect}
       />
 
-      {/* Card Creation Form */}
-      <CardCreationForm
-        state={cardCreation}
-        onClose={closeCardCreation}
-        onSubmit={handleCardCreation}
-        onTitleChange={(title) => setCardCreation(prev => ({ ...prev, title }))}
-        onDescriptionChange={(description) => setCardCreation(prev => ({ ...prev, description }))}
-      />
-
-      {/* Card Detail Panel (left-click on node) */}
+      {/* Card Detail Panel (left-click on node, or newly created node) */}
       {selectedNode && (
         <CardDetailPanel
           key={selectedNode.node.id}
@@ -1167,11 +1264,13 @@ export default function DagbanGraph({
           onCardChange={onCardChange}
           onAssigneeChange={handleCardAssigneeChange}
           users={data.users}
+          categories={data.categories}
           onCreateDownstream={openDownstreamCreation}
           onCreateUpstream={openUpstreamCreation}
           onLinkDownstream={startDownstreamConnection}
           onLinkUpstream={startUpstreamConnection}
           onDelete={handleDeleteNode}
+          onOpenCategoryManager={handleOpenCategoryManager}
         />
       )}
 
@@ -1182,6 +1281,16 @@ export default function DagbanGraph({
       <KeyboardShortcutsHelp
         visible={showShortcutsHelp}
         onClose={() => setShowShortcutsHelp(false)}
+      />
+
+      {/* Category Manager */}
+      <CategoryManager
+        visible={showCategoryManager}
+        onClose={() => setShowCategoryManager(false)}
+        categories={data.categories}
+        onCategoryAdd={onCategoryAdd}
+        onCategoryDelete={onCategoryDelete}
+        onCategoryChange={onCategoryChange}
       />
 
     </div>

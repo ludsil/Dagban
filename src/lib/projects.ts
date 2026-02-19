@@ -1,5 +1,6 @@
 // Project management types and storage utilities
 import { DagbanGraph, placeholderUsers } from './types';
+import { STANDARD_COLORS } from './colors';
 
 export interface Project {
   id: string;
@@ -122,24 +123,43 @@ export function deleteProject(projectId: string): boolean {
  */
 export function getEmptyGraph(): DagbanGraph {
   const now = new Date().toISOString();
-  const rootCardId = `card-root-${now}`;
+  const ts = Date.now();
+  const card1Id = `card-${ts}-a`;
+  const card2Id = `card-${ts}-b`;
+  // Pick two different random categories from all standard colors
+  const idx1 = Math.floor(Math.random() * STANDARD_COLORS.length);
+  let idx2 = Math.floor(Math.random() * (STANDARD_COLORS.length - 1));
+  if (idx2 >= idx1) idx2++;
+  const cat1 = STANDARD_COLORS[idx1];
+  const cat2 = STANDARD_COLORS[idx2];
   return {
     users: placeholderUsers,
     traversers: [],
     categories: [
-      { id: 'default', name: 'General', color: '#3b82f6' },
+      { id: cat1.id, name: 'Untitled 1', color: cat1.color },
+      { id: cat2.id, name: 'Untitled 2', color: cat2.color },
     ],
     cards: [
       {
-        id: rootCardId,
+        id: card1Id,
         title: 'Start here',
         description: 'Add notes or connect tasks from this root node.',
-        categoryId: 'default',
+        categoryId: cat1.id,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: card2Id,
+        title: 'Next step',
+        description: 'Chain more nodes to map out your workflow.',
+        categoryId: cat2.id,
         createdAt: now,
         updatedAt: now,
       },
     ],
-    edges: [],
+    edges: [
+      { id: `edge-${ts}`, source: card1Id, target: card2Id },
+    ],
   };
 }
 

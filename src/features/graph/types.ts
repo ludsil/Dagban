@@ -58,17 +58,6 @@ export interface EdgeContextMenuState {
   edgeId: string | null;
 }
 
-// Card creation form state
-export interface CardCreationState {
-  visible: boolean;
-  x: number;
-  y: number;
-  title: string;
-  description: string;
-  parentNodeId: string | null; // null for root node, string for downstream task
-  childNodeId: string | null; // string for upstream dependency (new node becomes parent of this)
-}
-
 // Connection mode state (for creating edges)
 export interface ConnectionModeState {
   active: boolean;

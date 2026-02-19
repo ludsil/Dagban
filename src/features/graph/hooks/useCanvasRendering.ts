@@ -20,6 +20,8 @@ export type UseCanvasRenderingProps = {
   connectionMode: ConnectionModeState;
   dragConnect: DragConnectState;
   draggingUserId: string | null;
+  focusedNodeId: string | null;
+  spaceHighlightRef: React.RefObject<boolean>;
   pendingBurn: PendingBurnState;
   previewBurn: PreviewBurnState;
   detachedDrag: DetachedDragState;
@@ -50,6 +52,8 @@ export function useCanvasRendering({
   connectionMode,
   dragConnect,
   draggingUserId,
+  focusedNodeId,
+  spaceHighlightRef,
   pendingBurn,
   previewBurn,
   detachedDrag,
@@ -77,7 +81,7 @@ export function useCanvasRendering({
     const rootTraverser = rootTraverserByNodeId.get(node.id);
     const rootAvailable = !rootTraverser || rootTraverser.id === detachedDrag?.traverserId;
     const isRootCandidate =
-      ((Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) && rootActiveNodeIds.has(node.id) && rootAvailable) ||
+      ((Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current) && rootActiveNodeIds.has(node.id) && rootAvailable) ||
       (detachedDrag?.candidateRootNodeId === node.id);
     const isPendingBurn = pendingBurn?.targetNodeId === node.id;
     const isPreviewBurnt = previewBurn?.targetNodeId === node.id || isPendingBurn;
@@ -93,7 +97,6 @@ export function useCanvasRendering({
       dragConnect.targetNode?.id === node.id &&
       !isBurntNodeId(node.id);
     const isDragConnectSource = dragConnect.active && dragConnect.sourceNode?.id === node.id;
-
     if (displayMode === 'balls') {
       if (rootTraverser && rootProgress !== null) {
         const startAngle = -Math.PI / 2;
@@ -285,6 +288,7 @@ export function useCanvasRendering({
     ROOT_RING_RADIUS,
     detachedDrag?.traverserId,
     detachedDrag?.candidateRootNodeId,
+    focusedNodeId,
   ]);
 
   // Custom link rendering for 2D - supports traversers ("fuses") and burnt edges
@@ -303,7 +307,7 @@ export function useCanvasRendering({
         ? 'rgba(255, 255, 255, 0.5)'
         : 'rgba(255, 255, 255, 0.3)';
     const isEligible =
-      (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId)) &&
+      (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current) &&
       eligibleTraverserEdgeIds.has(link.edge.id);
     const isCandidateEdge = detachedDrag?.candidateEdgeId === link.edge.id;
 
@@ -390,16 +394,25 @@ export function useCanvasRendering({
 
   const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
     ctx.fillStyle = color;
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+
+    // Always include the node circle as a clickable area
+    ctx.beginPath();
+    ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // Also include the label background if present
     const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
     if (bckgDimensions) {
       ctx.fillRect(
-        (node.x ?? 0) - bckgDimensions[0] / 2,
-        (node.y ?? 0) - bckgDimensions[1] / 2,
+        x - bckgDimensions[0] / 2,
+        y - bckgDimensions[1] / 2,
         bckgDimensions[0],
         bckgDimensions[1]
       );
     }
-  }, []);
+  }, [NODE_RADIUS]);
 
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
     if (arrowMode !== 'end') return 0.5;

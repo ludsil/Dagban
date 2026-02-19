@@ -1,6 +1,27 @@
 // Modular color system for Dagban graph visualizations
 
 /**
+ * Standard color palette for card categories.
+ */
+export const STANDARD_COLORS: { id: string; name: string; color: string }[] = [
+  { id: 'red', name: 'Red', color: '#C93A43' },
+  { id: 'blue', name: 'Blue', color: '#335ED9' },
+  { id: 'light-blue', name: 'Light Blue', color: '#41A6D8' },
+  { id: 'purple', name: 'Purple', color: '#531972' },
+  { id: 'yellow', name: 'Yellow', color: '#F2EA6E' },
+  { id: 'dark-green', name: 'Dark Green', color: '#0C6144' },
+  { id: 'orange', name: 'Orange', color: '#F8A041' },
+  { id: 'green', name: 'Green', color: '#45A433' },
+  { id: 'light-pink', name: 'Light Pink', color: '#DFC4FF' },
+  { id: 'violet', name: 'Violet', color: '#34229A' },
+  { id: 'light-grey', name: 'Light Grey', color: '#525492' },
+  { id: 'brown', name: 'Brown', color: '#372A1D' },
+  { id: 'light-green', name: 'Light Green', color: '#94FE8F' },
+  { id: 'beige', name: 'Beige', color: '#F6EBD9' },
+  { id: 'pink', name: 'Pink', color: '#E077B7' },
+];
+
+/**
  * Color scale definitions for different visualization modes.
  * Each scale is a tuple of [lightColor, darkColor] for gradient interpolation.
  */
@@ -57,6 +78,47 @@ export function getGradientColor(scale: ColorScaleKey, value: number, max: numbe
 
   const ratio = value / max;
   return interpolateColor(lightColor, darkColor, ratio);
+}
+
+/**
+ * Get contrast-aware text/UI colors for a given background hex color.
+ * Saturated/dark backgrounds get light text; light backgrounds get dark text.
+ * Body copy is always a softened alpha version of the heading color.
+ */
+export function getContrastColors(bgHex: string): {
+  title: string;
+  body: string;
+  muted: string;
+  actionBorder: string;
+  actionText: string;
+  badgeBg: string;
+} {
+  const r = parseInt(bgHex.slice(1, 3), 16);
+  const g = parseInt(bgHex.slice(3, 5), 16);
+  const b = parseInt(bgHex.slice(5, 7), 16);
+  // Perceived luminance (ITU-R BT.601)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const isLight = luminance > 0.55;
+
+  if (isLight) {
+    return {
+      title: 'rgba(0, 0, 0, 0.85)',
+      body: 'rgba(0, 0, 0, 0.6)',
+      muted: 'rgba(0, 0, 0, 0.35)',
+      actionBorder: 'rgba(0, 0, 0, 0.15)',
+      actionText: 'rgba(0, 0, 0, 0.6)',
+      badgeBg: 'rgba(0, 0, 0, 0.1)',
+    };
+  } else {
+    return {
+      title: 'rgba(255, 255, 255, 0.95)',
+      body: 'rgba(255, 255, 255, 0.7)',
+      muted: 'rgba(255, 255, 255, 0.35)',
+      actionBorder: 'rgba(255, 255, 255, 0.2)',
+      actionText: 'rgba(255, 255, 255, 0.7)',
+      badgeBg: 'rgba(255, 255, 255, 0.15)',
+    };
+  }
 }
 
 /**
