@@ -125,6 +125,7 @@ export default function DagbanGraph({
   const suppressBackgroundClickRef = useRef(false);
   const renderRafRef = useRef<number | null>(null);
   const dragConnectAnimationRef = useRef<number | null>(null);
+  const cycleTrianglePosRef = useRef<Map<string, { canvasX: number; canvasY: number }>>(new Map());
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [viewMode, setViewMode] = useState<ViewMode>('2D');
@@ -401,34 +402,28 @@ export default function DagbanGraph({
     graphTheme,
   });
 
-  // Cycle tooltip: hit-test against triangle positions on pointermove
-  // Works in graph coordinate space to avoid screen↔graph conversion issues.
+  // Cycle tooltip: hit-test against triangle canvas-pixel positions written by linkCanvasObject.
+  // This bypasses all react-force-graph coordinate APIs — the positions come directly from
+  // ctx.getTransform() during rendering, so they're guaranteed to match what's on screen.
   useEffect(() => {
     const container = containerRef.current;
     if (!container || cycleEdgeIds.size === 0) return;
     const handler = (e: PointerEvent) => {
-      // Convert pointer to graph coordinates (handles DPI, canvas offset, etc.)
-      const gCoords = getGraphCoords(e.clientX, e.clientY);
-      if (!gCoords) return;
-      const scale = getZoomScale?.() ?? 1;
-      const hitRadius = 14 / scale; // 14 screen-px converted to graph units
-      for (const edgeId of cycleEdgeIds) {
-        const link = linkByIdRef.current.get(edgeId);
-        if (!link) continue;
-        const s = link.source as GraphNodeData;
-        const t = link.target as GraphNodeData;
-        if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
-        // Triangle position mirrors useCanvasRendering: midpoint + perpendicular offset
-        const midX = (s.x + t.x) / 2;
-        const midY = (s.y + t.y) / 2;
-        const edgeAngle = Math.atan2(t.y - s.y, t.x - s.x);
-        const offset = Math.max(6 / scale, 3);
-        const cx = midX + -Math.sin(edgeAngle) * offset;
-        const cy = midY + Math.cos(edgeAngle) * offset;
-        const dx = gCoords.x - cx;
-        const dy = gCoords.y - cy;
-        if (dx * dx + dy * dy < hitRadius * hitRadius) {
-          const rect = container.getBoundingClientRect();
+      // Find the canvas element to convert mouse position to canvas pixels
+      const canvas = container.querySelector('canvas');
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      // Convert mouse CSS-pixels to canvas-pixel coordinates
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const canvasX = (e.clientX - rect.left) * scaleX;
+      const canvasY = (e.clientY - rect.top) * scaleY;
+      const HIT_RADIUS = 16 * scaleX; // 16 CSS-px hit area in canvas pixels
+      for (const [edgeId, pos] of cycleTrianglePosRef.current) {
+        if (!cycleEdgeIds.has(edgeId)) continue;
+        const dx = canvasX - pos.canvasX;
+        const dy = canvasY - pos.canvasY;
+        if (dx * dx + dy * dy < HIT_RADIUS * HIT_RADIUS) {
           setCycleTooltip({ visible: true, x: e.clientX - rect.left, y: e.clientY - rect.top });
           return;
         }
@@ -437,7 +432,7 @@ export default function DagbanGraph({
     };
     container.addEventListener('pointermove', handler);
     return () => container.removeEventListener('pointermove', handler);
-  }, [cycleEdgeIds, getGraphCoords, getZoomScale]);
+  }, [cycleEdgeIds]);
 
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
@@ -1014,6 +1009,7 @@ export default function DagbanGraph({
     getFuseRingGradient,
     nodeBckgDimensionsRef,
     cycleEdgeIds,
+    cycleTrianglePosRef,
   });
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
