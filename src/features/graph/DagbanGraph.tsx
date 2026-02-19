@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useMemo, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { DagbanGraph as GraphData, Card, Category, Traverser } from '@/lib/types';
 
 import { useTraverserSystem } from './hooks/useTraverserSystem';
@@ -12,9 +12,6 @@ import { useCanvasRendering, type DragConnectState } from './hooks/useCanvasRend
 import { useGraphInteractions } from './hooks/useGraphInteractions';
 import type { TraverserTuning } from './traverserTuning';
 import { ROOT_TRAVERSER_PREFIX } from './traverserConstants';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 
 // Import extracted components
 import {
@@ -22,6 +19,7 @@ import {
   ToastNotification,
   KeyboardShortcutsHelp,
   CategoryManager,
+  UserManager,
   GraphCanvasLayer,
   GraphHudLeft,
   GraphHudRight,
@@ -53,6 +51,8 @@ interface Props {
   onEdgeCreate?: (sourceId: string, targetId: string) => void;
   onEdgeDelete?: (edgeId: string) => void;
   onUserAdd?: (name: string) => void;
+  onUserDelete?: (userId: string) => void;
+  onUserChange?: (userId: string, updates: Partial<import('@/lib/types').User>) => void;
   onTraverserCreate?: (traverser: Traverser) => void;
   onTraverserUpdate?: (
     traverserId: string,
@@ -96,6 +96,8 @@ export default function DagbanGraph({
   onEdgeCreate,
   onEdgeDelete,
   onUserAdd,
+  onUserDelete,
+  onUserChange,
   onTraverserCreate,
   onTraverserUpdate,
   onTraverserDelete,
@@ -165,10 +167,9 @@ export default function DagbanGraph({
   // Category manager dialog state
   const [showCategoryManager, setShowCategoryManager] = useState(false);
 
-  // Add user dialog state
-  const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
-  const [addUserName, setAddUserName] = useState('');
-  const addUserInputRef = useRef<HTMLInputElement | null>(null);
+  // User manager dialog state
+  const [showUserManager, setShowUserManager] = useState(false);
+
 
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
@@ -329,36 +330,9 @@ export default function DagbanGraph({
     });
   }, []);
 
-  const handleAddUserOpenChange = useCallback((open: boolean) => {
-    setAddUserDialogOpen(open);
-    if (!open) {
-      setAddUserName('');
-    }
-  }, []);
-
-  const handleAddUserSubmit = useCallback((event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    if (!onUserAdd) return;
-    const trimmed = addUserName.trim();
-    if (!trimmed) return;
-    onUserAdd(trimmed);
-    setAddUserName('');
-    setAddUserDialogOpen(false);
-  }, [addUserName, onUserAdd]);
-
   const handleAddUser = useCallback(() => {
-    if (!onUserAdd) return;
-    setAddUserDialogOpen(true);
-  }, [onUserAdd]);
-
-  useEffect(() => {
-    if (!addUserDialogOpen) return;
-    const raf = requestAnimationFrame(() => {
-      addUserInputRef.current?.focus();
-      addUserInputRef.current?.select();
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [addUserDialogOpen]);
+    setShowUserManager(true);
+  }, []);
 
   // Handle category filter toggle
   const handleCategoryToggle = useCallback((categoryId: string) => {
@@ -920,6 +894,12 @@ export default function DagbanGraph({
         e.preventDefault();
         setShowCategoryManager(prev => !prev);
       }
+
+      // U - User manager
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'u') {
+        e.preventDefault();
+        setShowUserManager(prev => !prev);
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1172,39 +1152,7 @@ export default function DagbanGraph({
         showSettings={showSettings}
       />
 
-      <Dialog open={addUserDialogOpen} onOpenChange={handleAddUserOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add a user</DialogTitle>
-          </DialogHeader>
-          <form className="grid gap-4" onSubmit={handleAddUserSubmit}>
-            <Input
-              ref={addUserInputRef}
-              value={addUserName}
-              onChange={(event) => setAddUserName(event.target.value)}
-              placeholder="Enter a name"
-              className="border-[var(--graph-modal-input-border)] bg-[var(--graph-modal-input-bg)] text-[var(--graph-modal-text)] placeholder:text-[var(--graph-modal-input-placeholder)] focus-visible:ring-0 focus-visible:border-[var(--graph-modal-input-border)]"
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-[var(--graph-modal-secondary-text)] hover:bg-[var(--graph-modal-secondary-hover-bg)] hover:text-[var(--graph-modal-text)]"
-                onClick={() => handleAddUserOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-[var(--graph-modal-primary-bg)] text-[var(--graph-modal-primary-text)] hover:bg-[var(--graph-modal-primary-hover-bg)]"
-                disabled={!addUserName.trim()}
-              >
-                Add user
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Old add-user dialog removed — UserManager handles add/edit/delete */}
 
       <GraphCanvasLayer
         viewMode={viewMode}
@@ -1285,6 +1233,16 @@ export default function DagbanGraph({
         onCategoryAdd={onCategoryAdd}
         onCategoryDelete={onCategoryDelete}
         onCategoryChange={onCategoryChange}
+      />
+
+      {/* User Manager */}
+      <UserManager
+        visible={showUserManager}
+        onClose={() => setShowUserManager(false)}
+        users={data.users}
+        onUserAdd={onUserAdd}
+        onUserDelete={onUserDelete}
+        onUserChange={onUserChange}
       />
 
     </div>
