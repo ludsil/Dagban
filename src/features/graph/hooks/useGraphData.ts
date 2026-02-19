@@ -333,11 +333,21 @@ export function useGraphData({
     nodeEl.style.gap = '4px';
 
     if (mode === 'labels') {
+      if (!node.title) {
+        nodeEl.textContent = '';
+        nodeEl.style.display = 'none';
+        return entry;
+      }
       nodeEl.textContent = node.title;
       return entry;
     }
 
     if (mode === 'full') {
+      if (!node.title) {
+        nodeEl.textContent = '';
+        nodeEl.style.display = 'none';
+        return entry;
+      }
       const avatarSize = 16;
       const avatarStyles = getAvatarCSSStyles(avatarSize);
       const avatarContent = getAvatarHTMLContent(getAssigneeName(node.card.assignee), 10);

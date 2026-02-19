@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Check, ChevronDown, Download, Palette, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronDown, Download, Shapes, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 
 interface ProjectHudProps {
   onDownloadGraph: () => void;
@@ -109,7 +109,7 @@ export function ProjectHud({
             setLogoMenuOpen(false);
             onOpenCategoryManager?.();
           }}>
-            <Palette className="graph-dropdown-icon" />
+            <Shapes className="graph-dropdown-icon" />
             <span>Categories</span>
             <kbd className="ml-auto rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] text-white/50">C</kbd>
           </DropdownMenuItem>

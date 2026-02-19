@@ -194,14 +194,16 @@ export function useCanvasRendering({
       const label = node.title;
       const fontSize = 12 / globalScale;
       ctx.font = `${fontSize}px Sans-Serif`;
-      const textWidth = ctx.measureText(label).width;
+      const textWidth = label ? ctx.measureText(label).width : 0;
 
       // For full mode, add space for avatar using standardized config
       const avatarConfig = getAvatarConfig(fontSize);
       const avatarSpace = displayMode === 'full' ? avatarConfig.size + avatarConfig.gap : 0;
       const totalWidth = textWidth + avatarSpace;
 
-      const bckgDimensions: [number, number] = [totalWidth + avatarConfig.padding * 2, fontSize * 1.2];
+      const bckgDimensions: [number, number] = label
+        ? [totalWidth + avatarConfig.padding * 2, fontSize * 1.2]
+        : [NODE_RADIUS * 2, NODE_RADIUS * 2];
 
       // Draw ball behind the label (matches 3D sphere + label)
       if (rootTraverser && rootProgress !== null) {
@@ -234,24 +236,26 @@ export function useCanvasRendering({
         ctx.stroke();
       }
 
-      // Draw dark background (matches html-nodes example)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(x - bckgDimensions[0] / 2, y - bckgDimensions[1] / 2, bckgDimensions[0], bckgDimensions[1]);
+      if (label) {
+        // Draw dark background (matches html-nodes example)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(x - bckgDimensions[0] / 2, y - bckgDimensions[1] / 2, bckgDimensions[0], bckgDimensions[1]);
 
-      // Draw text (centered, or left-aligned if full mode with avatar)
-      ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = drawColor;
+        // Draw text (centered, or left-aligned if full mode with avatar)
+        ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = drawColor;
 
-      if (displayMode === 'full') {
-        // Text on left side
-        ctx.fillText(label, x - bckgDimensions[0] / 2 + avatarConfig.padding, y);
+        if (displayMode === 'full') {
+          // Text on left side
+          ctx.fillText(label, x - bckgDimensions[0] / 2 + avatarConfig.padding, y);
 
-        // Assignee avatar on right side using standardized utility
-        const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
-        drawAvatar(ctx, getAssigneeName(node.card.assignee), avatarX, y, fontSize, globalScale);
-      } else {
-        ctx.fillText(label, x, y);
+          // Assignee avatar on right side using standardized utility
+          const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
+          drawAvatar(ctx, getAssigneeName(node.card.assignee), avatarX, y, fontSize, globalScale);
+        } else {
+          ctx.fillText(label, x, y);
+        }
       }
 
       if (isRootCandidate) {
@@ -337,7 +341,7 @@ export function useCanvasRendering({
       ctx.beginPath();
       ctx.moveTo(render.startX, render.startY);
       ctx.lineTo(render.x, render.y);
-      ctx.strokeStyle = getFuseGradient(ctx, render.startX, render.startY, render.x, render.y);
+      ctx.strokeStyle = getFuseGradient(ctx, render.x, render.y, render.startX, render.startY);
       ctx.lineWidth = Math.max(2 / globalScale, 1);
       ctx.stroke();
     }

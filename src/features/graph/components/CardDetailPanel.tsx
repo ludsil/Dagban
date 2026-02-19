@@ -18,7 +18,7 @@ import {
   SelectSeparator,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Link, Palette, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link, Shapes, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -437,7 +437,7 @@ export function CardDetailPanel({
                 <SelectSeparator />
                 <SelectItem value="__add_new__">
                   <span className="flex items-center gap-2">
-                    <Palette className="size-3 opacity-60" />
+                    <Shapes className="size-3 opacity-60" />
                     <span>Manage categories</span>
                   </span>
                 </SelectItem>
