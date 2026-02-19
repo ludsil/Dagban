@@ -186,18 +186,7 @@ export function GraphOverlays({
           }}
         >
           <span style={{ color: hoverTooltip.color || 'inherit' }}>{hoverTooltip.title}</span>
-          <div className={`tooltip-assignee-avatar ${!hoverTooltip.assignee ? 'empty' : ''}`}>
-            {hoverTooltip.assignee ? (
-              <span className="tooltip-assignee-initials">
-                {hoverTooltip.assignee.split(' ').map(p => p.charAt(0).toUpperCase()).slice(0, 2).join('')}
-              </span>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" opacity="0.4">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z" />
-              </svg>
-            )}
-          </div>
+          <UserAvatar name={hoverTooltip.assignee || undefined} size="sm" />
         </div>
       )}
 

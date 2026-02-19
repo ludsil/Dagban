@@ -38,25 +38,25 @@ export function getInitials(assignee: string): string {
  * @param radius Avatar radius
  * @param globalScale Current zoom scale
  */
+// Matches dark theme --muted: oklch(0.269 0 0) ≈ #3b3b3b
+const AVATAR_BG = '#3b3b3b';
+// Matches dark theme --muted-foreground: oklch(0.708 0 0) ≈ #a8a8a8
+const AVATAR_FG = '#a8a8a8';
+
 export function drawAvatarCircle(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   radius: number,
-  globalScale: number,
+  _globalScale: number,
   options?: {
     fillStyle?: string;
-    strokeStyle?: string;
-    lineWidth?: number;
   }
 ): void {
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, 2 * Math.PI);
-  ctx.fillStyle = options?.fillStyle ?? 'rgba(255, 255, 255, 0.15)';
+  ctx.fillStyle = options?.fillStyle ?? AVATAR_BG;
   ctx.fill();
-  ctx.strokeStyle = options?.strokeStyle ?? 'rgba(255, 255, 255, 0.35)';
-  ctx.lineWidth = options?.lineWidth ?? 1 / globalScale;
-  ctx.stroke();
 }
 
 /**
@@ -75,8 +75,8 @@ export function drawAvatarInitials(
   fontSize: number
 ): void {
   ctx.save();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-  ctx.font = `bold ${fontSize * 0.55}px Sans-Serif`;
+  ctx.fillStyle = AVATAR_FG;
+  ctx.font = `500 ${fontSize * 0.55}px Sans-Serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(initials, x, y);
@@ -96,7 +96,7 @@ export function drawAvatarPlaceholder(
   y: number,
   radius: number
 ): void {
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.fillStyle = AVATAR_FG;
 
   // Scale factors for icon within circle
   const scale = radius * 0.7;
@@ -150,35 +150,36 @@ export function drawAvatar(
 }
 
 /**
- * Generate CSS styles for avatar HTML element (for 3D CSS2DObject)
- * Returns inline style string
+ * Generate CSS styles for avatar HTML element (for 3D CSS2DObject).
+ * Matches shadcn Avatar/AvatarFallback styling (bg-muted, text-muted-foreground, rounded-full).
  */
 export function getAvatarCSSStyles(size: number = 16): string {
   return `
     width: ${size}px;
     height: ${size}px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 9999px;
+    background: var(--color-muted);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    overflow: hidden;
+    line-height: 1;
   `.replace(/\s+/g, ' ').trim();
 }
 
 /**
- * Generate avatar HTML content (initials or placeholder SVG)
+ * Generate avatar HTML content (initials or placeholder SVG).
+ * Matches shadcn AvatarFallback styling (text-muted-foreground, text-xs, centered).
  */
 export function getAvatarHTMLContent(assignee: string | null | undefined, iconSize: number = 10): string {
   if (assignee) {
     const initials = getInitials(assignee);
-    return `<span style="color: rgba(255,255,255,0.85); font-size: ${iconSize}px; font-weight: bold;">${initials}</span>`;
+    return `<span style="color: var(--color-muted-foreground); font-size: ${iconSize * 0.7}px; font-weight: 500; line-height: 1; display: flex; align-items: center; justify-content: center;">${initials}</span>`;
   }
 
-  // SVG placeholder icon - properly centered person silhouette
-  return `<svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="rgba(255,255,255,0.4)">
-    <circle cx="12" cy="8" r="4"/>
-    <ellipse cx="12" cy="20" rx="7" ry="4"/>
+  return `<svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="var(--color-muted-foreground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block;">
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+    <circle cx="12" cy="7" r="4"/>
   </svg>`;
 }

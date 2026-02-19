@@ -1,6 +1,6 @@
 // Local storage persistence for DagbanGraph
 import { useSyncExternalStore, useCallback, useRef, useEffect, useMemo } from 'react';
-import { DagbanGraph, placeholderUsers } from './types';
+import { DagbanGraph, defaultUser } from './types';
 
 const STORAGE_VERSION = 1;
 const DEFAULT_PROJECT_ID = 'default';
@@ -46,8 +46,9 @@ function normalizeGraph(graph: DagbanGraph): DagbanGraph {
   });
 
   if (users.length === 0) {
-    users.push(...placeholderUsers.map(user => ({ ...user })));
-    users.forEach(user => userById.set(user.id, user));
+    const user = { ...defaultUser };
+    users.push(user);
+    userById.set(user.id, user);
   }
 
   const edgeIds = new Set(graph.edges.map(edge => edge.id));
