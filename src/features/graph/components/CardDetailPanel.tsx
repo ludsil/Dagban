@@ -18,7 +18,8 @@ import {
   SelectSeparator,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Link, Shapes, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link, Trash2 } from 'lucide-react';
+import { CategoryManager } from './CategoryManager';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -32,7 +33,9 @@ interface CardDetailPanelProps {
   onLinkDownstream?: (sourceNode: GraphNodeData) => void;
   onLinkUpstream?: (targetNode: GraphNodeData) => void;
   onDelete?: (node: GraphNodeData) => void;
-  onOpenCategoryManager?: () => void;
+  onCategoryAdd?: (category: Category) => void;
+  onCategoryDelete?: (categoryId: string) => void;
+  onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
 }
 
 export function CardDetailPanel({
@@ -47,7 +50,9 @@ export function CardDetailPanel({
   onLinkDownstream,
   onLinkUpstream,
   onDelete,
-  onOpenCategoryManager,
+  onCategoryAdd,
+  onCategoryDelete,
+  onCategoryChange,
 }: CardDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -62,6 +67,7 @@ export function CardDetailPanel({
   const [assignee, setAssignee] = useState(card.assignee || '');
   const [shiftHeld, setShiftHeld] = useState(false);
   const [localCategoryId, setLocalCategoryId] = useState(card.categoryId);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
 
   // Resolve current color — use burnt color if card is burnt, otherwise category color
@@ -191,8 +197,8 @@ export function CardDetailPanel({
       const target = e.target as HTMLElement;
       // Inside the panel itself — ignore
       if (panelRef.current?.contains(target)) return;
-      // Inside a Radix portal (Select dropdown, Popover, etc.) — ignore
-      if (target.closest('[data-radix-popper-content-wrapper]') || target.closest('[data-radix-select-content]')) return;
+      // Inside a Radix portal (Select dropdown, Popover, Dialog, etc.) — ignore
+      if (target.closest('[data-radix-popper-content-wrapper]') || target.closest('[data-radix-select-content]') || target.closest('[data-slot="dialog-overlay"]') || target.closest('[data-slot="dialog-content"]')) return;
       // Outside everything — close panel
       saveChanges();
       onClose();
@@ -284,13 +290,9 @@ export function CardDetailPanel({
   }, [card.id, onAssigneeChange]);
 
   const handleCategoryChange = useCallback((value: string) => {
-    if (value === '__add_new__') {
-      onOpenCategoryManager?.();
-      return;
-    }
     setLocalCategoryId(value);
     onCardChange?.(card.id, { categoryId: value });
-  }, [card.id, onCardChange, onOpenCategoryManager]);
+  }, [card.id, onCardChange]);
 
   const currentCategory = categories.find(c => c.id === localCategoryId);
 
@@ -425,43 +427,29 @@ export function CardDetailPanel({
                 <p>Delete node</p>
               </TooltipContent>
             </Tooltip>
-            <Select
-              value={localCategoryId}
-              onValueChange={handleCategoryChange}
+            <button
+              className="postit-category-trigger"
+              aria-label="Change category"
+              onClick={() => setShowCategoryManager(true)}
             >
-              <SelectTrigger
-                size="sm"
-                className="postit-category-trigger"
-                aria-label="Change category"
-              >
-                <span className="postit-category-label">
-                  {currentCategory?.name || 'Category'}
-                </span>
-              </SelectTrigger>
-              <SelectContent align="end" position="popper" className="postit-select-content min-w-[160px]">
-                {categories.map(cat => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="postit-category-dot-inline"
-                        style={{ backgroundColor: cat.color }}
-                      />
-                      <span>{cat.name}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-                <SelectSeparator />
-                <SelectItem value="__add_new__">
-                  <span className="flex items-center gap-2">
-                    <Shapes className="size-3 opacity-60" />
-                    <span>Manage categories</span>
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+              <span className="postit-category-label">
+                {currentCategory?.name || 'Category'}
+              </span>
+            </button>
           </div>
         </div>
       </div>
+
+      <CategoryManager
+        visible={showCategoryManager}
+        onClose={() => setShowCategoryManager(false)}
+        categories={categories}
+        onCategoryAdd={onCategoryAdd}
+        onCategoryDelete={onCategoryDelete}
+        onCategoryChange={onCategoryChange}
+        selectedCategoryId={localCategoryId}
+        onSelect={handleCategoryChange}
+      />
     </>
   );
 }

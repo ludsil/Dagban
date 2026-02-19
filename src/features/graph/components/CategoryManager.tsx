@@ -12,7 +12,7 @@ interface ColorPickerDotProps {
   onChange: (color: string) => void;
 }
 
-function ColorPickerDot({ color, onChange }: ColorPickerDotProps) {
+export function ColorPickerDot({ color, onChange }: ColorPickerDotProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -59,6 +59,9 @@ interface CategoryManagerProps {
   onCategoryAdd?: (category: Category) => void;
   onCategoryDelete?: (categoryId: string) => void;
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
+  /** When provided, category rows become clickable to select */
+  selectedCategoryId?: string;
+  onSelect?: (categoryId: string) => void;
 }
 
 export function CategoryManager({
@@ -68,6 +71,8 @@ export function CategoryManager({
   onCategoryAdd,
   onCategoryDelete,
   onCategoryChange,
+  selectedCategoryId,
+  onSelect,
 }: CategoryManagerProps) {
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(STANDARD_COLORS[0].color);
@@ -95,6 +100,10 @@ export function CategoryManager({
     if (!newName.trim() || !onCategoryAdd) return;
     const id = newName.trim().toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
     onCategoryAdd({ id, name: newName.trim(), color: newColor });
+    if (onSelect) {
+      onSelect(id);
+      onClose();
+    }
     setNewName('');
     setNewColor(STANDARD_COLORS[0].color);
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -123,7 +132,11 @@ export function CategoryManager({
         {categories.length > 0 ? (
           <div className="catmgr-list">
             {categories.map(cat => (
-              <div key={cat.id} className="catmgr-row">
+              <div
+                key={cat.id}
+                className={`catmgr-row${onSelect ? ' catmgr-row-selectable' : ''}${selectedCategoryId === cat.id ? ' catmgr-row-selected' : ''}`}
+                onClick={onSelect && editingId !== cat.id ? () => { onSelect(cat.id); onClose(); } : undefined}
+              >
                 <ColorPickerDot
                   color={cat.color}
                   onChange={(color) => onCategoryChange?.(cat.id, { color })}
@@ -163,7 +176,8 @@ export function CategoryManager({
                     <span className="catmgr-name">{cat.name}</span>
                     <button
                       className="catmgr-action-btn catmgr-edit-btn"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingId(cat.id);
                         setEditingName(cat.name);
                       }}
@@ -174,7 +188,10 @@ export function CategoryManager({
                     {onCategoryDelete && (
                       <button
                         className="catmgr-action-btn catmgr-delete-btn"
-                        onClick={() => onCategoryDelete(cat.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCategoryDelete(cat.id);
+                        }}
                         aria-label={`Delete ${cat.name}`}
                       >
                         <Trash2 className="size-3" />

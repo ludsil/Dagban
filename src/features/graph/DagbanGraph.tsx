@@ -1211,7 +1211,9 @@ export default function DagbanGraph({
           onLinkDownstream={startDownstreamConnection}
           onLinkUpstream={startUpstreamConnection}
           onDelete={handleDeleteNode}
-          onOpenCategoryManager={handleOpenCategoryManager}
+          onCategoryAdd={onCategoryAdd}
+          onCategoryDelete={onCategoryDelete}
+          onCategoryChange={onCategoryChange}
         />
       )}
 
