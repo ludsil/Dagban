@@ -1355,6 +1355,21 @@ html, body {
   margin: 4px 0;
 }
 
+/* Category manager — selectable row mode (when opened from post-it card) */
+.catmgr-row-selectable {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.catmgr-row-selectable:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.catmgr-row-selected {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 
 /* Node Hover Tooltip - dark theme matching */
 .node-hover-tooltip {
