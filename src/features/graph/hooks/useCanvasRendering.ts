@@ -197,7 +197,14 @@ export function useCanvasRendering({
       const label = node.title;
       const fontSize = 12 / globalScale;
       ctx.font = `${fontSize}px Sans-Serif`;
-      const textWidth = label ? ctx.measureText(label).width : 0;
+      const metrics = label ? ctx.measureText(label) : null;
+      const textWidth = metrics?.width ?? 0;
+
+      // Use actual glyph bounds for precise vertical centering
+      const ascent = metrics?.actualBoundingBoxAscent ?? fontSize * 0.75;
+      const descent = metrics?.actualBoundingBoxDescent ?? fontSize * 0.25;
+      const textHeight = ascent + descent;
+      const vertPad = fontSize * 0.35;
 
       // For full mode, add space for avatar using standardized config
       const avatarConfig = getAvatarConfig(fontSize);
@@ -205,7 +212,7 @@ export function useCanvasRendering({
       const totalWidth = textWidth + avatarSpace;
 
       const bckgDimensions: [number, number] = label
-        ? [totalWidth + avatarConfig.padding * 2, fontSize * 1.2]
+        ? [totalWidth + avatarConfig.padding * 2, textHeight + vertPad * 2]
         : [NODE_RADIUS * 2, NODE_RADIUS * 2];
 
       // Draw ball behind the label (matches 3D sphere + label)
@@ -244,20 +251,23 @@ export function useCanvasRendering({
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(x - bckgDimensions[0] / 2, y - bckgDimensions[1] / 2, bckgDimensions[0], bckgDimensions[1]);
 
-        // Draw text (centered, or left-aligned if full mode with avatar)
+        // Draw text with precise vertical centering using actual glyph metrics.
+        // textBaseline 'alphabetic' + computed baseline = visually centered text.
+        // Baseline position: rect center + half(ascent - descent) to shift visual center to y.
         ctx.textAlign = displayMode === 'full' ? 'left' : 'center';
-        ctx.textBaseline = 'middle';
+        ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = drawColor;
+        const baselineY = y + (ascent - descent) / 2;
 
         if (displayMode === 'full') {
           // Text on left side
-          ctx.fillText(label, x - bckgDimensions[0] / 2 + avatarConfig.padding, y);
+          ctx.fillText(label, x - bckgDimensions[0] / 2 + avatarConfig.padding, baselineY);
 
           // Assignee avatar on right side using standardized utility
           const avatarX = x + bckgDimensions[0] / 2 - avatarConfig.radius - avatarConfig.padding;
           drawAvatar(ctx, getAssigneeName(node.card.assignee), avatarX, y, fontSize, globalScale);
         } else {
-          ctx.fillText(label, x, y);
+          ctx.fillText(label, x, baselineY);
         }
       }
 
