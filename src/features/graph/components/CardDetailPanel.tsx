@@ -15,9 +15,10 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Copy, Link, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Link, Palette, Trash2 } from 'lucide-react';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -31,7 +32,6 @@ interface CardDetailPanelProps {
   onLinkDownstream?: (sourceNode: GraphNodeData) => void;
   onLinkUpstream?: (targetNode: GraphNodeData) => void;
   onDelete?: (node: GraphNodeData) => void;
-  onDuplicate?: (node: GraphNodeData) => void;
   onOpenCategoryManager?: () => void;
 }
 
@@ -47,7 +47,6 @@ export function CardDetailPanel({
   onLinkDownstream,
   onLinkUpstream,
   onDelete,
-  onDuplicate,
   onOpenCategoryManager,
 }: CardDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -221,13 +220,6 @@ export function CardDetailPanel({
     }
   }, [onClose, onDelete, node]);
 
-  // Handle Duplicate button
-  const handleDuplicate = useCallback(() => {
-    saveChanges();
-    onClose();
-    onDuplicate?.(node);
-  }, [saveChanges, onClose, onDuplicate, node]);
-
   // Calculate panel position - position to the right of the node, or left if near edge
   const panelWidth = 260;
   const panelHeight = 360;
@@ -316,13 +308,14 @@ export function CardDetailPanel({
             >
               <UserAvatar user={assigneeUser} name={assigneeLabel} size="sm" />
             </SelectTrigger>
-            <SelectContent align="end" position="popper" className="min-w-[180px]">
+            <SelectContent align="end" position="popper" className="postit-select-content min-w-[180px]">
               <SelectItem value="__unassigned__">
                 <span className="flex items-center gap-2">
                   <UserAvatar size="sm" showPlaceholderIcon />
                   <span>Unassigned</span>
                 </span>
               </SelectItem>
+              <SelectSeparator />
               {users.map(user => (
                 <SelectItem key={user.id} value={user.id}>
                   <span className="flex items-center gap-2">
@@ -406,21 +399,6 @@ export function CardDetailPanel({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="postit-action-icon"
-                  onClick={handleDuplicate}
-                >
-                  <Copy className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Duplicate node</p>
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip delayDuration={100}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
                   className="postit-delete-icon"
                   onClick={handleDelete}
                 >
@@ -444,7 +422,7 @@ export function CardDetailPanel({
                   {currentCategory?.name || 'Category'}
                 </span>
               </SelectTrigger>
-              <SelectContent align="end" position="popper" className="min-w-[160px]">
+              <SelectContent align="end" position="popper" className="postit-select-content min-w-[160px]">
                 {categories.map(cat => (
                   <SelectItem key={cat.id} value={cat.id}>
                     <span className="flex items-center gap-2">
@@ -456,10 +434,11 @@ export function CardDetailPanel({
                     </span>
                   </SelectItem>
                 ))}
+                <SelectSeparator />
                 <SelectItem value="__add_new__">
                   <span className="flex items-center gap-2">
-                    <Plus className="size-3 opacity-60" />
-                    <span>Add category</span>
+                    <Palette className="size-3 opacity-60" />
+                    <span>Manage categories</span>
                   </span>
                 </SelectItem>
               </SelectContent>

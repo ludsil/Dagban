@@ -2,9 +2,10 @@
 
 import { useRef, useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Category } from '@/lib/types';
 import { STANDARD_COLORS } from '@/lib/colors';
-import { X } from 'lucide-react';
+import { Pencil, Trash2, Check, X } from 'lucide-react';
 
 interface ColorPickerDotProps {
   color: string;
@@ -13,29 +14,24 @@ interface ColorPickerDotProps {
 
 function ColorPickerDot({ color, onChange }: ColorPickerDotProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', handleClick);
-    return () => document.removeEventListener('pointerdown', handleClick);
-  }, [open]);
 
   return (
-    <div ref={ref} className="catmgr-color-picker">
-      <button
-        className="catmgr-dot-btn"
-        onClick={() => setOpen(p => !p)}
-        aria-label="Pick color"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className="catmgr-dot-btn"
+          aria-label="Pick color"
+        >
+          <span className="catmgr-dot" style={{ backgroundColor: color }} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        className="catmgr-color-popover"
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <span className="catmgr-dot" style={{ backgroundColor: color }} />
-      </button>
-      {open && (
         <div className="catmgr-color-grid">
           {STANDARD_COLORS.map(sc => (
             <button
@@ -51,8 +47,8 @@ function ColorPickerDot({ color, onChange }: ColorPickerDotProps) {
             </button>
           ))}
         </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -112,6 +108,11 @@ export function CategoryManager({
     setEditingName('');
   };
 
+  const handleRenameCancel = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
+
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="catmgr-dialog">
@@ -128,38 +129,58 @@ export function CategoryManager({
                   onChange={(color) => onCategoryChange?.(cat.id, { color })}
                 />
                 {editingId === cat.id ? (
-                  <input
-                    ref={renameRef}
-                    className="catmgr-rename-input"
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === 'Enter') handleRenameCommit();
-                      if (e.key === 'Escape') { setEditingId(null); setEditingName(''); }
-                    }}
-                    onBlur={handleRenameCommit}
-                  />
+                  <>
+                    <input
+                      ref={renameRef}
+                      className="catmgr-rename-input"
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') handleRenameCommit();
+                        if (e.key === 'Escape') handleRenameCancel();
+                      }}
+                      onBlur={handleRenameCommit}
+                    />
+                    <button
+                      className="catmgr-action-btn catmgr-confirm-btn"
+                      onClick={handleRenameCommit}
+                      aria-label="Confirm rename"
+                    >
+                      <Check className="size-3" />
+                    </button>
+                    <button
+                      className="catmgr-action-btn catmgr-cancel-btn"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleRenameCancel}
+                      aria-label="Cancel rename"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </>
                 ) : (
-                  <span
-                    className="catmgr-name catmgr-name-editable"
-                    onClick={() => {
-                      setEditingId(cat.id);
-                      setEditingName(cat.name);
-                    }}
-                    title="Click to rename"
-                  >
-                    {cat.name}
-                  </span>
-                )}
-                {onCategoryDelete && (
-                  <button
-                    className="catmgr-delete"
-                    onClick={() => onCategoryDelete(cat.id)}
-                    aria-label={`Delete ${cat.name}`}
-                  >
-                    <X className="size-3" />
-                  </button>
+                  <>
+                    <span className="catmgr-name">{cat.name}</span>
+                    <button
+                      className="catmgr-action-btn catmgr-edit-btn"
+                      onClick={() => {
+                        setEditingId(cat.id);
+                        setEditingName(cat.name);
+                      }}
+                      aria-label={`Rename ${cat.name}`}
+                    >
+                      <Pencil className="size-3" />
+                    </button>
+                    {onCategoryDelete && (
+                      <button
+                        className="catmgr-action-btn catmgr-delete-btn"
+                        onClick={() => onCategoryDelete(cat.id)}
+                        aria-label={`Delete ${cat.name}`}
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             ))}

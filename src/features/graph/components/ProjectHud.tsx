@@ -88,7 +88,7 @@ export function ProjectHud({
             className="header-logo"
             title="Project actions"
           >
-            <div className="header-logo-ball" />
+            <img src="/dagban.png" alt="Dagban" className="header-logo-img" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent

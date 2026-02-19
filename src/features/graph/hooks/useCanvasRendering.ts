@@ -394,16 +394,25 @@ export function useCanvasRendering({
 
   const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {
     ctx.fillStyle = color;
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+
+    // Always include the node circle as a clickable area
+    ctx.beginPath();
+    ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // Also include the label background if present
     const bckgDimensions = nodeBckgDimensionsRef.current.get(node.id);
     if (bckgDimensions) {
       ctx.fillRect(
-        (node.x ?? 0) - bckgDimensions[0] / 2,
-        (node.y ?? 0) - bckgDimensions[1] / 2,
+        x - bckgDimensions[0] / 2,
+        y - bckgDimensions[1] / 2,
         bckgDimensions[0],
         bckgDimensions[1]
       );
     }
-  }, []);
+  }, [NODE_RADIUS]);
 
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
     if (arrowMode !== 'end') return 0.5;
