@@ -318,11 +318,14 @@ export function useCanvasRendering({
     const targetCard = cardById.get(link.edge.target);
     const isPreviewBurnt = previewBurn?.edgeId === link.edge.id || pendingBurn?.targetNodeId === link.edge.target;
     const isBurnt = Boolean(targetCard?.burntAt);
+    const isCycleEdge = cycleEdgeIds.has(link.edge.id);
     const baseStroke = isBurnt
       ? BURNT_COLOR
-      : isPreviewBurnt
-        ? 'rgba(255, 255, 255, 0.5)'
-        : 'rgba(255, 255, 255, 0.3)';
+      : isCycleEdge
+        ? 'rgba(245, 158, 11, 0.6)'
+        : isPreviewBurnt
+          ? 'rgba(255, 255, 255, 0.5)'
+          : 'rgba(255, 255, 255, 0.3)';
     const isEligible =
       (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current) &&
       eligibleTraverserEdgeIds.has(link.edge.id);
@@ -394,37 +397,6 @@ export function useCanvasRendering({
       ctx.fill();
     }
 
-    // Draw cycle warning badge on edges that participate in a cycle
-    if (cycleEdgeIds.has(link.edge.id)) {
-      const midX = (source.x + target.x) / 2;
-      const midY = (source.y + target.y) / 2;
-      const edgeAngle = Math.atan2(target.y - source.y, target.x - source.x);
-      const perpX = -Math.sin(edgeAngle);
-      const perpY = Math.cos(edgeAngle);
-      const offset = Math.max(8 / globalScale, 4);
-      const cx = midX + perpX * offset;
-      const cy = midY + perpY * offset;
-
-      // Small triangle icon
-      const triSize = Math.max(4 / globalScale, 2);
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - triSize);
-      ctx.lineTo(cx - triSize * 0.87, cy + triSize * 0.5);
-      ctx.lineTo(cx + triSize * 0.87, cy + triSize * 0.5);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
-      ctx.fill();
-
-      // "cycle" label next to triangle
-      const labelSize = Math.max(9 / globalScale, 4);
-      ctx.save();
-      ctx.font = `500 ${labelSize}px Sans-Serif`;
-      ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('cycle', cx + triSize + triSize * 0.4, cy);
-      ctx.restore();
-    }
   }, [
     arrowMode,
     nodeRadius,
