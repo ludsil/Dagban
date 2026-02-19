@@ -402,14 +402,16 @@ export default function DagbanGraph({
   });
 
   // Cycle tooltip: hit-test against triangle positions on pointermove
+  // Works in graph coordinate space to avoid screen↔graph conversion issues.
   useEffect(() => {
     const container = containerRef.current;
     if (!container || cycleEdgeIds.size === 0) return;
     const handler = (e: PointerEvent) => {
-      const rect = container.getBoundingClientRect();
-      const screenX = e.clientX - rect.left;
-      const screenY = e.clientY - rect.top;
-      const HIT_RADIUS = 14; // px screen-space hit area
+      // Convert pointer to graph coordinates (handles DPI, canvas offset, etc.)
+      const gCoords = getGraphCoords(e.clientX, e.clientY);
+      if (!gCoords) return;
+      const scale = getZoomScale?.() ?? 1;
+      const hitRadius = 14 / scale; // 14 screen-px converted to graph units
       for (const edgeId of cycleEdgeIds) {
         const link = linkByIdRef.current.get(edgeId);
         if (!link) continue;
@@ -420,16 +422,14 @@ export default function DagbanGraph({
         const midX = (s.x + t.x) / 2;
         const midY = (s.y + t.y) / 2;
         const edgeAngle = Math.atan2(t.y - s.y, t.x - s.x);
-        const scale = getZoomScale?.() ?? 1;
         const offset = Math.max(6 / scale, 3);
         const cx = midX + -Math.sin(edgeAngle) * offset;
         const cy = midY + Math.cos(edgeAngle) * offset;
-        const screen = getScreenCoords(cx, cy);
-        if (!screen) continue;
-        const dx = screenX - screen.x;
-        const dy = screenY - screen.y;
-        if (dx * dx + dy * dy < HIT_RADIUS * HIT_RADIUS) {
-          setCycleTooltip({ visible: true, x: screenX, y: screenY });
+        const dx = gCoords.x - cx;
+        const dy = gCoords.y - cy;
+        if (dx * dx + dy * dy < hitRadius * hitRadius) {
+          const rect = container.getBoundingClientRect();
+          setCycleTooltip({ visible: true, x: e.clientX - rect.left, y: e.clientY - rect.top });
           return;
         }
       }
@@ -437,7 +437,7 @@ export default function DagbanGraph({
     };
     container.addEventListener('pointermove', handler);
     return () => container.removeEventListener('pointermove', handler);
-  }, [cycleEdgeIds, getScreenCoords, getZoomScale]);
+  }, [cycleEdgeIds, getGraphCoords, getZoomScale]);
 
   const TRAVERSER_RADIUS = 9;
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
