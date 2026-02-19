@@ -318,14 +318,11 @@ export function useCanvasRendering({
     const targetCard = cardById.get(link.edge.target);
     const isPreviewBurnt = previewBurn?.edgeId === link.edge.id || pendingBurn?.targetNodeId === link.edge.target;
     const isBurnt = Boolean(targetCard?.burntAt);
-    const isCycleEdge = cycleEdgeIds.has(link.edge.id);
     const baseStroke = isBurnt
       ? BURNT_COLOR
-      : isCycleEdge
-        ? 'rgba(245, 158, 11, 0.6)'
-        : isPreviewBurnt
-          ? 'rgba(255, 255, 255, 0.5)'
-          : 'rgba(255, 255, 255, 0.3)';
+      : isPreviewBurnt
+        ? 'rgba(255, 255, 255, 0.5)'
+        : 'rgba(255, 255, 255, 0.3)';
     const isEligible =
       (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current) &&
       eligibleTraverserEdgeIds.has(link.edge.id);
@@ -395,6 +392,31 @@ export function useCanvasRendering({
       ctx.closePath();
       ctx.fillStyle = baseStroke;
       ctx.fill();
+    }
+
+    // Warning triangle on cycle edges
+    if (cycleEdgeIds.has(link.edge.id)) {
+      const midX = (source.x + target.x) / 2;
+      const midY = (source.y + target.y) / 2;
+      const edgeAngle = Math.atan2(target.y - source.y, target.x - source.x);
+      const offset = Math.max(6 / globalScale, 3);
+      const cx = midX + -Math.sin(edgeAngle) * offset;
+      const cy = midY + Math.cos(edgeAngle) * offset;
+
+      const triSize = Math.max(5 / globalScale, 2.5);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - triSize);
+      ctx.lineTo(cx - triSize * 0.87, cy + triSize * 0.5);
+      ctx.lineTo(cx + triSize * 0.87, cy + triSize * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.fill();
+
+      // Exclamation mark
+      const bangSize = triSize * 0.45;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(cx - bangSize * 0.15, cy - bangSize * 0.6, bangSize * 0.3, bangSize * 0.7);
+      ctx.fillRect(cx - bangSize * 0.15, cy + bangSize * 0.3, bangSize * 0.3, bangSize * 0.25);
     }
 
   }, [
