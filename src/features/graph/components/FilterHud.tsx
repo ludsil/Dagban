@@ -1,25 +1,19 @@
 'use client';
 
 import { useMemo, useRef, useEffect, useState } from 'react';
-import { ViewMode, DisplayMode, ColorMode, ArrowMode } from '../types';
+import { ViewMode, DisplayMode, ColorMode } from '../types';
 import { Card, Category, Edge } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Layers, Eye, Paintbrush, Settings, Filter, Clock } from 'lucide-react';
+import { Layers, Eye, Paintbrush, Filter, Clock } from 'lucide-react';
 
 interface FilterHudProps {
   viewMode: ViewMode;
   displayMode: DisplayMode;
   colorMode: ColorMode;
-  arrowMode: ArrowMode;
   onViewModeChange: (mode: ViewMode) => void;
   onDisplayModeChange: (mode: DisplayMode) => void;
-  nodeRadius: number;
-  onNodeRadiusChange: (radius: number) => void;
   onColorModeChange: (mode: ColorMode) => void;
-  onArrowModeChange: (mode: ArrowMode) => void;
-  devDatasetMode?: 'sample' | 'miserables';
-  onDevDatasetModeChange?: (mode: 'sample' | 'miserables') => void;
   cards?: Card[];
   categories?: Category[];
   edges?: Edge[];
@@ -40,15 +34,9 @@ export function FilterHud({
   viewMode,
   displayMode,
   colorMode,
-  arrowMode,
   onViewModeChange,
   onDisplayModeChange,
-  nodeRadius,
-  onNodeRadiusChange,
   onColorModeChange,
-  onArrowModeChange,
-  devDatasetMode,
-  onDevDatasetModeChange,
   cards,
   categories,
   edges,
@@ -220,80 +208,10 @@ export function FilterHud({
             </TooltipTrigger>
             <TooltipContent side="bottom">Burnt age</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={activeWorkspace === 'customize' ? 'outline' : 'ghost'}
-                size="icon-sm"
-                className="rounded-sm"
-                onClick={() => toggleWorkspace('customize')}
-              >
-                <Settings className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Customize</TooltipContent>
-          </Tooltip>
         </div>
       </TooltipProvider>
 
       {/* Row 3: Expandable workspace */}
-      {activeWorkspace === 'customize' && (
-        <div className="hud-workspace">
-          <div>
-            <div className="hud-workspace-label">Node Size: {nodeRadius}</div>
-            <div className="filter-slider-container">
-              <input
-                type="range"
-                className="filter-slider"
-                min={4}
-                max={8}
-                value={nodeRadius}
-                onChange={(e) => onNodeRadiusChange(parseInt(e.target.value))}
-              />
-            </div>
-          </div>
-          <div>
-            <div className="hud-workspace-label">Arrow Position</div>
-            <div className="hud-option-row">
-              {(['end', 'middle', 'none'] as ArrowMode[]).map(mode => (
-                <Button
-                  key={mode}
-                  variant={arrowMode === mode ? 'default' : 'ghost'}
-                  size="xs"
-                  className="rounded-sm capitalize"
-                  onClick={() => onArrowModeChange(mode)}
-                >
-                  {mode}
-                </Button>
-              ))}
-            </div>
-          </div>
-          {devDatasetMode && onDevDatasetModeChange && (
-            <div>
-              <div className="hud-workspace-label">Dataset</div>
-              <div className="hud-option-row">
-                <Button
-                  variant={devDatasetMode === 'sample' ? 'default' : 'ghost'}
-                  size="xs"
-                  className="rounded-sm"
-                  onClick={() => onDevDatasetModeChange('sample')}
-                >
-                  Sample
-                </Button>
-                <Button
-                  variant={devDatasetMode === 'miserables' ? 'default' : 'ghost'}
-                  size="xs"
-                  className="rounded-sm"
-                  onClick={() => onDevDatasetModeChange('miserables')}
-                >
-                  Miserables
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {activeWorkspace === 'color' && (
         <div className="hud-workspace">
           <div>

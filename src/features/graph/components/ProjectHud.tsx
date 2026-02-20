@@ -10,13 +10,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Check, ChevronDown, Download, Shapes, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronDown, Copy, Download, Shapes, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 
 interface ProjectHudProps {
   onDownloadGraph: () => void;
   onUploadGraph: (file: File) => void;
   onNewRootNode: () => void;
   onOpenCategoryManager?: () => void;
+  onOpenCopySettings?: () => void;
   projectName?: string;
   projects?: { id: string; name: string }[];
   onProjectSwitch?: (projectId: string) => void;
@@ -30,6 +31,7 @@ export function ProjectHud({
   onUploadGraph,
   onNewRootNode,
   onOpenCategoryManager,
+  onOpenCopySettings,
   projectName,
   projects,
   onProjectSwitch,
@@ -112,6 +114,13 @@ export function ProjectHud({
             <Shapes className="graph-dropdown-icon" />
             <span>Categories</span>
             <kbd className="ml-auto rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] text-white/50">C</kbd>
+          </DropdownMenuItem>
+          <DropdownMenuItem className={dropdownItemClass} onClick={() => {
+            setLogoMenuOpen(false);
+            onOpenCopySettings?.();
+          }}>
+            <Copy className="graph-dropdown-icon" />
+            <span>Copy format</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

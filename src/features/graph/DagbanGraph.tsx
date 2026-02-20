@@ -21,7 +21,7 @@ import {
   KeyboardShortcutsHelp,
   CategoryManager,
   UserManager,
-  CopyFormatPicker,
+  CopyFormatSettings,
   GraphCanvasLayer,
   GraphHudLeft,
   GraphHudRight,
@@ -45,8 +45,8 @@ import {
   generateTopologicalList,
   generateMermaid,
   generateAsciiBoxArt,
-  type AsciiFormatId,
 } from './ascii';
+import { getCopyFormat } from '@/lib/settings';
 
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
@@ -180,8 +180,8 @@ export default function DagbanGraph({
   // User manager dialog state
   const [showUserManager, setShowUserManager] = useState(false);
 
-  // Copy format picker dialog state
-  const [showCopyPicker, setShowCopyPicker] = useState(false);
+  // Copy format settings dialog state
+  const [showCopySettings, setShowCopySettings] = useState(false);
 
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
@@ -277,13 +277,14 @@ export default function DagbanGraph({
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
 
-  // Copy graph as ASCII text
-  const handleCopyFormat = useCallback(async (formatId: AsciiFormatId) => {
+  // Copy graph as ASCII text using the persisted format preference
+  const copyGraphAsText = useCallback(async () => {
     const visibleNodes = graphDataView.nodes.filter(n => n.matchesFilter !== false);
     const visibleIds = new Set(visibleNodes.map(n => n.id));
     const visibleEdges = data.edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
     const annotated = buildAnnotatedNodes(visibleNodes, visibleEdges, data.traversers ?? [], data.users ?? []);
 
+    const formatId = getCopyFormat();
     let text: string;
     switch (formatId) {
       case 'indented-tree':
@@ -306,8 +307,6 @@ export default function DagbanGraph({
     } catch {
       showToast('Failed to copy', 'warning');
     }
-
-    setShowCopyPicker(false);
   }, [graphDataView.nodes, data.edges, data.traversers, data.users, showToast]);
 
   const handleDownloadGraph = useCallback(() => {
@@ -884,6 +883,8 @@ export default function DagbanGraph({
           setSelectedNode(null);
           return;
         }
+        // Nothing active — open copy format settings
+        setShowCopySettings(true);
         return;
       }
 
@@ -919,7 +920,7 @@ export default function DagbanGraph({
       if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
         if (!selectedNode && !focusedNodeId) {
           e.preventDefault();
-          setShowCopyPicker(true);
+          copyGraphAsText();
         }
         return;
       }
@@ -1109,6 +1110,7 @@ export default function DagbanGraph({
     onUploadGraph: handleUploadGraph,
     onNewRootNode: openRootNodeCreation,
     onOpenCategoryManager: handleOpenCategoryManager,
+    onOpenCopySettings: () => setShowCopySettings(true),
     projectName,
     projects,
     onProjectSwitch,
@@ -1129,16 +1131,10 @@ export default function DagbanGraph({
   const filterHudProps = useMemo(() => ({
     viewMode,
     displayMode,
-    nodeRadius,
-    onNodeRadiusChange: setNodeRadius,
     colorMode,
-    arrowMode,
     onViewModeChange: setViewMode,
     onDisplayModeChange: setDisplayMode,
     onColorModeChange: setColorMode,
-    onArrowModeChange: setArrowMode,
-    devDatasetMode,
-    onDevDatasetModeChange,
     cards: data.cards,
     categories: themedCategories,
     edges: data.edges,
@@ -1156,16 +1152,10 @@ export default function DagbanGraph({
   }), [
     viewMode,
     displayMode,
-    nodeRadius,
-    setNodeRadius,
     colorMode,
-    arrowMode,
     setViewMode,
     setDisplayMode,
     setColorMode,
-    setArrowMode,
-    devDatasetMode,
-    onDevDatasetModeChange,
     data.cards,
     themedCategories,
     data.edges,
@@ -1298,10 +1288,15 @@ export default function DagbanGraph({
         onUserChange={onUserChange}
       />
 
-      <CopyFormatPicker
-        visible={showCopyPicker}
-        onClose={() => setShowCopyPicker(false)}
-        onCopy={handleCopyFormat}
+      <CopyFormatSettings
+        visible={showCopySettings}
+        onClose={() => setShowCopySettings(false)}
+        nodeRadius={nodeRadius}
+        onNodeRadiusChange={setNodeRadius}
+        arrowMode={arrowMode}
+        onArrowModeChange={setArrowMode}
+        devDatasetMode={devDatasetMode}
+        onDevDatasetModeChange={onDevDatasetModeChange}
       />
 
     </div>
