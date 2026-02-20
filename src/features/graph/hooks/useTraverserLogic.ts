@@ -202,6 +202,23 @@ export function useTraverserLogic({
       onTraverserDelete(pendingBurn.traverserId);
     }
 
+    // Guard: remove ALL traversers on incoming edges to the burned node
+    if (onTraverserDelete) {
+      data.edges.forEach(edge => {
+        if (edge.target !== pendingBurn.targetNodeId) return;
+        const traverser = traverserByEdgeId.get(edge.id);
+        if (traverser && traverser.id !== pendingBurn.traverserId) {
+          onTraverserDelete(traverser.id);
+        }
+      });
+      // Also remove any root traverser orbiting the burned node
+      const rootEdgeId = ROOT_TRAVERSER_PREFIX + pendingBurn.targetNodeId;
+      const rootTraverser = traverserByEdgeId.get(rootEdgeId);
+      if (rootTraverser && rootTraverser.id !== pendingBurn.traverserId) {
+        onTraverserDelete(rootTraverser.id);
+      }
+    }
+
     data.edges.forEach(edge => {
       if (edge.source !== pendingBurn.targetNodeId) return;
       if (traverserByEdgeId.has(edge.id)) return;

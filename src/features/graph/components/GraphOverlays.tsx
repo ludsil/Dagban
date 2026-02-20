@@ -89,7 +89,7 @@ export function GraphOverlays({
               onPointerDown={(event) => onTraverserOverlayPointerDown(event, traverser.id)}
               title={traverser.user?.name || 'Traverser'}
             >
-              <UserAvatar user={traverser.user} size="sm" className="traverser-overlay-avatar" />
+              <UserAvatar user={traverser.user} size="xs" className="traverser-overlay-avatar" />
               {traverser.isRoot && traverser.tangentAngle !== undefined && (
                 <span
                   className="traverser-root-arrow"
@@ -111,7 +111,7 @@ export function GraphOverlays({
           className="dragging-user-ghost"
           style={{ left: `${draggingUserGhost.x}px`, top: `${draggingUserGhost.y}px` }}
         >
-          <UserAvatar user={draggingUser} size="sm" className="traverser-overlay-avatar" />
+          <UserAvatar user={draggingUser} size="xs" className="traverser-overlay-avatar" />
         </div>
       )}
 
@@ -185,8 +185,13 @@ export function GraphOverlays({
             top: `${hoverTooltip.y + 12}px`,
           }}
         >
-          <span style={{ color: hoverTooltip.color || 'inherit' }}>{hoverTooltip.title}</span>
-          <UserAvatar name={hoverTooltip.assignee || undefined} size="sm" />
+          <span
+            className="node-hover-label"
+            style={{ color: hoverTooltip.title === 'Untitled' ? 'rgba(255,255,255,0.35)' : (hoverTooltip.color || 'inherit'), fontStyle: hoverTooltip.title === 'Untitled' ? 'italic' : undefined }}
+          >{hoverTooltip.title}</span>
+          {hoverTooltip.assignee && (
+            <UserAvatar name={hoverTooltip.assignee} size="xs" />
+          )}
         </div>
       )}
 

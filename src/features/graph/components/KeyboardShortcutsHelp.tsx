@@ -16,6 +16,7 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
     { keys: ['/'], action: 'Search' },
     { keys: ['Cmd/Ctrl', 'Z'], action: 'Undo' },
     { keys: ['Cmd/Ctrl', 'Shift', 'Z'], action: 'Redo' },
+    { keys: ['Cmd/Ctrl', 'C'], action: 'Copy graph as text', context: 'No node selected' },
     { keys: ['Shift', 'Click'], action: 'Connect selected → clicked node', separator: '+' },
     { keys: ['Space'], action: 'Hold to show free edges & nodes' },
     { keys: ['Esc'], action: 'Deselect node' },

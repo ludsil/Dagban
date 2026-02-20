@@ -21,6 +21,7 @@ import {
   KeyboardShortcutsHelp,
   CategoryManager,
   UserManager,
+  CopyFormatSettings,
   GraphCanvasLayer,
   GraphHudLeft,
   GraphHudRight,
@@ -38,6 +39,14 @@ import {
   ColorMode,
   ArrowMode,
 } from './components';
+import {
+  buildAnnotatedNodes,
+  generateIndentedTree,
+  generateTopologicalList,
+  generateMermaid,
+  generateAsciiBoxArt,
+} from './ascii';
+import * as settings from '@/lib/settings';
 
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
@@ -127,11 +136,25 @@ export default function DagbanGraph({
   const dragConnectAnimationRef = useRef<number | null>(null);
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [viewMode, setViewMode] = useState<ViewMode>('2D');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
-  const [nodeRadius, setNodeRadius] = useState(8);
+  const [viewMode, setViewModeState] = useState<ViewMode>('2D');
+  const [displayMode, setDisplayModeState] = useState<DisplayMode>('balls');
+  const [nodeRadius, setNodeRadiusState] = useState(6);
   const [colorMode, setColorMode] = useState<ColorMode>('category');
-  const [arrowMode, setArrowMode] = useState<ArrowMode>('end');
+  const [arrowMode, setArrowModeState] = useState<ArrowMode>('end');
+
+  // Load persisted settings on mount
+  useEffect(() => {
+    setViewModeState(settings.getViewMode());
+    setDisplayModeState(settings.getDisplayMode());
+    setNodeRadiusState(settings.getNodeRadius());
+    setArrowModeState(settings.getArrowMode());
+  }, []);
+
+  // Wrap setters to persist
+  const setViewMode = useCallback((m: ViewMode) => { setViewModeState(m); settings.setViewMode(m); }, []);
+  const setDisplayMode = useCallback((m: DisplayMode) => { setDisplayModeState(m); settings.setDisplayMode(m); }, []);
+  const setNodeRadius = useCallback((r: number) => { setNodeRadiusState(r); settings.setNodeRadius(r); }, []);
+  const setArrowMode = useCallback((m: ArrowMode) => { setArrowModeState(m); settings.setArrowMode(m); }, []);
   const showSettings = showSettingsProp;
 
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
@@ -170,6 +193,9 @@ export default function DagbanGraph({
 
   // User manager dialog state
   const [showUserManager, setShowUserManager] = useState(false);
+
+  // Copy format settings dialog state
+  const [showCopySettings, setShowCopySettings] = useState(false);
 
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
@@ -264,6 +290,38 @@ export default function DagbanGraph({
   const hideToast = useCallback(() => {
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
+
+  // Copy graph as ASCII text using the persisted format preference
+  const copyGraphAsText = useCallback(async () => {
+    const visibleNodes = graphDataView.nodes.filter(n => n.matchesFilter !== false);
+    const visibleIds = new Set(visibleNodes.map(n => n.id));
+    const visibleEdges = data.edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
+    const annotated = buildAnnotatedNodes(visibleNodes, visibleEdges, data.traversers ?? [], data.users ?? []);
+
+    const formatId = settings.getCopyFormat();
+    let text: string;
+    switch (formatId) {
+      case 'indented-tree':
+        text = generateIndentedTree(annotated, visibleEdges);
+        break;
+      case 'topological-list':
+        text = generateTopologicalList(annotated, visibleEdges);
+        break;
+      case 'mermaid':
+        text = generateMermaid(annotated, visibleEdges);
+        break;
+      case 'ascii-box-art':
+        text = generateAsciiBoxArt(annotated, visibleEdges);
+        break;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard', 'success');
+    } catch {
+      showToast('Failed to copy', 'warning');
+    }
+  }, [graphDataView.nodes, data.edges, data.traversers, data.users, showToast]);
 
   const handleDownloadGraph = useCallback(() => {
     try {
@@ -722,12 +780,21 @@ export default function DagbanGraph({
       }
     };
 
+    const handleMouseMove = (event: MouseEvent) => {
+      setHoverTooltip(prev => {
+        if (!prev.visible) return prev;
+        return { ...prev, x: event.clientX, y: event.clientY };
+      });
+    };
+
     container.addEventListener('wheel', handleWheel, { passive: false });
     container.addEventListener('pointerdown', handlePointerDown);
+    container.addEventListener('mousemove', handleMouseMove);
 
     return () => {
       container.removeEventListener('wheel', handleWheel);
       container.removeEventListener('pointerdown', handlePointerDown);
+      container.removeEventListener('mousemove', handleMouseMove);
     };
   }, []);
 
@@ -829,16 +896,20 @@ export default function DagbanGraph({
         e.preventDefault();
         if (isTyping && document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
+          return;
         }
         if (pendingBurn) { cancelPendingBurn(); return; }
         if (previewBurn) { setPreviewBurn(null); return; }
         if (edgeStartPicker) { closeEdgeStartPicker(); return; }
         if (connectionMode.active) { cancelConnectionMode(); return; }
+        if (showCopySettings) { setShowCopySettings(false); return; }
         if (focusedNodeId || selectedNode) {
           setFocusedNodeId(null);
           setSelectedNode(null);
           return;
         }
+        // Nothing active — open copy format settings
+        setShowCopySettings(true);
         return;
       }
 
@@ -868,6 +939,15 @@ export default function DagbanGraph({
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
         e.preventDefault();
         onRedo?.();
+      }
+
+      // Cmd/Ctrl+C — Copy graph as text (when no node selected/focused)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        if (!selectedNode && !focusedNodeId) {
+          e.preventDefault();
+          copyGraphAsText();
+        }
+        return;
       }
 
       // N - New root node
@@ -1055,6 +1135,7 @@ export default function DagbanGraph({
     onUploadGraph: handleUploadGraph,
     onNewRootNode: openRootNodeCreation,
     onOpenCategoryManager: handleOpenCategoryManager,
+    onOpenCopySettings: () => setShowCopySettings(true),
     projectName,
     projects,
     onProjectSwitch,
@@ -1075,16 +1156,10 @@ export default function DagbanGraph({
   const filterHudProps = useMemo(() => ({
     viewMode,
     displayMode,
-    nodeRadius,
-    onNodeRadiusChange: setNodeRadius,
     colorMode,
-    arrowMode,
     onViewModeChange: setViewMode,
     onDisplayModeChange: setDisplayMode,
     onColorModeChange: setColorMode,
-    onArrowModeChange: setArrowMode,
-    devDatasetMode,
-    onDevDatasetModeChange,
     cards: data.cards,
     categories: themedCategories,
     edges: data.edges,
@@ -1102,16 +1177,10 @@ export default function DagbanGraph({
   }), [
     viewMode,
     displayMode,
-    nodeRadius,
-    setNodeRadius,
     colorMode,
-    arrowMode,
     setViewMode,
     setDisplayMode,
     setColorMode,
-    setArrowMode,
-    devDatasetMode,
-    onDevDatasetModeChange,
     data.cards,
     themedCategories,
     data.edges,
@@ -1244,6 +1313,17 @@ export default function DagbanGraph({
         onUserAdd={onUserAdd}
         onUserDelete={onUserDelete}
         onUserChange={onUserChange}
+      />
+
+      <CopyFormatSettings
+        visible={showCopySettings}
+        onClose={() => setShowCopySettings(false)}
+        nodeRadius={nodeRadius}
+        onNodeRadiusChange={setNodeRadius}
+        arrowMode={arrowMode}
+        onArrowModeChange={setArrowMode}
+        devDatasetMode={devDatasetMode}
+        onDevDatasetModeChange={onDevDatasetModeChange}
       />
 
     </div>
