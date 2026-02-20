@@ -67,6 +67,9 @@ export function CardDetailPanel({
   const [assignee, setAssignee] = useState(card.assignee || '');
   const [shiftHeld, setShiftHeld] = useState(false);
   const [localCategoryId, setLocalCategoryId] = useState(card.categoryId);
+
+  // Detect holy marker (current title ends with "!!!")
+  const isHoly = title.trimEnd().endsWith('!!!');
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
 
@@ -349,7 +352,7 @@ export function CardDetailPanel({
         {/* Title - large, editable */}
         <textarea
           ref={titleRef}
-          className="postit-title"
+          className={`postit-title${isHoly ? ' postit-title-holy' : ''}`}
           value={title}
           onChange={handleTitleChange}
           onKeyDown={handleTitleKeyDown}

@@ -53,6 +53,9 @@ export function KeyboardShortcutsHelp({ visible, onClose }: KeyboardShortcutsHel
             </div>
           ))}
         </div>
+        <p className="mt-3 text-[11px] text-white/35 leading-relaxed text-center">
+          End a node title with <span className="text-white/55">!!!</span> to mark it as extra important :)
+        </p>
       </DialogContent>
     </Dialog>
   );

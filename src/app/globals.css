@@ -155,6 +155,15 @@ html, body {
   white-space: nowrap;
 }
 
+/* Holy node label (3D graph) — rainbow text */
+.node-label-holy {
+  background: linear-gradient(90deg, #ff3366, #ff9933, #ffdd00, #33ff77, #33bbff, #aa44ff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: holy-hue-rotate 5s linear infinite;
+}
+
 /* Settings panel styling */
 .settings-panel {
   background-color: rgba(20, 20, 20, 0.95);
@@ -1357,6 +1366,20 @@ html, body {
 .postit-select-content [data-slot="select-separator"] {
   background: rgba(255, 255, 255, 0.08);
   margin: 4px 0;
+}
+
+/* Holy node — rainbow title text (hue-rotate for seamless loop) */
+@keyframes holy-hue-rotate {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
+}
+
+.postit-title-holy {
+  background: linear-gradient(90deg, #ff3366, #ff9933, #ffdd00, #33ff77, #33bbff, #aa44ff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: holy-hue-rotate 5s linear infinite;
 }
 
 /* Category manager — selectable row mode (when opened from post-it card) */

@@ -332,13 +332,19 @@ export function useGraphData({
     nodeEl.style.alignItems = 'center';
     nodeEl.style.gap = '4px';
 
+    const holyClass = node.holy ? ' node-label-holy' : '';
+
     if (mode === 'labels') {
       if (!node.title) {
         nodeEl.textContent = '';
         nodeEl.style.display = 'none';
         return entry;
       }
-      nodeEl.textContent = node.title;
+      if (node.holy) {
+        nodeEl.innerHTML = `<span class="node-label-holy">${node.title}</span>`;
+      } else {
+        nodeEl.textContent = node.title;
+      }
       return entry;
     }
 
@@ -353,7 +359,7 @@ export function useGraphData({
       const avatarContent = getAvatarHTMLContent(getAssigneeName(node.card.assignee), 10);
       nodeEl.innerHTML = `
         <div style="display: flex; align-items: center; gap: 5px; flex-direction: row;">
-          <span>${node.title}</span>
+          <span class="${holyClass}">${node.title}</span>
           <div style="${avatarStyles}">
             ${avatarContent}
           </div>
@@ -438,14 +444,19 @@ export function useGraphData({
         color = dimColor(color);
       }
 
+      // Detect holy marker: title ending with "!!!"
+      const holy = card.title.trimEnd().endsWith('!!!');
+      const displayTitle = holy ? card.title.trimEnd().slice(0, -3).trimEnd() : card.title;
+
       let node = nodeById.get(card.id);
       if (!node) {
         node = {
           id: card.id,
-          title: card.title,
+          title: displayTitle,
           color,
           status,
           card,
+          holy,
           matchesFilter,
         };
         nodeById.set(card.id, node);
@@ -457,8 +468,14 @@ export function useGraphData({
       let shouldUpdateLabel = false;
       let didUpdate = false;
 
-      if (node.title !== card.title) {
-        updates.title = card.title;
+      if (node.title !== displayTitle) {
+        updates.title = displayTitle;
+        visualChanged = true;
+        shouldUpdateLabel = true;
+      }
+
+      if (node.holy !== holy) {
+        updates.holy = holy;
         visualChanged = true;
         shouldUpdateLabel = true;
       }

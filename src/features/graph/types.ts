@@ -7,6 +7,8 @@ export interface GraphNodeData {
   color: string;
   status: 'blocked' | 'active' | 'done';
   card: Card;
+  // Whether the card title ends with "!!!" (holy/star node)
+  holy?: boolean;
   // Whether this node matches current filter criteria
   matchesFilter?: boolean;
   // Position coordinates (set by force simulation)

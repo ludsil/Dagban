@@ -733,9 +733,11 @@ export default function DagbanGraph({
   // ============================================================
 
   const hasActiveFuses = useMemo(() => (data.traversers?.length ?? 0) > 0, [data.traversers]);
+  const hasHolyNodes = useMemo(() => data.cards.some(c => c.title.trimEnd().endsWith('!!!')), [data.cards]);
+  const needsAnimation = hasActiveFuses || hasHolyNodes;
 
   useEffect(() => {
-    if (!hasActiveFuses) {
+    if (!needsAnimation) {
       if (fuseAnimationRef.current) {
         cancelAnimationFrame(fuseAnimationRef.current);
         fuseAnimationRef.current = null;
@@ -755,7 +757,7 @@ export default function DagbanGraph({
         fuseAnimationRef.current = null;
       }
     };
-  }, [hasActiveFuses]);
+  }, [needsAnimation]);
 
   useEffect(() => {
     const container = containerRef.current;
