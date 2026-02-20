@@ -46,7 +46,7 @@ import {
   generateMermaid,
   generateAsciiBoxArt,
 } from './ascii';
-import { getCopyFormat } from '@/lib/settings';
+import * as settings from '@/lib/settings';
 
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
@@ -136,11 +136,25 @@ export default function DagbanGraph({
   const dragConnectAnimationRef = useRef<number | null>(null);
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [viewMode, setViewMode] = useState<ViewMode>('2D');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('balls');
-  const [nodeRadius, setNodeRadius] = useState(8);
+  const [viewMode, setViewModeState] = useState<ViewMode>('2D');
+  const [displayMode, setDisplayModeState] = useState<DisplayMode>('balls');
+  const [nodeRadius, setNodeRadiusState] = useState(6);
   const [colorMode, setColorMode] = useState<ColorMode>('category');
-  const [arrowMode, setArrowMode] = useState<ArrowMode>('end');
+  const [arrowMode, setArrowModeState] = useState<ArrowMode>('end');
+
+  // Load persisted settings on mount
+  useEffect(() => {
+    setViewModeState(settings.getViewMode());
+    setDisplayModeState(settings.getDisplayMode());
+    setNodeRadiusState(settings.getNodeRadius());
+    setArrowModeState(settings.getArrowMode());
+  }, []);
+
+  // Wrap setters to persist
+  const setViewMode = useCallback((m: ViewMode) => { setViewModeState(m); settings.setViewMode(m); }, []);
+  const setDisplayMode = useCallback((m: DisplayMode) => { setDisplayModeState(m); settings.setDisplayMode(m); }, []);
+  const setNodeRadius = useCallback((r: number) => { setNodeRadiusState(r); settings.setNodeRadius(r); }, []);
+  const setArrowMode = useCallback((m: ArrowMode) => { setArrowModeState(m); settings.setArrowMode(m); }, []);
   const showSettings = showSettingsProp;
 
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
@@ -284,7 +298,7 @@ export default function DagbanGraph({
     const visibleEdges = data.edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
     const annotated = buildAnnotatedNodes(visibleNodes, visibleEdges, data.traversers ?? [], data.users ?? []);
 
-    const formatId = getCopyFormat();
+    const formatId = settings.getCopyFormat();
     let text: string;
     switch (formatId) {
       case 'indented-tree':

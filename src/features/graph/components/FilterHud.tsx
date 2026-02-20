@@ -5,7 +5,7 @@ import { ViewMode, DisplayMode, ColorMode } from '../types';
 import { Card, Category, Edge } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Layers, Eye, Paintbrush, Filter, Clock } from 'lucide-react';
+import { Circle, Globe, Type, Maximize2, Paintbrush, Filter, Clock } from 'lucide-react';
 
 interface FilterHudProps {
   viewMode: ViewMode;
@@ -135,7 +135,7 @@ export function FilterHud({
         )}
       </div>
 
-      {/* Row 2: Discrete icon buttons */}
+      {/* Row 2: Toolbar buttons */}
       <TooltipProvider delayDuration={300}>
         <div className="hud-button-bar">
           <Tooltip>
@@ -146,7 +146,7 @@ export function FilterHud({
                 className="rounded-sm"
                 onClick={() => onViewModeChange(viewMode === '2D' ? '3D' : '2D')}
               >
-                <Layers className="size-4" />
+                {viewMode === '2D' ? <Circle className="size-4" /> : <Globe className="size-4" />}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Toggle {viewMode === '2D' ? '3D' : '2D'} view</TooltipContent>
@@ -163,7 +163,7 @@ export function FilterHud({
                   onDisplayModeChange(modes[(idx + 1) % modes.length]);
                 }}
               >
-                <Eye className="size-4" />
+                {displayMode === 'balls' ? <Circle className="size-4" /> : displayMode === 'labels' ? <Type className="size-4" /> : <Maximize2 className="size-4" />}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Display: {displayMode}</TooltipContent>

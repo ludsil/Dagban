@@ -172,11 +172,21 @@ html, body {
   -webkit-user-select: none;
 }
 
-/* Compact HUD button bar */
+/* Compact HUD button bar — EU4-style tile strip */
 .hud-button-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 2px;
+}
+.hud-button-bar > * {
+  flex: 1;
+}
+.hud-button-bar button {
+  width: 100%;
+  border: 1px solid rgba(255 255 255 / 0.12);
+  border-radius: 2px;
+}
+.hud-button-bar button:hover {
+  border-color: rgba(255 255 255 / 0.25);
 }
 
 .hud-option-row {
