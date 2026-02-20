@@ -7,12 +7,6 @@ import type { PendingBurnState, TraverserOverlay } from '../hooks/useTraverserSy
 import { EdgeContextMenu } from './EdgeContextMenu';
 import { UserAvatar } from './UserAvatar';
 
-type EdgeStartPickerState = {
-  edgeId: string;
-  x: number;
-  y: number;
-} | null;
-
 type DragConnectState = {
   active: boolean;
   sourceNode: GraphNodeData | null;
@@ -34,15 +28,8 @@ interface GraphOverlaysProps {
   onConfirmPendingBurn: () => void;
   onCancelPendingBurn: () => void;
   edgeContextMenu: EdgeContextMenuState;
-  edgeContextMenuTraverserId: string | null;
   onCloseEdgeContextMenu: () => void;
-  onEdgeAssign: (edgeId: string, anchor: { x: number; y: number }) => void;
-  onEdgeDetach: (traverserId: string) => void;
   onEdgeDelete: (edgeId: string) => void;
-  edgeStartPicker: EdgeStartPickerState;
-  users: User[];
-  onEdgeStartPickUser: (userId: string) => void;
-  onAddUser: () => void;
   hoverTooltip: HoverTooltipState;
   connectionMode: ConnectionModeState;
   onCancelConnectionMode: () => void;
@@ -62,15 +49,8 @@ export function GraphOverlays({
   onConfirmPendingBurn,
   onCancelPendingBurn,
   edgeContextMenu,
-  edgeContextMenuTraverserId,
   onCloseEdgeContextMenu,
-  onEdgeAssign,
-  onEdgeDetach,
   onEdgeDelete,
-  edgeStartPicker,
-  users,
-  onEdgeStartPickUser,
-  onAddUser,
   hoverTooltip,
   connectionMode,
   onCancelConnectionMode,
@@ -134,48 +114,9 @@ export function GraphOverlays({
 
       <EdgeContextMenu
         state={edgeContextMenu}
-        traverserId={edgeContextMenuTraverserId}
         onClose={onCloseEdgeContextMenu}
-        onAssign={onEdgeAssign}
-        onDetach={onEdgeDetach}
         onDelete={onEdgeDelete}
       />
-
-      {edgeStartPicker && (
-        <div
-          className="edge-start-picker"
-          style={{ left: `${edgeStartPicker.x}px`, top: `${edgeStartPicker.y}px` }}
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <div className="edge-start-title">Start progress</div>
-          <div className="edge-start-users">
-            {users.length === 0 && (
-              <span className="edge-start-empty">Add a user to begin.</span>
-            )}
-            {users.map(user => (
-              <button
-                key={user.id}
-                type="button"
-                className="edge-start-user"
-                onClick={() => onEdgeStartPickUser(user.id)}
-                title={user.name}
-              >
-                <UserAvatar user={user} size="sm" />
-              </button>
-            ))}
-            <button
-              type="button"
-              className="edge-start-add"
-              onClick={onAddUser}
-              title="Add user"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      )}
 
       {hoverTooltip.visible && hoverTooltip.x > 0 && (
         <div

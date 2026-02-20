@@ -4,7 +4,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { DagbanGraph as GraphData, Card, Traverser, User, Edge } from '@/lib/types';
 import type { GraphNodeData, GraphLinkData, ViewMode, DisplayMode, TraverserCoordinateProvider } from '../types';
 import { defaultTraverserTuning, type TraverserTuning } from '../traverserTuning';
-import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
+import { ROOT_TRAVERSER_PREFIX, BURN_FUSE_DURATION_MS } from '../traverserConstants';
+import type { BurnFuseAnimation } from '../traverserConstants';
 
 export type PendingBurnState = {
   traverserId: string | null;
@@ -23,8 +24,6 @@ export type DetachedDragState = {
   x: number;
   y: number;
   z?: number;
-  candidateEdgeId: string | null;
-  candidatePosition: number | null;
   candidateRootNodeId?: string | null;
   candidateRootPosition?: number | null;
 } | null;
@@ -43,10 +42,8 @@ export type UseTraverserLogicProps = {
   traverserById: Map<string, Traverser>;
   userById: Map<string, User>;
   rootActiveNodeIds: Set<string>;
-  eligibleTraverserEdgeIds: Set<string>;
   nodeByIdRef: React.RefObject<Map<string, GraphNodeData>>;
   graphDataView: { nodes: GraphNodeData[]; links: GraphLinkData[] };
-  createTraverserForEdge: (edgeId: string, userId: string, position: number) => Traverser;
   createTraverserForRoot: (nodeId: string, userId: string, position: number) => Traverser;
   onTraverserCreate?: (traverser: Traverser) => void;
   onTraverserUpdate?: (
@@ -56,7 +53,7 @@ export type UseTraverserLogicProps = {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
-  closeEdgeStartPicker: () => void;
+  onBurnFuseStart?: (animation: BurnFuseAnimation) => void;
   suppressNextBackgroundClick: () => void;
   tuning?: Partial<TraverserTuning>;
 };
@@ -128,16 +125,14 @@ export function useTraverserLogic({
   traverserById,
   userById,
   rootActiveNodeIds,
-  eligibleTraverserEdgeIds,
   nodeByIdRef,
   graphDataView,
-  createTraverserForEdge,
   createTraverserForRoot,
   onTraverserCreate,
   onTraverserUpdate,
   onTraverserDelete,
   onCardChange,
-  closeEdgeStartPicker,
+  onBurnFuseStart,
   suppressNextBackgroundClick,
   tuning: tuningOverrides,
 }: UseTraverserLogicProps) {
@@ -219,14 +214,33 @@ export function useTraverserLogic({
       }
     }
 
-    data.edges.forEach(edge => {
-      if (edge.source !== pendingBurn.targetNodeId) return;
-      if (traverserByEdgeId.has(edge.id)) return;
-      const edgeTarget = cardById.get(edge.target);
-      if (!edgeTarget?.assignee) return;
-      if (!onTraverserCreate) return;
-      onTraverserCreate(createTraverserForEdge(edge.id, edgeTarget.assignee, 0));
-    });
+    // Fire burn fuse animation on incoming edges (source → burntNode)
+    const incomingEdges = data.edges
+      .filter(edge => edge.target === pendingBurn.targetNodeId)
+      .map(edge => ({ id: edge.id, source: edge.source }));
+    if (incomingEdges.length > 0 && onBurnFuseStart) {
+      onBurnFuseStart({
+        id: `burn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        burntNodeId: pendingBurn.targetNodeId,
+        edges: incomingEdges,
+        startTime: performance.now(),
+        duration: BURN_FUSE_DURATION_MS,
+      });
+    }
+
+    // Auto-spawn root traversers on downstream active nodes (outgoing edges)
+    if (onTraverserCreate) {
+      data.edges.forEach(edge => {
+        if (edge.source !== pendingBurn.targetNodeId) return;
+        const downstreamCard = cardById.get(edge.target);
+        if (!downstreamCard?.assignee) return;
+        if (!rootActiveNodeIds.has(edge.target)) return;
+        const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${edge.target}`;
+        if (traverserByEdgeId.has(rootEdgeId)) return;
+        const traverser = createTraverserForRoot(edge.target, downstreamCard.assignee, 0);
+        onTraverserCreate(traverser);
+      });
+    }
 
     setPendingBurn(null);
     setPreviewBurn(null);
@@ -234,11 +248,13 @@ export function useTraverserLogic({
     pendingBurn,
     cardById,
     onCardChange,
-    onTraverserCreate,
     onTraverserDelete,
+    onTraverserCreate,
+    onBurnFuseStart,
     data.edges,
     traverserByEdgeId,
-    createTraverserForEdge,
+    rootActiveNodeIds,
+    createTraverserForRoot,
   ]);
 
   const updateTraverserPosition = useCallback((traverser: Traverser, nextPosition: number) => {
@@ -250,35 +266,6 @@ export function useTraverserLogic({
   }, [onTraverserUpdate]);
 
   // --- Finding functions ---
-
-  const findClosestEdge = useCallback((point: { x: number; y: number; z?: number }, allowedEdgeIds?: Set<string>, maxDistanceOverride?: number) => {
-    const zoom = coords.getZoomScale();
-    const maxDistance = (maxDistanceOverride ?? tuning.dragEdgeSearchRadius) / zoom;
-    let closest: { edgeId: string; position: number; distance: number } | null = null;
-
-    for (const edge of data.edges) {
-      if (allowedEdgeIds && !allowedEdgeIds.has(edge.id)) continue;
-      const edgeNodes = coords.getEdgeNodes(edge.id);
-      if (!edgeNodes) continue;
-      const { sourceNode, targetNode } = edgeNodes;
-      // Use screen-space projection in 3D (handles z-axis correctly)
-      const projection = coords.projectToEdgeScreen?.(point, sourceNode, targetNode)
-        ?? projectPointToSegment(
-          point.x,
-          point.y,
-          sourceNode.x!,
-          sourceNode.y!,
-          targetNode.x!,
-          targetNode.y!
-        );
-      if (projection.distance > maxDistance) continue;
-      if (!closest || projection.distance < closest.distance) {
-        closest = { edgeId: edge.id, position: projection.t, distance: projection.distance };
-      }
-    }
-
-    return closest;
-  }, [data.edges, coords, tuning.dragEdgeSearchRadius]);
 
   const findClosestRootNode = useCallback((point: { x: number; y: number; z?: number }) => {
     if (rootActiveNodeIds.size === 0) return null;
@@ -314,24 +301,13 @@ export function useTraverserLogic({
     const zoom = coords.getZoomScale();
     const hitDistance = traverserHitRadius / zoom;
     for (const traverser of data.traversers || []) {
-      let tx = 0;
-      let ty = 0;
-      if (traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) {
-        const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
-        const node = nodeByIdRef.current?.get(nodeId);
-        if (!node || node.x === undefined || node.y === undefined) continue;
-        const render = coords.getRootTraverserPoint(node, traverser.position);
-        tx = render.x;
-        ty = render.y;
-      } else {
-        const edgeNodes = coords.getEdgeNodes(traverser.edgeId);
-        if (!edgeNodes) continue;
-        const { sourceNode, targetNode } = edgeNodes;
-        const render = coords.getTraverserRenderPoint(sourceNode, targetNode, traverser.position);
-        tx = render.x;
-        ty = render.y;
-      }
-      const dist = Math.hypot(point.x - tx, point.y - ty);
+      // Only root traversers exist now; silently skip legacy edge traversers
+      if (!traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) continue;
+      const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+      const node = nodeByIdRef.current?.get(nodeId);
+      if (!node || node.x === undefined || node.y === undefined) continue;
+      const render = coords.getRootTraverserPoint(node, traverser.position);
+      const dist = Math.hypot(point.x - render.x, point.y - render.y);
       if (dist <= hitDistance) {
         return { traverserId: traverser.id };
       }
@@ -348,10 +324,9 @@ export function useTraverserLogic({
 
   const handleUserDragStart = useCallback((userId: string) => {
     setDraggingUserId(userId);
-    closeEdgeStartPicker();
     setPendingBurn(null);
     setPreviewBurn(null);
-  }, [closeEdgeStartPicker]);
+  }, []);
 
   const handleUserDragEnd = useCallback(() => {
     setDraggingUserId(null);
@@ -362,201 +337,33 @@ export function useTraverserLogic({
 
   const handleTraverserDragMove = useCallback((
     graphCoords: { x: number; y: number; z?: number },
-    screenCoords: { x: number; y: number },
-    prevScreenCoords: { x: number; y: number } | null,
+    _screenCoords: { x: number; y: number },
+    _prevScreenCoords: { x: number; y: number } | null,
   ) => {
     const activeId = draggingTraverserRef.current;
     if (!activeId) return;
     const traverser = traverserById.get(activeId);
     if (!traverser) return;
-    const isRootTraverser = traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX);
 
-    if (isRootTraverser) {
-      const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
-      const node = nodeByIdRef.current?.get(nodeId);
-      if (!node || node.x === undefined || node.y === undefined) return;
-      // Use screen-space detach delta in 3D (avoids perspective distortion of world-space ring)
-      const detachDelta = coords.getRootRingDetachDelta?.(node, graphCoords)
-        ?? Math.abs(Math.hypot(graphCoords.x - node.x, graphCoords.y - node.y) - rootRingRadius);
+    // Only root traversers are supported now; silently ignore legacy edge traversers
+    if (!traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) return;
 
-      if ((detachedDrag && detachedDrag.traverserId === traverser.id) || detachDelta > DETACH_DISTANCE) {
-        if (pendingBurn) {
-          setPendingBurn(null);
-        }
-        if (previewBurn) {
-          setPreviewBurn(null);
-        }
-        const allowedEdgeIds = new Set(eligibleTraverserEdgeIds);
-        const candidate = findClosestEdge(graphCoords, allowedEdgeIds, tuning.dragEdgeSearchRadius);
-        const rootCandidate = findClosestRootNode(graphCoords);
-        let rootCandidateId: string | null = null;
-        let rootCandidatePosition: number | null = null;
-        if (rootCandidate) {
-          const rootEdgeId = `${ROOT_TRAVERSER_PREFIX}${rootCandidate.nodeId}`;
-          const existingRoot = traverserByEdgeId.get(rootEdgeId);
-          if (!existingRoot || existingRoot.id === traverser.id) {
-            const rootNode = nodeByIdRef.current?.get(rootCandidate.nodeId);
-            if (rootNode) {
-              rootCandidateId = rootCandidate.nodeId;
-              rootCandidatePosition = coords.getRootPositionFromCoords(rootNode, graphCoords);
-            }
-          }
-        }
-        const rootSnapMult = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
-        const rootBias = nodeRadius * rootSnapMult;
-        const preferRoot = rootCandidateId && (!candidate || (rootCandidate!.distance <= candidate.distance + rootBias));
-        const selectedCandidate = preferRoot ? null : candidate;
-        const selectedRootId = preferRoot ? rootCandidateId : null;
-        const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
+    const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+    const node = nodeByIdRef.current?.get(nodeId);
+    if (!node || node.x === undefined || node.y === undefined) return;
 
-        let targetX = graphCoords.x;
-        let targetY = graphCoords.y;
-        let targetZ = graphCoords.z;
-        if (selectedRootId) {
-          const rootNode = nodeByIdRef.current?.get(selectedRootId);
-          if (rootNode) {
-            const render = coords.getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
-            targetX = render.x;
-            targetY = render.y;
-            targetZ = render.z;
-          }
-        } else if (selectedCandidate) {
-          const candidateNodes = coords.getEdgeNodes(selectedCandidate.edgeId);
-          if (candidateNodes) {
-            const render = coords.getTraverserRenderPoint(
-              candidateNodes.sourceNode,
-              candidateNodes.targetNode,
-              selectedCandidate.position
-            );
-            targetX = render.x;
-            targetY = render.y;
-            targetZ = render.z;
-          }
-        }
+    // Use screen-space detach delta in 3D (avoids perspective distortion of world-space ring)
+    const detachDelta = coords.getRootRingDetachDelta?.(node, graphCoords)
+      ?? Math.abs(Math.hypot(graphCoords.x - node.x, graphCoords.y - node.y) - rootRingRadius);
 
-        const currentRender = coords.getRootTraverserPoint(node, clamp(traverser.position ?? 0, 0, 1));
-        setDetachedDrag(prev => {
-          const hasMagnetTarget = Boolean(selectedRootId || selectedCandidate);
-          const strength = hasMagnetTarget ? tuning.magnetStrength.detachTarget : tuning.magnetStrength.detachFree;
-          const startX = prev?.traverserId === traverser.id ? prev.x : currentRender.x;
-          const startY = prev?.traverserId === traverser.id ? prev.y : currentRender.y;
-          const startZ = prev?.traverserId === traverser.id ? (prev.z ?? 0) : (currentRender.z ?? 0);
-          return {
-            traverserId: traverser.id,
-            x: startX + (targetX - startX) * strength,
-            y: startY + (targetY - startY) * strength,
-            z: startZ + ((targetZ ?? 0) - startZ) * strength,
-            candidateEdgeId: selectedCandidate?.edgeId ?? null,
-            candidatePosition: selectedCandidate?.position ?? null,
-            candidateRootNodeId: selectedRootId ?? null,
-            candidateRootPosition: selectedRootPosition ?? null,
-          };
-        });
-        return;
-      }
-
-      if (detachedDrag && detachedDrag.traverserId === traverser.id) {
-        setDetachedDrag(null);
-      }
-
-      let position = coords.getRootPositionFromCoords(node, graphCoords);
-      const currentPosition = traverser.position ?? 0;
-      if (Math.abs(position - currentPosition) > 0.5) {
-        position = currentPosition;
-      }
-      updateTraverserPosition(traverser, position);
-      lastDragStateRef.current = { t: position, targetNodeId: node.id };
-
-      if (position >= SELECTION_THRESHOLD) {
-        setPreviewBurn(prev => {
-          if (prev && prev.edgeId === traverser.edgeId && prev.targetNodeId === node.id) {
-            return prev;
-          }
-          return { edgeId: traverser.edgeId, targetNodeId: node.id };
-        });
-      } else if (previewBurn?.edgeId === traverser.edgeId) {
-        setPreviewBurn(null);
-      }
-      if (pendingBurn?.traverserId === traverser.id && position < SELECTION_THRESHOLD) {
-        setPendingBurn(null);
-      }
-      return;
-    }
-
-    // --- Edge traverser drag ---
-    const edgeNodes = coords.getEdgeNodes(traverser.edgeId);
-    if (!edgeNodes) return;
-    const { sourceNode, targetNode } = edgeNodes;
-    // Use screen-space projection in 3D (handles z-axis correctly)
-    const projection = coords.projectToEdgeScreen?.(graphCoords, sourceNode, targetNode)
-      ?? projectPointToSegment(
-        graphCoords.x,
-        graphCoords.y,
-        sourceNode.x!,
-        sourceNode.y!,
-        targetNode.x!,
-        targetNode.y!
-      );
-    const lineDistance = coords.projectToEdgeScreen
-      ? projection.distance  // screen-space projection already gives unclamped distance
-      : distanceToLine(
-        graphCoords.x,
-        graphCoords.y,
-        sourceNode.x!,
-        sourceNode.y!,
-        targetNode.x!,
-        targetNode.y!
-      );
-    const sourceScreen = coords.getScreenCoords(sourceNode.x!, sourceNode.y!, sourceNode.z);
-    const targetScreen = coords.getScreenCoords(targetNode.x!, targetNode.y!, targetNode.z);
-    if (prevScreenCoords && sourceScreen && targetScreen) {
-      const edgeDx = targetScreen.x - sourceScreen.x;
-      const edgeDy = targetScreen.y - sourceScreen.y;
-      const edgeLength = Math.hypot(edgeDx, edgeDy);
-      const deltaX = screenCoords.x - prevScreenCoords.x;
-      const deltaY = screenCoords.y - prevScreenCoords.y;
-      const moveDistance = Math.hypot(deltaX, deltaY);
-      if (moveDistance > 1e-3 && edgeLength > 1e-3) {
-        const dot = (deltaX * edgeDx + deltaY * edgeDy) / (moveDistance * edgeLength);
-        const clamped = Math.max(-1, Math.min(1, dot));
-        const angle = Math.acos(Math.abs(clamped)) * (180 / Math.PI);
-        dragAngleRef.current = angle;
-      }
-    } else if (prevScreenCoords) {
-      const edgeDx = targetNode.x! - sourceNode.x!;
-      const edgeDy = targetNode.y! - sourceNode.y!;
-      const edgeLength = Math.hypot(edgeDx, edgeDy);
-      const prevGraph = coords.getGraphCoords(prevScreenCoords.x, prevScreenCoords.y);
-      const deltaX = graphCoords.x - (prevGraph?.x ?? graphCoords.x);
-      const deltaY = graphCoords.y - (prevGraph?.y ?? graphCoords.y);
-      const moveDistance = Math.hypot(deltaX, deltaY);
-      if (moveDistance > 1e-3 && edgeLength > 1e-3) {
-        const dot = (deltaX * edgeDx + deltaY * edgeDy) / (moveDistance * edgeLength);
-        const clamped = Math.max(-1, Math.min(1, dot));
-        const angle = Math.acos(Math.abs(clamped)) * (180 / Math.PI);
-        dragAngleRef.current = angle;
-      }
-    }
-    const dragAngle = dragAngleRef.current ?? 0;
-    const orthogonalEnough = dragAngle >= ORTHOGONAL_DETACH_ANGLE;
-    const zoom = coords.getZoomScale();
-    const lineDistanceScreen = sourceScreen && targetScreen
-      ? distanceToLine(screenCoords.x, screenCoords.y, sourceScreen.x, sourceScreen.y, targetScreen.x, targetScreen.y)
-      : lineDistance * zoom;
-    const baseDetachThreshold = DETACH_DISTANCE * DETACH_DISTANCE_BOOST * zoom;
-    const detachThreshold = Math.max(baseDetachThreshold, MIN_PERP_DETACH_PX);
-
-    const allowedEdgeIds = new Set(eligibleTraverserEdgeIds);
-    allowedEdgeIds.add(traverser.edgeId);
-
-    if ((detachedDrag && detachedDrag.traverserId === traverser.id) || (orthogonalEnough && lineDistanceScreen > detachThreshold)) {
+    if ((detachedDrag && detachedDrag.traverserId === traverser.id) || detachDelta > DETACH_DISTANCE) {
       if (pendingBurn) {
         setPendingBurn(null);
       }
       if (previewBurn) {
         setPreviewBurn(null);
       }
-      const candidate = findClosestEdge(graphCoords, allowedEdgeIds, tuning.dragEdgeSearchRadius);
+      // Only snap to other node rings, never edges
       const rootCandidate = findClosestRootNode(graphCoords);
       let rootCandidateId: string | null = null;
       let rootCandidatePosition: number | null = null;
@@ -572,62 +379,33 @@ export function useTraverserLogic({
         }
       }
 
-      const rootSnapMult = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
-      const rootBias = nodeRadius * rootSnapMult;
-      const preferRoot = rootCandidateId && (!candidate || (rootCandidate!.distance <= candidate.distance + rootBias));
-      const selectedCandidate = preferRoot ? null : candidate;
-      const selectedRootId = preferRoot ? rootCandidateId : null;
-      const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
-
       let targetX = graphCoords.x;
       let targetY = graphCoords.y;
       let targetZ = graphCoords.z;
-      if (selectedRootId) {
-        const rootNode = nodeByIdRef.current?.get(selectedRootId);
+      if (rootCandidateId) {
+        const rootNode = nodeByIdRef.current?.get(rootCandidateId);
         if (rootNode) {
-          const render = coords.getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
-          targetX = render.x;
-          targetY = render.y;
-          targetZ = render.z;
-        }
-      } else if (selectedCandidate) {
-        const candidateNodes = coords.getEdgeNodes(selectedCandidate.edgeId);
-        if (candidateNodes) {
-          const render = coords.getTraverserRenderPoint(
-            candidateNodes.sourceNode,
-            candidateNodes.targetNode,
-            selectedCandidate.position
-          );
+          const render = coords.getRootTraverserPoint(rootNode, rootCandidatePosition ?? 0);
           targetX = render.x;
           targetY = render.y;
           targetZ = render.z;
         }
       }
 
-      const fallbackRender = coords.getTraverserRenderPoint(
-        sourceNode,
-        targetNode,
-        clamp(traverser.position ?? projection.t, 0, 1)
-      );
-
+      const currentRender = coords.getRootTraverserPoint(node, clamp(traverser.position ?? 0, 0, 1));
       setDetachedDrag(prev => {
-        const hasMagnetTarget = Boolean(selectedRootId || selectedCandidate);
+        const hasMagnetTarget = Boolean(rootCandidateId);
         const strength = hasMagnetTarget ? tuning.magnetStrength.detachTarget : tuning.magnetStrength.detachFree;
-        const startX = prev?.traverserId === traverser.id ? prev.x : (fallbackRender?.x ?? targetX);
-        const startY = prev?.traverserId === traverser.id ? prev.y : (fallbackRender?.y ?? targetY);
-        const startZ = prev?.traverserId === traverser.id ? (prev.z ?? 0) : (fallbackRender?.z ?? targetZ ?? 0);
-        const nextX = startX + (targetX - startX) * strength;
-        const nextY = startY + (targetY - startY) * strength;
-        const nextZ = startZ + ((targetZ ?? 0) - startZ) * strength;
+        const startX = prev?.traverserId === traverser.id ? prev.x : currentRender.x;
+        const startY = prev?.traverserId === traverser.id ? prev.y : currentRender.y;
+        const startZ = prev?.traverserId === traverser.id ? (prev.z ?? 0) : (currentRender.z ?? 0);
         return {
           traverserId: traverser.id,
-          x: nextX,
-          y: nextY,
-          z: nextZ,
-          candidateEdgeId: selectedCandidate?.edgeId ?? null,
-          candidatePosition: selectedCandidate?.position ?? null,
-          candidateRootNodeId: selectedRootId ?? null,
-          candidateRootPosition: selectedRootPosition ?? null,
+          x: startX + (targetX - startX) * strength,
+          y: startY + (targetY - startY) * strength,
+          z: startZ + ((targetZ ?? 0) - startZ) * strength,
+          candidateRootNodeId: rootCandidateId ?? null,
+          candidateRootPosition: rootCandidatePosition ?? null,
         };
       });
       return;
@@ -637,19 +415,25 @@ export function useTraverserLogic({
       setDetachedDrag(null);
     }
 
-    updateTraverserPosition(traverser, projection.t);
-    lastDragStateRef.current = { t: projection.t, targetNodeId: targetNode.id };
-    if (projection.t >= SELECTION_THRESHOLD) {
+    let position = coords.getRootPositionFromCoords(node, graphCoords);
+    const currentPosition = traverser.position ?? 0;
+    if (Math.abs(position - currentPosition) > 0.5) {
+      position = currentPosition;
+    }
+    updateTraverserPosition(traverser, position);
+    lastDragStateRef.current = { t: position, targetNodeId: node.id };
+
+    if (position >= SELECTION_THRESHOLD) {
       setPreviewBurn(prev => {
-        if (prev && prev.edgeId === traverser.edgeId && prev.targetNodeId === targetNode.id) {
+        if (prev && prev.edgeId === traverser.edgeId && prev.targetNodeId === node.id) {
           return prev;
         }
-        return { edgeId: traverser.edgeId, targetNodeId: targetNode.id };
+        return { edgeId: traverser.edgeId, targetNodeId: node.id };
       });
     } else if (previewBurn?.edgeId === traverser.edgeId) {
       setPreviewBurn(null);
     }
-    if (pendingBurn?.traverserId === traverser.id && projection.t < SELECTION_THRESHOLD) {
+    if (pendingBurn?.traverserId === traverser.id && position < SELECTION_THRESHOLD) {
       setPendingBurn(null);
     }
   }, [
@@ -661,23 +445,13 @@ export function useTraverserLogic({
     pendingBurn?.traverserId,
     SELECTION_THRESHOLD,
     DETACH_DISTANCE,
-    DETACH_DISTANCE_BOOST,
-    ORTHOGONAL_DETACH_ANGLE,
-    MIN_PERP_DETACH_PX,
     rootRingRadius,
     detachedDrag,
-    findClosestEdge,
     findClosestRootNode,
-    eligibleTraverserEdgeIds,
     traverserByEdgeId,
     nodeByIdRef,
-    nodeRadius,
-    tuning.dragEdgeSearchRadius,
     tuning.magnetStrength.detachTarget,
     tuning.magnetStrength.detachFree,
-    tuning.rootSnapMultiplier.balls,
-    tuning.rootSnapMultiplier.labels,
-    displayMode,
     pendingBurn,
     previewBurn,
   ]);
@@ -697,17 +471,6 @@ export function useTraverserLogic({
             onTraverserUpdate(traverser.id, {
               edgeId: rootEdgeId,
               position: clamp(detachedDrag.candidateRootPosition ?? 0, 0, 1),
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        } else if (detachedDrag.candidateEdgeId) {
-          const existing = traverserByEdgeId.get(detachedDrag.candidateEdgeId);
-          if (existing && existing.id !== traverser.id) {
-            // Edge already has a traverser — silently reject
-          } else if (onTraverserUpdate) {
-            onTraverserUpdate(traverser.id, {
-              edgeId: detachedDrag.candidateEdgeId,
-              position: clamp(detachedDrag.candidatePosition ?? 0, 0, 1),
               updatedAt: new Date().toISOString(),
             });
           }
@@ -763,34 +526,12 @@ export function useTraverserLogic({
       }
     }
 
-    const candidate = findClosestEdge(graphCoords, eligibleTraverserEdgeIds, tuning.ghostEdgeSearchRadius);
-    const rootSnapMult = displayMode === 'balls' ? tuning.rootSnapMultiplier.balls : tuning.rootSnapMultiplier.labels;
-    const rootBias = nodeRadius * rootSnapMult;
-    const preferRoot = rootCandidateId && (!candidate || (rootCandidate!.distance <= candidate.distance + rootBias));
-    const selectedCandidate = preferRoot ? null : candidate;
-    const selectedRootId = preferRoot ? rootCandidateId : null;
-    const selectedRootPosition = preferRoot ? rootCandidatePosition : null;
-
     let targetX = baseX;
     let targetY = baseY;
-    if (selectedRootId) {
-      const rootNode = nodeByIdRef.current?.get(selectedRootId);
+    if (rootCandidateId) {
+      const rootNode = nodeByIdRef.current?.get(rootCandidateId);
       if (rootNode) {
-        const render = coords.getRootTraverserPoint(rootNode, selectedRootPosition ?? 0);
-        const screen = coords.getScreenCoords(render.x, render.y, render.z);
-        if (screen) {
-          targetX = screen.x;
-          targetY = screen.y;
-        }
-      }
-    } else if (selectedCandidate) {
-      const candidateNodes = coords.getEdgeNodes(selectedCandidate.edgeId);
-      if (candidateNodes) {
-        const render = coords.getTraverserRenderPoint(
-          candidateNodes.sourceNode,
-          candidateNodes.targetNode,
-          selectedCandidate.position
-        );
+        const render = coords.getRootTraverserPoint(rootNode, rootCandidatePosition ?? 0);
         const screen = coords.getScreenCoords(render.x, render.y, render.z);
         if (screen) {
           targetX = screen.x;
@@ -800,7 +541,7 @@ export function useTraverserLogic({
     }
 
     setDraggingUserGhost(prev => {
-      const hasMagnetTarget = Boolean(selectedRootId || selectedCandidate);
+      const hasMagnetTarget = Boolean(rootCandidateId);
       const strength = hasMagnetTarget ? tuning.magnetStrength.ghostTarget : tuning.magnetStrength.ghostFree;
       const startX = prev ? prev.x : baseX;
       const startY = prev ? prev.y : baseY;
@@ -813,15 +554,8 @@ export function useTraverserLogic({
     coords,
     findClosestRootNode,
     traverserByEdgeId,
-    findClosestEdge,
-    eligibleTraverserEdgeIds,
-    tuning.ghostEdgeSearchRadius,
     tuning.magnetStrength.ghostTarget,
     tuning.magnetStrength.ghostFree,
-    tuning.rootSnapMultiplier.balls,
-    tuning.rootSnapMultiplier.labels,
-    displayMode,
-    nodeRadius,
     nodeByIdRef,
   ]);
 
@@ -840,63 +574,24 @@ export function useTraverserLogic({
       const position = node ? coords.getRootPositionFromCoords(node, graphCoords) : 0;
       const traverser = createTraverserForRoot(rootCandidate.nodeId, userId, position);
       onTraverserCreate(traverser);
-      closeEdgeStartPicker();
       setDraggingUserId(null);
       return;
     }
 
-    if (!onTraverserCreate) return;
-
-    if (eligibleTraverserEdgeIds.size === 0) {
-      return;
-    }
-
-    const closestAny = findClosestEdge(graphCoords, undefined, tuning.ghostEdgeSearchRadius);
-    if (!closestAny) {
-      return;
-    }
-    if (traverserByEdgeId.has(closestAny.edgeId)) {
-      return;
-    }
-    if (!eligibleTraverserEdgeIds.has(closestAny.edgeId)) {
-      return;
-    }
-
-    const traverser = createTraverserForEdge(closestAny.edgeId, userId, closestAny.position);
-    onTraverserCreate(traverser);
-    closeEdgeStartPicker();
+    // No root node found — drop is a no-op
     setDraggingUserId(null);
-
-    if (closestAny.position >= SELECTION_THRESHOLD) {
-      const edge = edgeById.get(closestAny.edgeId);
-      if (edge) {
-        beginPendingBurn(edge.target, traverser, traverser.userId);
-        setPreviewBurn({ edgeId: closestAny.edgeId, targetNodeId: edge.target });
-        suppressNextBackgroundClick();
-      }
-    }
   }, [
     onTraverserCreate,
     coords,
-    findClosestEdge,
     traverserByEdgeId,
-    createTraverserForEdge,
     createTraverserForRoot,
-    beginPendingBurn,
-    edgeById,
-    SELECTION_THRESHOLD,
-    eligibleTraverserEdgeIds,
     findClosestRootNode,
-    suppressNextBackgroundClick,
-    closeEdgeStartPicker,
-    tuning.ghostEdgeSearchRadius,
     nodeByIdRef,
   ]);
 
   // --- Traverser drag initiation ---
 
   const initiateTraverserDrag = useCallback((traverserId: string, clientX: number, clientY: number) => {
-    closeEdgeStartPicker();
     if (pendingBurn) {
       setPendingBurn(null);
       setPreviewBurn(null);
@@ -915,7 +610,6 @@ export function useTraverserLogic({
     pendingBurn,
     previewBurn,
     detachedDrag,
-    closeEdgeStartPicker,
   ]);
 
   return {
@@ -944,7 +638,6 @@ export function useTraverserLogic({
     updateTraverserPosition,
 
     // Finding functions
-    findClosestEdge,
     findClosestRootNode,
     findTraverserHit,
 

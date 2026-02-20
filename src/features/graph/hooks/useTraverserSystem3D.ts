@@ -5,6 +5,7 @@ import type { DagbanGraph as GraphData, Card, Traverser, User, Edge } from '@/li
 import type { GraphNodeData, GraphLinkData, ViewMode, DisplayMode, TraverserCoordinateProvider } from '../types';
 import type { TraverserTuning } from '../traverserTuning';
 import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
+import type { BurnFuseAnimation } from '../traverserConstants';
 import { useTraverserLogic, clamp } from './useTraverserLogic';
 
 export type { PendingBurnState, PreviewBurnState, DetachedDragState } from './useTraverserLogic';
@@ -36,10 +37,8 @@ export type UseTraverserSystem3DProps = {
   traverserById: Map<string, Traverser>;
   userById: Map<string, User>;
   rootActiveNodeIds: Set<string>;
-  eligibleTraverserEdgeIds: Set<string>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   graphRef: React.RefObject<any>;
-  createTraverserForEdge: (edgeId: string, userId: string, position: number) => Traverser;
   createTraverserForRoot: (nodeId: string, userId: string, position: number) => Traverser;
   onTraverserCreate?: (traverser: Traverser) => void;
   onTraverserUpdate?: (
@@ -49,7 +48,7 @@ export type UseTraverserSystem3DProps = {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
-  closeEdgeStartPicker: () => void;
+  onBurnFuseStart?: (animation: BurnFuseAnimation) => void;
   suppressNextBackgroundClick: () => void;
   tuning?: Partial<TraverserTuning>;
 };
@@ -76,15 +75,13 @@ export function useTraverserSystem3D({
   traverserById,
   userById,
   rootActiveNodeIds,
-  eligibleTraverserEdgeIds,
   graphRef,
-  createTraverserForEdge,
   createTraverserForRoot,
   onTraverserCreate,
   onTraverserUpdate,
   onTraverserDelete,
   onCardChange,
-  closeEdgeStartPicker,
+  onBurnFuseStart,
   suppressNextBackgroundClick,
   tuning: tuningOverrides,
 }: UseTraverserSystem3DProps) {
@@ -388,16 +385,14 @@ export function useTraverserSystem3D({
     traverserById,
     userById,
     rootActiveNodeIds,
-    eligibleTraverserEdgeIds,
     nodeByIdRef,
     graphDataView,
-    createTraverserForEdge,
     createTraverserForRoot,
     onTraverserCreate,
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    closeEdgeStartPicker,
+    onBurnFuseStart,
     suppressNextBackgroundClick,
     tuning: tuningOverrides,
   });
@@ -491,57 +486,36 @@ export function useTraverserSystem3D({
     if (viewMode !== '3D') return [];
     return (data.traversers || [])
       .map(traverser => {
+        // Only root traversers; silently skip legacy edge traversers
+        if (!traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) return null;
         const isDetached = logic.detachedDrag && logic.detachedDrag.traverserId === traverser.id;
 
-        if (traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) {
-          const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
-          const node = nodeByIdRef.current?.get(nodeId);
-          if (!node || node.x === undefined || node.y === undefined) return null;
+        const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+        const node = nodeByIdRef.current?.get(nodeId);
+        if (!node || node.x === undefined || node.y === undefined) return null;
 
-          if (isDetached) {
-            const screen = getScreenCoords(logic.detachedDrag!.x, logic.detachedDrag!.y, logic.detachedDrag!.z);
-            if (!screen) return null;
-            const user = userById.get(traverser.userId) || null;
-            return { id: traverser.id, x: screen.x, y: screen.y, user, isRoot: true } as TraverserOverlay3D;
-          }
-
-          // Compute position directly in screen space to match the canvas overlay ring
-          const nx = node.x ?? 0, ny = node.y ?? 0, nz = node.z ?? 0;
-          const centerScreen = getScreenCoords(nx, ny, nz);
-          if (!centerScreen) return null;
-          const screenR = getScreenRingRadius(nx, ny, nz, centerScreen.x, centerScreen.y);
-          if (!screenR || screenR < 1) return null;
-
-          const pos = clamp(traverser.position, 0, 1);
-          const angle = ROOT_START_ANGLE_CONST + pos * Math.PI * 2;
-          const sx = centerScreen.x + Math.cos(angle) * screenR;
-          const sy = centerScreen.y + Math.sin(angle) * screenR;
-          const tangentAngle = angle + Math.PI / 2;
-
-          const user = userById.get(traverser.userId) || null;
-          return { id: traverser.id, x: sx, y: sy, user, isRoot: true, tangentAngle } as TraverserOverlay3D;
-        } else {
-          const edgeNodes = getEdgeNodes(traverser.edgeId);
-          if (!edgeNodes) return null;
-          const { sourceNode, targetNode } = edgeNodes;
-          const pos = clamp(traverser.position, 0, 1);
-          const render = getTraverserRenderPoint(sourceNode, targetNode, pos);
-          const renderPoint = { x: render.x, y: render.y, z: render.z };
-
-          const override = isDetached
-            ? { x: logic.detachedDrag!.x, y: logic.detachedDrag!.y, z: logic.detachedDrag!.z }
-            : renderPoint;
-          const screen = getScreenCoords(override.x, override.y, override.z);
+        if (isDetached) {
+          const screen = getScreenCoords(logic.detachedDrag!.x, logic.detachedDrag!.y, logic.detachedDrag!.z);
           if (!screen) return null;
           const user = userById.get(traverser.userId) || null;
-          return {
-            id: traverser.id,
-            x: screen.x,
-            y: screen.y,
-            user,
-            isRoot: false,
-          } as TraverserOverlay3D;
+          return { id: traverser.id, x: screen.x, y: screen.y, user, isRoot: true } as TraverserOverlay3D;
         }
+
+        // Compute position directly in screen space to match the canvas overlay ring
+        const nx = node.x ?? 0, ny = node.y ?? 0, nz = node.z ?? 0;
+        const centerScreen = getScreenCoords(nx, ny, nz);
+        if (!centerScreen) return null;
+        const screenR = getScreenRingRadius(nx, ny, nz, centerScreen.x, centerScreen.y);
+        if (!screenR || screenR < 1) return null;
+
+        const pos = clamp(traverser.position, 0, 1);
+        const angle = ROOT_START_ANGLE_CONST + pos * Math.PI * 2;
+        const sx = centerScreen.x + Math.cos(angle) * screenR;
+        const sy = centerScreen.y + Math.sin(angle) * screenR;
+        const tangentAngle = angle + Math.PI / 2;
+
+        const user = userById.get(traverser.userId) || null;
+        return { id: traverser.id, x: sx, y: sy, user, isRoot: true, tangentAngle } as TraverserOverlay3D;
       })
       .filter(Boolean) as TraverserOverlay3D[];
   };

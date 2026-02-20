@@ -12,7 +12,8 @@ import { useGraphCoordinates } from './hooks/useGraphCoordinates';
 import { useCanvasRendering, type DragConnectState } from './hooks/useCanvasRendering';
 import { useGraphInteractions } from './hooks/useGraphInteractions';
 import type { TraverserTuning } from './traverserTuning';
-import { ROOT_TRAVERSER_PREFIX } from './traverserConstants';
+import { ROOT_TRAVERSER_PREFIX, BURN_FUSE_DURATION_MS } from './traverserConstants';
+import type { BurnFuseAnimation } from './traverserConstants';
 
 // Import extracted components
 import {
@@ -213,11 +214,9 @@ export default function DagbanGraph({
     startTime: null,
   });
 
-  const [edgeStartPicker, setEdgeStartPicker] = useState<{
-    edgeId: string;
-    x: number;
-    y: number;
-  } | null>(null);
+  // Burn fuse animation state
+  const [burnFuseAnimations, setBurnFuseAnimations] = useState<BurnFuseAnimation[]>([]);
+
   const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenuState>({
     visible: false,
     x: 0,
@@ -259,7 +258,6 @@ export default function DagbanGraph({
     userById,
     rootTraverserByNodeId,
     getAssigneeName,
-    eligibleTraverserEdgeIds,
     rootActiveNodeIds,
     updateNodeLabelElement,
   } = useGraphData({
@@ -460,9 +458,6 @@ export default function DagbanGraph({
   const TRAVERSER_HIT_RADIUS = TRAVERSER_RADIUS + 4;
 
   // --- Inline callbacks to break circular dep between useTraverserSystem ↔ useGraphInteractions ---
-  const closeEdgeStartPicker = useCallback(() => {
-    setEdgeStartPicker(null);
-  }, []);
 
   const suppressNextBackgroundClick = useCallback(() => {
     suppressBackgroundClickRef.current = true;
@@ -471,16 +466,8 @@ export default function DagbanGraph({
     });
   }, []);
 
-  const createTraverserForEdge = useCallback((edgeId: string, userId: string, position: number) => {
-    const now = new Date().toISOString();
-    return {
-      id: generateTraverserId(),
-      edgeId,
-      userId,
-      position: clamp(position, 0, 1),
-      createdAt: now,
-      updatedAt: now,
-    };
+  const handleBurnFuseStart = useCallback((animation: BurnFuseAnimation) => {
+    setBurnFuseAnimations(prev => [...prev, animation]);
   }, []);
 
   const createTraverserForRoot = useCallback((nodeId: string, userId: string, position: number) => {
@@ -515,7 +502,6 @@ export default function DagbanGraph({
     traverserById,
     userById,
     rootActiveNodeIds,
-    eligibleTraverserEdgeIds,
     getGraphCoords,
     getScreenCoords,
     getZoomScale,
@@ -523,13 +509,12 @@ export default function DagbanGraph({
     getTraverserRenderPoint,
     getRootTraverserPoint,
     getRootPositionFromCoords,
-    createTraverserForEdge,
     createTraverserForRoot,
     onTraverserCreate,
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    closeEdgeStartPicker,
+    onBurnFuseStart: handleBurnFuseStart,
     suppressNextBackgroundClick,
     tuning: traverserTuning,
   });
@@ -552,15 +537,13 @@ export default function DagbanGraph({
     traverserById,
     userById,
     rootActiveNodeIds,
-    eligibleTraverserEdgeIds,
     graphRef,
-    createTraverserForEdge,
     createTraverserForRoot,
     onTraverserCreate,
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    closeEdgeStartPicker,
+    onBurnFuseStart: handleBurnFuseStart,
     suppressNextBackgroundClick,
     tuning: traverserTuning,
   });
@@ -614,12 +597,13 @@ export default function DagbanGraph({
     draggingUserId,
     draggingTraverserId,
     spaceHighlightRef,
-    eligibleTraverserEdgeIds,
     rootActiveNodeIds,
     rootTraverserByNodeId,
     traverserByEdgeId,
     isBurntNodeId,
+    cardById,
     graphDataView,
+    burnFuseAnimations,
   });
 
   // ============================================================
@@ -638,11 +622,7 @@ export default function DagbanGraph({
     openDownstreamCreation,
     openUpstreamCreation,
     handleCardAssigneeChange,
-    handleEdgeStartPickUser,
-    openEdgeStartPicker,
     closeEdgeContextMenu,
-    handleEdgeAssign,
-    handleEdgeDetachTraverser,
     handleEdgeDelete,
     handleLinkClick,
     handleNodeClick,
@@ -659,7 +639,6 @@ export default function DagbanGraph({
     pendingBurn,
     previewBurn,
     detachedDrag,
-    edgeStartPicker,
     edgeContextMenu,
     selectedNode,
     focusedNodeId,
@@ -669,12 +648,10 @@ export default function DagbanGraph({
     edgeById,
     traverserByEdgeId,
     rootActiveNodeIds,
-    eligibleTraverserEdgeIds,
     setSelectedNode,
     setFocusedNodeId,
     setHoverTooltip,
     setEdgeContextMenu,
-    setEdgeStartPicker,
     setPendingSelectNodeId,
     setConnectionMode,
     setDragConnect,
@@ -734,7 +711,8 @@ export default function DagbanGraph({
 
   const hasActiveFuses = useMemo(() => (data.traversers?.length ?? 0) > 0, [data.traversers]);
   const hasHolyNodes = useMemo(() => data.cards.some(c => c.title.trimEnd().endsWith('!!!')), [data.cards]);
-  const needsAnimation = hasActiveFuses || hasHolyNodes;
+  const hasBurnFuse = burnFuseAnimations.length > 0;
+  const needsAnimation = hasActiveFuses || hasHolyNodes || hasBurnFuse;
 
   useEffect(() => {
     if (!needsAnimation) {
@@ -758,6 +736,24 @@ export default function DagbanGraph({
       }
     };
   }, [needsAnimation]);
+
+  // Burn fuse animation completion — remove finished animations from state
+  useEffect(() => {
+    if (burnFuseAnimations.length === 0) return;
+
+    let rafId: number;
+    const tick = () => {
+      const now = performance.now();
+      const remaining = burnFuseAnimations.filter(anim => now - anim.startTime < anim.duration);
+      if (remaining.length < burnFuseAnimations.length) {
+        setBurnFuseAnimations(remaining);
+      } else {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [burnFuseAnimations]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -902,7 +898,6 @@ export default function DagbanGraph({
         }
         if (pendingBurn) { cancelPendingBurn(); return; }
         if (previewBurn) { setPreviewBurn(null); return; }
-        if (edgeStartPicker) { closeEdgeStartPicker(); return; }
         if (connectionMode.active) { cancelConnectionMode(); return; }
         if (showCopySettings) { setShowCopySettings(false); return; }
         if (focusedNodeId || selectedNode) {
@@ -918,7 +913,7 @@ export default function DagbanGraph({
       // --- Below: skipped when typing in an input or textarea ---
       if (isTyping) return;
 
-      // Space — hold to highlight eligible edges and root nodes
+      // Space — hold to highlight eligible root nodes
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         startSpaceHighlight();
@@ -1005,10 +1000,8 @@ export default function DagbanGraph({
     graphDataView.nodes,
     pendingBurn,
     previewBurn,
-    edgeStartPicker,
     confirmPendingBurn,
     cancelPendingBurn,
-    closeEdgeStartPicker,
     handleDeleteNode,
     handleUndo,
     createEmptyRootNode,
@@ -1042,7 +1035,6 @@ export default function DagbanGraph({
     traverserByEdgeId,
     rootTraverserByNodeId,
     rootActiveNodeIds,
-    eligibleTraverserEdgeIds,
     isBurntNodeId,
     getAssigneeName,
     NODE_RADIUS,
@@ -1055,6 +1047,7 @@ export default function DagbanGraph({
     getFuseRingGradient,
     nodeBckgDimensionsRef,
     cycleEdgeIds,
+    burnFuseAnimations,
   });
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
@@ -1198,13 +1191,6 @@ export default function DagbanGraph({
     setBurntAgeThreshold,
   ]);
 
-  const edgeContextMenuTraverserId = useMemo(() => {
-    const edgeTraverser = edgeContextMenu.edgeId
-      ? traverserByEdgeId.get(edgeContextMenu.edgeId)
-      : null;
-    return edgeTraverser?.id ?? null;
-  }, [edgeContextMenu.edgeId, traverserByEdgeId]);
-
   const draggingUser = draggingUserId ? userById.get(draggingUserId) ?? null : null;
 
   return (
@@ -1237,6 +1223,8 @@ export default function DagbanGraph({
         nodeThreeObject={nodeThreeObject}
         getArrowRelPos={getArrowRelPos}
         getArrowRelPosMiddle={getArrowRelPosMiddle}
+        cardById={cardById}
+        BURNT_COLOR={_BURNT_COLOR}
       />
 
       <GraphOverlays
@@ -1252,15 +1240,8 @@ export default function DagbanGraph({
         onConfirmPendingBurn={confirmPendingBurn}
         onCancelPendingBurn={cancelPendingBurn}
         edgeContextMenu={edgeContextMenu}
-        edgeContextMenuTraverserId={edgeContextMenuTraverserId}
         onCloseEdgeContextMenu={closeEdgeContextMenu}
-        onEdgeAssign={handleEdgeAssign}
-        onEdgeDetach={handleEdgeDetachTraverser}
         onEdgeDelete={handleEdgeDelete}
-        edgeStartPicker={edgeStartPicker}
-        users={data.users}
-        onEdgeStartPickUser={handleEdgeStartPickUser}
-        onAddUser={handleAddUser}
         hoverTooltip={hoverTooltip}
         connectionMode={connectionMode}
         onCancelConnectionMode={cancelConnectionMode}

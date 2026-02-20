@@ -4,6 +4,7 @@ import type { PendingBurnState, PreviewBurnState, DetachedDragState } from './us
 import { clamp } from './useTraverserLogic';
 import { getAvatarConfig, drawAvatar } from '@/lib/avatar';
 import type { Card, Traverser } from '@/lib/types';
+import type { BurnFuseAnimation } from '../traverserConstants';
 
 export type DragConnectState = {
   active: boolean;
@@ -29,7 +30,6 @@ export type UseCanvasRenderingProps = {
   traverserByEdgeId: Map<string, Traverser>;
   rootTraverserByNodeId: Map<string, Traverser>;
   rootActiveNodeIds: Set<string>;
-  eligibleTraverserEdgeIds: Set<string>;
   isBurntNodeId: (nodeId: string) => boolean;
   getAssigneeName: (assignee: string | undefined) => string;
   // From useGraphCoordinates
@@ -45,6 +45,8 @@ export type UseCanvasRenderingProps = {
   cycleEdgeIds: Set<string>;
   // Refs
   nodeBckgDimensionsRef: React.RefObject<Map<string, [number, number]>>;
+  // Burn fuse animations
+  burnFuseAnimations: BurnFuseAnimation[];
 };
 
 export function useCanvasRendering({
@@ -63,7 +65,6 @@ export function useCanvasRendering({
   traverserByEdgeId,
   rootTraverserByNodeId,
   rootActiveNodeIds,
-  eligibleTraverserEdgeIds,
   isBurntNodeId,
   getAssigneeName,
   NODE_RADIUS,
@@ -76,6 +77,7 @@ export function useCanvasRendering({
   getFuseRingGradient,
   nodeBckgDimensionsRef,
   cycleEdgeIds,
+  burnFuseAnimations,
 }: UseCanvasRenderingProps) {
   // Rotating conic-gradient holy glow — inspired by Aceternity glowing-effect
   // Uses canvas filter blur for a truly continuous glow (no discrete rings)
@@ -348,7 +350,7 @@ export function useCanvasRendering({
     drawHolyGlow,
   ]);
 
-  // Custom link rendering for 2D - supports traversers ("fuses") and burnt edges
+  // Custom link rendering for 2D - supports burn fuse animations and burnt edges
   const linkCanvasObject = useCallback((link: GraphLinkData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const source = link.source as GraphNodeData;
     const target = link.target as GraphNodeData;
@@ -356,17 +358,18 @@ export function useCanvasRendering({
     if (source.x === undefined || source.y === undefined || target.x === undefined || target.y === undefined) return;
 
     const targetCard = cardById.get(link.edge.target);
+    const sourceCard = cardById.get(link.edge.source);
     const isPreviewBurnt = previewBurn?.edgeId === link.edge.id || pendingBurn?.targetNodeId === link.edge.target;
-    const isBurnt = Boolean(targetCard?.burntAt);
+    // Suppress permanent burnt styling while a burn animation is active on this edge
+    const hasActiveAnim = burnFuseAnimations.some(anim =>
+      anim.burntNodeId === link.edge.target && anim.edges.some(e => e.id === link.edge.id)
+    );
+    const isBurnt = !hasActiveAnim && Boolean(targetCard?.burntAt) && Boolean(sourceCard?.burntAt);
     const baseStroke = isBurnt
       ? BURNT_COLOR
       : isPreviewBurnt
         ? 'rgba(255, 255, 255, 0.5)'
         : 'rgba(255, 255, 255, 0.3)';
-    const isEligible =
-      (Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current) &&
-      eligibleTraverserEdgeIds.has(link.edge.id);
-    const isCandidateEdge = detachedDrag?.candidateEdgeId === link.edge.id;
 
     // Draw base line from source to target
     ctx.beginPath();
@@ -376,31 +379,65 @@ export function useCanvasRendering({
     ctx.lineWidth = (isBurnt ? 1.6 : 1) / globalScale;
     ctx.stroke();
 
-    if ((isEligible || isCandidateEdge) && !isBurnt) {
+    // Burn fuse animation — flash bright, then fade to burnt
+    for (const anim of burnFuseAnimations) {
+      const animEdge = anim.edges.find(e => e.id === link.edge.id);
+      if (!animEdge) continue;
+      if (anim.burntNodeId !== link.edge.target) continue;
+      const t = clamp((performance.now() - anim.startTime) / anim.duration, 0, 1);
+
+      // First 40%: flash bright. Remaining 60%: fade from bright to burnt.
+      const flashEnd = 0.4;
+      let color: string;
+      let width: number;
+      if (t < flashEnd) {
+        // Bright flash — full intensity fuse gradient
+        color = '';  // use gradient below
+        width = Math.max(3 / globalScale, 1.5);
+      } else {
+        // Fade: interpolate opacity from bright to burnt
+        const fade = (t - flashEnd) / (1 - flashEnd); // 0→1
+        const alpha = 1 - fade;
+        color = `rgba(17, 24, 39, ${0.9 * fade})`;
+        width = Math.max((1.6 + 1.4 * (1 - fade)) / globalScale, 0.8);
+
+        // Draw burnt color underneath (growing opacity)
+        ctx.beginPath();
+        ctx.moveTo(source.x, source.y);
+        ctx.lineTo(target.x, target.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.stroke();
+
+        // Overlay fading glow
+        if (alpha > 0.01) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.moveTo(source.x, source.y);
+          ctx.lineTo(target.x, target.y);
+          ctx.strokeStyle = getFuseGradient(ctx, target.x, target.y, source.x, source.y);
+          ctx.lineWidth = Math.max(3 / globalScale, 1.5) * (1 - fade * 0.4);
+          ctx.stroke();
+          ctx.restore();
+        }
+        continue;
+      }
+
+      // Flash phase — bright gradient over whole edge
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
       ctx.lineTo(target.x, target.y);
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
-      ctx.lineWidth = Math.max(3.5 / globalScale, 1.8);
+      ctx.strokeStyle = getFuseGradient(ctx, target.x, target.y, source.x, source.y);
+      ctx.lineWidth = width;
       ctx.stroke();
     }
 
-    const traverser = traverserByEdgeId.get(link.edge.id);
-    if (traverser && !isBurnt) {
-      const pos = clamp(traverser.position, 0, 1);
-      const render = getTraverserRenderPoint(source, target, pos);
-
-      // Draw burning segment behind the traverser
-      ctx.beginPath();
-      ctx.moveTo(render.startX, render.startY);
-      ctx.lineTo(render.x, render.y);
-      ctx.strokeStyle = getFuseGradient(ctx, render.x, render.y, render.startX, render.startY);
-      ctx.lineWidth = Math.max(2 / globalScale, 1);
-      ctx.stroke();
-    }
-
-    // Draw arrow based on arrowMode
-    if (arrowMode !== 'none') {
+    // Draw arrow based on arrowMode — hide during burn flash animation
+    const hasFlashAnim = burnFuseAnimations.some(anim =>
+      anim.burntNodeId === link.edge.target && anim.edges.some(e => e.id === link.edge.id)
+    );
+    if (arrowMode !== 'none' && !hasFlashAnim) {
       const angle = Math.atan2(target.y - source.y, target.x - source.x);
       const arrowLength = Math.max(4, NODE_RADIUS * 0.75);
       const arrowWidth = Math.PI / 6;
@@ -463,17 +500,13 @@ export function useCanvasRendering({
     arrowMode,
     nodeRadius,
     cardById,
-    traverserByEdgeId,
     getFuseGradient,
     BURNT_COLOR,
-    draggingUserId,
     previewBurn?.edgeId,
     pendingBurn?.targetNodeId,
-    eligibleTraverserEdgeIds,
     getTraverserRenderPoint,
-    detachedDrag?.traverserId,
-    detachedDrag?.candidateEdgeId,
     cycleEdgeIds,
+    burnFuseAnimations,
   ]);
 
   const nodePointerAreaPaint = useCallback((node: GraphNodeData, color: string, ctx: CanvasRenderingContext2D) => {

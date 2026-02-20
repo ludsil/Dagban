@@ -3,6 +3,18 @@ export const ROOT_TRAVERSER_PREFIX = 'root:';
 /** Multiplier to convert fuseAnimationTime (ms) to a 0–1 phase for gradient cycling. */
 export const FUSE_ANIMATION_PHASE_SCALE = 0.00018;
 
+/** Duration of the one-shot burn fuse animation (ms). */
+export const BURN_FUSE_DURATION_MS = 500;
+
+/** One-shot fuse animation fired when a node burns — travels along all incoming edges. */
+export type BurnFuseAnimation = {
+  id: string;
+  burntNodeId: string;
+  edges: { id: string; source: string }[];
+  startTime: number;
+  duration: number;
+};
+
 export type FuseGradientStop = { stop: number; color: string };
 
 /**

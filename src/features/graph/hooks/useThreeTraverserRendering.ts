@@ -14,11 +14,12 @@
  */
 
 import { useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Traverser, Edge } from '@/lib/types';
+import type { Traverser, Edge, Card } from '@/lib/types';
 import type { GraphNodeData, GraphLinkData, ViewMode } from '../types';
 import type { PendingBurnState, PreviewBurnState, DetachedDragState } from './useTraverserLogic';
 import { clamp } from './useTraverserLogic';
 import { ROOT_TRAVERSER_PREFIX, FUSE_ANIMATION_PHASE_SCALE, getShiftedGradientStops as shiftStops } from '../traverserConstants';
+import type { BurnFuseAnimation } from '../traverserConstants';
 import type { GraphTheme } from './useGraphCoordinates';
 
 // ---------------------------------------------------------------
@@ -45,12 +46,13 @@ export type UseThreeTraverserRenderingProps = {
   draggingUserId: string | null;
   draggingTraverserId: string | null;
   spaceHighlightRef: React.RefObject<boolean>;
-  eligibleTraverserEdgeIds: Set<string>;
   rootActiveNodeIds: Set<string>;
   rootTraverserByNodeId: Map<string, Traverser>;
   traverserByEdgeId: Map<string, Traverser>;
   isBurntNodeId: (id: string) => boolean;
+  cardById: Map<string, Card>;
   graphDataView: { nodes: GraphNodeData[]; links: GraphLinkData[] };
+  burnFuseAnimations: BurnFuseAnimation[];
 };
 
 // ---------------------------------------------------------------
@@ -60,6 +62,7 @@ export type UseThreeTraverserRenderingProps = {
 const ROOT_START_ANGLE = -Math.PI / 2;
 const BG_RING_STYLE = 'rgba(255, 255, 255, 0.12)';
 const HIGHLIGHT_COLOR = 'rgba(56, 189, 248, 0.7)';
+const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)';
 
 // ---------------------------------------------------------------
 // Hook
@@ -83,12 +86,13 @@ export function useThreeTraverserRendering({
   draggingUserId,
   draggingTraverserId,
   spaceHighlightRef,
-  eligibleTraverserEdgeIds,
   rootActiveNodeIds,
   rootTraverserByNodeId,
   traverserByEdgeId,
   isBurntNodeId,
+  cardById,
   graphDataView,
+  burnFuseAnimations,
 }: UseThreeTraverserRenderingProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -217,36 +221,9 @@ export function useThreeTraverserRendering({
       ctx.restore();
     }
 
-    // --- Draw drag highlighting (eligible edges + root rings) ---
+    // --- Draw drag highlighting (root rings only) ---
     const isDragging = Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current;
     if (isDragging) {
-      // Highlight eligible edges with cyan glow
-      for (const edge of data.edges) {
-        const isEligible = eligibleTraverserEdgeIds.has(edge.id);
-        const isCandidateEdge = detachedDrag?.candidateEdgeId === edge.id;
-        if (!isEligible && !isCandidateEdge) continue;
-        if (isBurntNodeId(edge.target)) continue;
-
-        const link = linkByIdRef.current?.get(edge.id);
-        if (!link) continue;
-        const sourceNode = typeof link.source === 'string' ? nodeByIdRef.current?.get(link.source) : link.source;
-        const targetNode = typeof link.target === 'string' ? nodeByIdRef.current?.get(link.target) : link.target;
-        if (!sourceNode || !targetNode ||
-            sourceNode.x === undefined || sourceNode.y === undefined ||
-            targetNode.x === undefined || targetNode.y === undefined) continue;
-
-        const srcScreen = toScreen(sourceNode.x, sourceNode.y, sourceNode.z ?? 0);
-        const tgtScreen = toScreen(targetNode.x, targetNode.y, targetNode.z ?? 0);
-        if (!srcScreen || !tgtScreen) continue;
-
-        ctx.beginPath();
-        ctx.moveTo(srcScreen.sx, srcScreen.sy);
-        ctx.lineTo(tgtScreen.sx, tgtScreen.sy);
-        ctx.strokeStyle = HIGHLIGHT_COLOR;
-        ctx.lineWidth = isCandidateEdge ? 3 : 2;
-        ctx.stroke();
-      }
-
       // Highlight root-eligible nodes with cyan ring
       for (const node of graphDataView.nodes) {
         if (!rootActiveNodeIds.has(node.id)) continue;
@@ -271,119 +248,111 @@ export function useThreeTraverserRendering({
     }
 
     const traversers = data.traversers ?? [];
-    if (!traversers.length) return;
 
     const phase = (fuseAnimationTime * FUSE_ANIMATION_PHASE_SCALE) % 1;
     const shiftedStops = shiftStops(fuseStops, phase);
+
+    // --- Burn fuse animations — flash bright, then fade to burnt ---
+    for (const anim of burnFuseAnimations) {
+      const burntNode = nodeByIdRef.current?.get(anim.burntNodeId);
+      if (!burntNode || burntNode.x === undefined || burntNode.y === undefined) continue;
+      const t = clamp((performance.now() - anim.startTime) / anim.duration, 0, 1);
+
+      for (const animEdge of anim.edges) {
+        const link = linkByIdRef.current?.get(animEdge.id);
+        if (!link) continue;
+        const srcNode = typeof link.source === 'string'
+          ? nodeByIdRef.current?.get(link.source)
+          : link.source;
+        if (!srcNode || srcNode.x === undefined || srcNode.y === undefined) continue;
+
+        const sx = srcNode.x ?? 0, sy = srcNode.y ?? 0, sz = srcNode.z ?? 0;
+        const bx = burntNode.x ?? 0, by = burntNode.y ?? 0, bz = burntNode.z ?? 0;
+        const screenStart = toScreen(sx, sy, sz);
+        const screenEnd = toScreen(bx, by, bz);
+        if (!screenStart || !screenEnd) continue;
+        const lineDist = Math.sqrt((screenEnd.sx - screenStart.sx) ** 2 + (screenEnd.sy - screenStart.sy) ** 2);
+        if (lineDist < 1) continue;
+
+        const flashEnd = 0.4;
+        if (t < flashEnd) {
+          // Flash phase — bright gradient over whole edge
+          const gradient = ctx.createLinearGradient(screenStart.sx, screenStart.sy, screenEnd.sx, screenEnd.sy);
+          shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+          ctx.beginPath();
+          ctx.moveTo(screenStart.sx, screenStart.sy);
+          ctx.lineTo(screenEnd.sx, screenEnd.sy);
+          ctx.strokeStyle = gradient;
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        } else {
+          // Fade phase — burnt underneath, glow fading on top
+          const fade = (t - flashEnd) / (1 - flashEnd);
+          ctx.beginPath();
+          ctx.moveTo(screenStart.sx, screenStart.sy);
+          ctx.lineTo(screenEnd.sx, screenEnd.sy);
+          ctx.strokeStyle = BURNT_COLOR;
+          ctx.lineWidth = 1.6 + 1.4 * (1 - fade);
+          ctx.globalAlpha = 0.9 * fade;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+
+          const alpha = 1 - fade;
+          if (alpha > 0.01) {
+            const gradient = ctx.createLinearGradient(screenStart.sx, screenStart.sy, screenEnd.sx, screenEnd.sy);
+            shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.moveTo(screenStart.sx, screenStart.sy);
+            ctx.lineTo(screenEnd.sx, screenEnd.sy);
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = 3 * (1 - fade * 0.4);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+    }
 
     // Collect root rings to draw (deduplicate by nodeId)
     const rootRingsToDraw = new Map<string, { cx: number; cy: number; screenRadius: number; progress: number }>();
 
     for (const traverser of traversers) {
-      const isRoot = traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX);
+      // Only root traversers; silently skip legacy edge traversers
+      if (!traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) continue;
       const isDetached = detachedDrag?.traverserId === traverser.id;
 
-      if (isRoot) {
-        const rootNodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
-        const node = nodeByIdRef.current?.get(rootNodeId);
-        if (!node || node.x === undefined || node.y === undefined) continue;
+      const rootNodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+      const node = nodeByIdRef.current?.get(rootNodeId);
+      if (!node || node.x === undefined || node.y === undefined) continue;
 
-        const nx = node.x ?? 0;
-        const ny = node.y ?? 0;
-        const nz = node.z ?? 0;
+      const nx = node.x ?? 0;
+      const ny = node.y ?? 0;
+      const nz = node.z ?? 0;
 
-        const center = toScreen(nx, ny, nz);
-        if (!center) continue;
+      const center = toScreen(nx, ny, nz);
+      if (!center) continue;
 
-        // Compute screen-space ring radius using camera-right offset (stable under rotation)
-        const screenRadius = getScreenRingRadius(nx, ny, nz, center);
-        if (!screenRadius || screenRadius < 1) continue;
+      // Compute screen-space ring radius using camera-right offset (stable under rotation)
+      const screenRadius = getScreenRingRadius(nx, ny, nz, center);
+      if (!screenRadius || screenRadius < 1) continue;
 
-        const pos = clamp(traverser.position, 0, 1);
+      const pos = clamp(traverser.position, 0, 1);
 
-        // Keep the largest progress for this node
-        const existing = rootRingsToDraw.get(rootNodeId);
-        if (!existing || pos > existing.progress) {
-          rootRingsToDraw.set(rootNodeId, {
-            cx: center.sx,
-            cy: center.sy,
-            screenRadius,
-            progress: isDetached ? 0 : pos,
-          });
-        }
-      } else {
-        // --- Edge fuse ---
-        if (isDetached) continue;
-
-        const link = linkByIdRef.current?.get(traverser.edgeId);
-        if (!link) continue;
-
-        const sourceNode = typeof link.source === 'string'
-          ? nodeByIdRef.current?.get(link.source)
-          : link.source;
-        const targetNode = typeof link.target === 'string'
-          ? nodeByIdRef.current?.get(link.target)
-          : link.target;
-
-        if (!sourceNode || !targetNode ||
-            sourceNode.x === undefined || sourceNode.y === undefined ||
-            targetNode.x === undefined || targetNode.y === undefined) continue;
-
-        const sx = sourceNode.x ?? 0;
-        const sy = sourceNode.y ?? 0;
-        const sz = sourceNode.z ?? 0;
-        const tx = targetNode.x ?? 0;
-        const ty = targetNode.y ?? 0;
-        const tz = targetNode.z ?? 0;
-
-        // Compute 3D traverser render point (clamped off node edges)
-        const pos = clamp(traverser.position, 0, 1);
-        const dx = tx - sx;
-        const dy = ty - sy;
-        const dz = tz - sz;
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (dist < 0.01) continue;
-
-        const safeOffset = Math.min(nodeRadius, dist * 0.45);
-        const offsetT = safeOffset / dist;
-        const startT = offsetT;
-        const endT = clamp(pos, offsetT, 1 - offsetT);
-
-        const fuseStart3D = {
-          x: sx + dx * startT,
-          y: sy + dy * startT,
-          z: sz + dz * startT,
-        };
-        const fuseEnd3D = {
-          x: sx + dx * endT,
-          y: sy + dy * endT,
-          z: sz + dz * endT,
-        };
-
-        const screenStart = toScreen(fuseStart3D.x, fuseStart3D.y, fuseStart3D.z);
-        const screenEnd = toScreen(fuseEnd3D.x, fuseEnd3D.y, fuseEnd3D.z);
-        if (!screenStart || !screenEnd) continue;
-
-        // Draw fuse gradient line
-        const lineDist = Math.sqrt(
-          (screenEnd.sx - screenStart.sx) ** 2 + (screenEnd.sy - screenStart.sy) ** 2,
-        );
-        if (lineDist < 1) continue;
-
-        const gradient = ctx.createLinearGradient(
-          screenStart.sx, screenStart.sy,
-          screenEnd.sx, screenEnd.sy,
-        );
-        shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
-
-        ctx.beginPath();
-        ctx.moveTo(screenStart.sx, screenStart.sy);
-        ctx.lineTo(screenEnd.sx, screenEnd.sy);
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+      // Keep the largest progress for this node
+      const existing = rootRingsToDraw.get(rootNodeId);
+      if (!existing || pos > existing.progress) {
+        rootRingsToDraw.set(rootNodeId, {
+          cx: center.sx,
+          cy: center.sy,
+          screenRadius,
+          progress: isDetached ? 0 : pos,
+        });
       }
     }
+
+    if (!rootRingsToDraw.size && !burnFuseAnimations.length) return;
 
     // --- Draw root rings ---
     for (const [, ring] of rootRingsToDraw) {
@@ -441,12 +410,12 @@ export function useThreeTraverserRendering({
     getScreenRingRadius,
     fuseStops,
     draggingUserId,
-    eligibleTraverserEdgeIds,
     rootActiveNodeIds,
     rootTraverserByNodeId,
     traverserByEdgeId,
     isBurntNodeId,
     graphDataView,
+    burnFuseAnimations,
   ]);
 
   // Continuously redraw via rAF in 3D mode (camera orbit/pan doesn't trigger renderTick)

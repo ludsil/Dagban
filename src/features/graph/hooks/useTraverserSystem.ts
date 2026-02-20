@@ -5,6 +5,7 @@ import type { DagbanGraph as GraphData, Card, Traverser, User, Edge } from '@/li
 import type { GraphNodeData, GraphLinkData, ViewMode, DisplayMode } from '../types';
 import type { TraverserTuning } from '../traverserTuning';
 import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
+import type { BurnFuseAnimation } from '../traverserConstants';
 import { useTraverserLogic, clamp } from './useTraverserLogic';
 
 export type { PendingBurnState, PreviewBurnState, DetachedDragState } from './useTraverserLogic';
@@ -35,7 +36,6 @@ export type UseTraverserSystemProps = {
   traverserById: Map<string, Traverser>;
   userById: Map<string, User>;
   rootActiveNodeIds: Set<string>;
-  eligibleTraverserEdgeIds: Set<string>;
   getGraphCoords: (clientX: number, clientY: number) => { x: number; y: number } | null;
   getScreenCoords: (x: number, y: number) => { x: number; y: number } | null;
   getZoomScale: () => number;
@@ -43,7 +43,6 @@ export type UseTraverserSystemProps = {
   getTraverserRenderPoint: (sourceNode: GraphNodeData, targetNode: GraphNodeData, position: number) => { x: number; y: number };
   getRootTraverserPoint: (node: GraphNodeData, position: number) => { x: number; y: number; angle?: number; startAngle?: number; radius?: number };
   getRootPositionFromCoords: (node: GraphNodeData, point: { x: number; y: number }) => number;
-  createTraverserForEdge: (edgeId: string, userId: string, position: number) => Traverser;
   createTraverserForRoot: (nodeId: string, userId: string, position: number) => Traverser;
   onTraverserCreate?: (traverser: Traverser) => void;
   onTraverserUpdate?: (
@@ -53,7 +52,7 @@ export type UseTraverserSystemProps = {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
-  closeEdgeStartPicker: () => void;
+  onBurnFuseStart?: (animation: BurnFuseAnimation) => void;
   suppressNextBackgroundClick: () => void;
   tuning?: Partial<TraverserTuning>;
 };
@@ -75,7 +74,6 @@ export function useTraverserSystem({
   traverserById,
   userById,
   rootActiveNodeIds,
-  eligibleTraverserEdgeIds,
   getGraphCoords,
   getScreenCoords,
   getZoomScale,
@@ -83,13 +81,12 @@ export function useTraverserSystem({
   getTraverserRenderPoint,
   getRootTraverserPoint,
   getRootPositionFromCoords,
-  createTraverserForEdge,
   createTraverserForRoot,
   onTraverserCreate,
   onTraverserUpdate,
   onTraverserDelete,
   onCardChange,
-  closeEdgeStartPicker,
+  onBurnFuseStart,
   suppressNextBackgroundClick,
   tuning: tuningOverrides,
 }: UseTraverserSystemProps) {
@@ -119,16 +116,14 @@ export function useTraverserSystem({
     traverserById,
     userById,
     rootActiveNodeIds,
-    eligibleTraverserEdgeIds,
     nodeByIdRef,
     graphDataView,
-    createTraverserForEdge,
     createTraverserForRoot,
     onTraverserCreate,
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    closeEdgeStartPicker,
+    onBurnFuseStart,
     suppressNextBackgroundClick,
     tuning: tuningOverrides,
   });
@@ -222,49 +217,22 @@ export function useTraverserSystem({
     if (viewMode !== '2D') return [];
     return (data.traversers || [])
       .map(traverser => {
-        let renderPoint: { x: number; y: number } | null = null;
-        if (traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) {
-          const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
-          const node = nodeByIdRef.current?.get(nodeId);
-          if (!node || node.x === undefined || node.y === undefined) return null;
-          const pos = clamp(traverser.position, 0, 1);
-          const render = getRootTraverserPoint(node, pos);
-          renderPoint = { x: render.x, y: render.y };
-          const isDetached = logic.detachedDrag && logic.detachedDrag.traverserId === traverser.id;
-          const tangentAngle = isDetached ? undefined : render.angle !== undefined ? render.angle + Math.PI / 2 : undefined;
-          const override =
-            logic.detachedDrag && logic.detachedDrag.traverserId === traverser.id
-              ? { x: logic.detachedDrag.x, y: logic.detachedDrag.y }
-              : renderPoint;
-          if (!override) return null;
-          const screen = getScreenCoords(override.x, override.y);
-          if (!screen) return null;
-          const user = userById.get(traverser.userId) || null;
-          return { id: traverser.id, x: screen.x, y: screen.y, user, isRoot: true, tangentAngle };
-        } else {
-          const edgeNodes = getEdgeNodes(traverser.edgeId);
-          if (!edgeNodes) return null;
-          const { sourceNode, targetNode } = edgeNodes;
-          const pos = clamp(traverser.position, 0, 1);
-          const render = getTraverserRenderPoint(sourceNode, targetNode, pos);
-          renderPoint = { x: render.x, y: render.y };
-        }
-
-        const override =
-          logic.detachedDrag && logic.detachedDrag.traverserId === traverser.id
-            ? { x: logic.detachedDrag.x, y: logic.detachedDrag.y }
-            : renderPoint;
-        if (!override) return null;
+        // Only root traversers; silently skip legacy edge traversers
+        if (!traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX)) return null;
+        const nodeId = traverser.edgeId.slice(ROOT_TRAVERSER_PREFIX.length);
+        const node = nodeByIdRef.current?.get(nodeId);
+        if (!node || node.x === undefined || node.y === undefined) return null;
+        const pos = clamp(traverser.position, 0, 1);
+        const render = getRootTraverserPoint(node, pos);
+        const isDetached = logic.detachedDrag && logic.detachedDrag.traverserId === traverser.id;
+        const tangentAngle = isDetached ? undefined : render.angle !== undefined ? render.angle + Math.PI / 2 : undefined;
+        const override = isDetached
+          ? { x: logic.detachedDrag!.x, y: logic.detachedDrag!.y }
+          : { x: render.x, y: render.y };
         const screen = getScreenCoords(override.x, override.y);
         if (!screen) return null;
         const user = userById.get(traverser.userId) || null;
-        return {
-          id: traverser.id,
-          x: screen.x,
-          y: screen.y,
-          user,
-          isRoot: traverser.edgeId.startsWith(ROOT_TRAVERSER_PREFIX),
-        };
+        return { id: traverser.id, x: screen.x, y: screen.y, user, isRoot: true, tangentAngle };
       })
       .filter(Boolean) as TraverserOverlay[];
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -272,10 +240,8 @@ export function useTraverserSystem({
     data.traversers,
     viewMode,
     renderTick,
-    getEdgeNodes,
     userById,
     getScreenCoords,
-    getTraverserRenderPoint,
     getRootTraverserPoint,
     logic.detachedDrag,
     nodeByIdRef,

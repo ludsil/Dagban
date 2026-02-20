@@ -39,7 +39,6 @@ export interface UseGraphInteractionsProps {
   pendingBurn: PendingBurnState;
   previewBurn: PreviewBurnState;
   detachedDrag: DetachedDragState;
-  edgeStartPicker: { edgeId: string; x: number; y: number } | null;
   edgeContextMenu: EdgeContextMenuState;
   selectedNode: SelectedNodeInfo | null;
   focusedNodeId: string | null;
@@ -51,14 +50,12 @@ export interface UseGraphInteractionsProps {
   edgeById: Map<string, Edge>;
   traverserByEdgeId: Map<string, Traverser>;
   rootActiveNodeIds: Set<string>;
-  eligibleTraverserEdgeIds: Set<string>;
 
   // State setters
   setSelectedNode: React.Dispatch<React.SetStateAction<SelectedNodeInfo | null>>;
   setFocusedNodeId: React.Dispatch<React.SetStateAction<string | null>>;
   setHoverTooltip: React.Dispatch<React.SetStateAction<HoverTooltipState>>;
   setEdgeContextMenu: React.Dispatch<React.SetStateAction<EdgeContextMenuState>>;
-  setEdgeStartPicker: React.Dispatch<React.SetStateAction<{ edgeId: string; x: number; y: number } | null>>;
   setPendingSelectNodeId: React.Dispatch<React.SetStateAction<string | null>>;
   setConnectionMode: React.Dispatch<React.SetStateAction<ConnectionModeState>>;
   setDragConnect: React.Dispatch<React.SetStateAction<DragConnectState>>;
@@ -107,7 +104,6 @@ export function useGraphInteractions({
   pendingBurn,
   previewBurn,
   detachedDrag,
-  edgeStartPicker,
   edgeContextMenu,
   selectedNode,
   focusedNodeId,
@@ -117,12 +113,10 @@ export function useGraphInteractions({
   edgeById,
   traverserByEdgeId,
   rootActiveNodeIds,
-  eligibleTraverserEdgeIds,
   setSelectedNode,
   setFocusedNodeId,
   setHoverTooltip,
   setEdgeContextMenu,
-  setEdgeStartPicker,
   setPendingSelectNodeId,
   setConnectionMode,
   setDragConnect,
@@ -300,18 +294,6 @@ export function useGraphInteractions({
 
   // --- Traverser/assignee handlers ---
 
-  const createTraverserForEdge = useCallback((edgeId: string, userId: string, position: number) => {
-    const now = new Date().toISOString();
-    return {
-      id: generateTraverserId(),
-      edgeId,
-      userId,
-      position: clamp(position, 0, 1),
-      createdAt: now,
-      updatedAt: now,
-    };
-  }, []);
-
   const createTraverserForRoot = useCallback((nodeId: string, userId: string, position: number) => {
     const now = new Date().toISOString();
     return {
@@ -350,59 +332,7 @@ export function useGraphInteractions({
     createTraverserForRoot,
   ]);
 
-  const handleEdgeStartPickUser = useCallback((userId: string) => {
-    if (!edgeStartPicker || !onTraverserCreate) return;
-    const edgeId = edgeStartPicker.edgeId;
-    if (traverserByEdgeId.has(edgeId)) {
-      showToast('That edge already has a traverser', 'warning');
-      closeEdgeStartPicker();
-      return;
-    }
-    if (!eligibleTraverserEdgeIds.has(edgeId)) {
-      showToast('That node is blocked or already complete', 'warning');
-      closeEdgeStartPicker();
-      return;
-    }
-    const traverser = createTraverserForEdge(edgeId, userId, 0);
-    onTraverserCreate(traverser);
-    closeEdgeStartPicker();
-  }, [
-    edgeStartPicker,
-    onTraverserCreate,
-    traverserByEdgeId,
-    eligibleTraverserEdgeIds,
-    createTraverserForEdge,
-    showToast,
-    // closeEdgeStartPicker is defined below but referenced here via closure
-  ]);
-
   // --- Edge interactions ---
-
-  const closeEdgeStartPicker = useCallback(() => {
-    setEdgeStartPicker(null);
-  }, []);
-
-  const openEdgeStartPicker = useCallback((edgeId: string, x: number, y: number) => {
-    if (traverserByEdgeId.has(edgeId)) {
-      showToast('That edge already has a traverser', 'warning');
-      setEdgeStartPicker(null);
-      return;
-    }
-    if (!eligibleTraverserEdgeIds.has(edgeId)) {
-      showToast('That node is blocked or already complete', 'warning');
-      setEdgeStartPicker(null);
-      return;
-    }
-    setEdgeStartPicker(prev => (prev && prev.edgeId === edgeId ? null : { edgeId, x, y }));
-    cancelPendingBurn();
-    suppressNextBackgroundClick();
-  }, [
-    traverserByEdgeId,
-    eligibleTraverserEdgeIds,
-    showToast,
-    cancelPendingBurn,
-    suppressNextBackgroundClick,
-  ]);
 
   const closeEdgeContextMenu = useCallback(() => {
     setEdgeContextMenu(prev => (
@@ -412,58 +342,27 @@ export function useGraphInteractions({
     ));
   }, []);
 
-  const handleEdgeAssign = useCallback((edgeId: string, anchor: { x: number; y: number }) => {
-    if (!onTraverserCreate) return;
-    openEdgeStartPicker(edgeId, anchor.x, anchor.y);
-  }, [onTraverserCreate, openEdgeStartPicker]);
-
-  const handleEdgeDetachTraverser = useCallback((traverserId: string) => {
-    if (!onTraverserDelete) return;
-    onTraverserDelete(traverserId);
-    if (pendingBurn?.traverserId === traverserId) {
-      cancelPendingBurn();
-    }
-    if (detachedDrag?.traverserId === traverserId) {
-      clearDetachedDrag();
-    }
-  }, [
-    onTraverserDelete,
-    pendingBurn?.traverserId,
-    cancelPendingBurn,
-    detachedDrag?.traverserId,
-    clearDetachedDrag,
-  ]);
-
   const handleEdgeDelete = useCallback((edgeId: string) => {
     if (!onEdgeDelete) return;
     const edge = edgeById.get(edgeId);
     onEdgeDelete(edgeId);
-    if (edgeStartPicker?.edgeId === edgeId) {
-      setEdgeStartPicker(null);
-    }
     if (previewBurn?.edgeId === edgeId) {
       setPreviewBurn(null);
     }
     if (pendingBurn && edge && pendingBurn.targetNodeId === edge.target) {
       cancelPendingBurn();
     }
-    if (detachedDrag?.candidateEdgeId === edgeId) {
-      clearDetachedDrag();
-    }
   }, [
     onEdgeDelete,
     edgeById,
-    edgeStartPicker?.edgeId,
     previewBurn?.edgeId,
     pendingBurn,
     cancelPendingBurn,
-    detachedDrag?.candidateEdgeId,
-    clearDetachedDrag,
   ]);
 
   const handleLinkClick = useCallback((link: GraphLinkData, event: MouseEvent) => {
     if (connectionMode.active) return;
-    if (!onTraverserCreate && !onEdgeDelete) return;
+    if (!onEdgeDelete) return;
     if (!event) return;
     const edgeId = link.edge.id;
     const rect = containerRef.current?.getBoundingClientRect();
@@ -481,12 +380,10 @@ export function useGraphInteractions({
           edgeId,
         }
     ));
-    setEdgeStartPicker(null);
     cancelPendingBurn();
     suppressNextBackgroundClick();
   }, [
     connectionMode.active,
-    onTraverserCreate,
     onEdgeDelete,
     cancelPendingBurn,
     setEdgeContextMenu,
@@ -498,7 +395,6 @@ export function useGraphInteractions({
   const handleNodeClick = useCallback((node: GraphNodeData, event: MouseEvent) => {
     // Hide tooltip when clicking a node
     setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
-    setEdgeStartPicker(null);
     closeEdgeContextMenu();
     if (pendingBurn) {
       cancelPendingBurn();
@@ -588,7 +484,6 @@ export function useGraphInteractions({
     if (pendingBurn) {
       cancelPendingBurn();
     }
-    setEdgeStartPicker(null);
     if (previewBurn) {
       setPreviewBurn(null);
     }
@@ -756,17 +651,11 @@ export function useGraphInteractions({
     openUpstreamCreation,
 
     // Traverser/assignee handlers
-    createTraverserForEdge,
     createTraverserForRoot,
     handleCardAssigneeChange,
-    handleEdgeStartPickUser,
 
     // Edge interactions
-    openEdgeStartPicker,
-    closeEdgeStartPicker,
     closeEdgeContextMenu,
-    handleEdgeAssign,
-    handleEdgeDetachTraverser,
     handleEdgeDelete,
     handleLinkClick,
 

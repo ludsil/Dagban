@@ -238,28 +238,16 @@ export function useGraphData({
     return map;
   }, [data.cards, data.edges]);
 
-  const eligibleTraverserEdgeIds = useMemo(() => {
-    const eligible = new Set<string>();
-    data.edges.forEach(edge => {
-      const status = cardStatusById.get(edge.target);
-      if (status !== 'active') return;
-      if (traverserByEdgeId.has(edge.id)) return;
-      eligible.add(edge.id);
-    });
-    return eligible;
-  }, [data.edges, cardStatusById, traverserByEdgeId]);
-
   const rootActiveNodeIds = useMemo(() => {
     const ids = new Set<string>();
     data.cards.forEach(card => {
       const status = cardStatusById.get(card.id);
-      const indegree = indegrees.get(card.id) || 0;
-      if (indegree === 0 && status === 'active') {
+      if (status === 'active') {
         ids.add(card.id);
       }
     });
     return ids;
-  }, [data.cards, cardStatusById, indegrees]);
+  }, [data.cards, cardStatusById]);
 
   // Check if a card matches the current filters
   const cardMatchesFilter = useCallback((card: Card, status: 'blocked' | 'active' | 'done'): boolean => {
@@ -676,7 +664,6 @@ export function useGraphData({
     maxOutdegree,
     blockerCounts,
     cardStatusById,
-    eligibleTraverserEdgeIds,
     rootActiveNodeIds,
     cardMatchesFilter,
 
