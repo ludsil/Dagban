@@ -5,7 +5,7 @@ import { ViewMode, DisplayMode, ColorMode } from '../types';
 import { Card, Category, Edge } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Circle, Globe, Type, Maximize2, Paintbrush, Filter, Clock } from 'lucide-react';
+import { Circle, Globe, Grip, Type, Maximize2, Paintbrush, Filter, Clock } from 'lucide-react';
 
 interface FilterHudProps {
   viewMode: ViewMode;
@@ -163,7 +163,7 @@ export function FilterHud({
                   onDisplayModeChange(modes[(idx + 1) % modes.length]);
                 }}
               >
-                {displayMode === 'balls' ? <Circle className="size-4" /> : displayMode === 'labels' ? <Type className="size-4" /> : <Maximize2 className="size-4" />}
+                {displayMode === 'balls' ? <Grip className="size-4" /> : displayMode === 'labels' ? <Type className="size-4" /> : <Maximize2 className="size-4" />}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Display: {displayMode}</TooltipContent>

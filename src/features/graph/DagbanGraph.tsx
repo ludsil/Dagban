@@ -780,12 +780,21 @@ export default function DagbanGraph({
       }
     };
 
+    const handleMouseMove = (event: MouseEvent) => {
+      setHoverTooltip(prev => {
+        if (!prev.visible) return prev;
+        return { ...prev, x: event.clientX, y: event.clientY };
+      });
+    };
+
     container.addEventListener('wheel', handleWheel, { passive: false });
     container.addEventListener('pointerdown', handlePointerDown);
+    container.addEventListener('mousemove', handleMouseMove);
 
     return () => {
       container.removeEventListener('wheel', handleWheel);
       container.removeEventListener('pointerdown', handlePointerDown);
+      container.removeEventListener('mousemove', handleMouseMove);
     };
   }, []);
 

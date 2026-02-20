@@ -366,8 +366,6 @@ html, body {
 }
 
 .traverser-overlay-avatar {
-  width: 16px !important;
-  height: 16px !important;
   border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
@@ -377,10 +375,6 @@ html, body {
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 950;
-}
-
-.traverser-overlay-avatar [data-slot="avatar-fallback"] {
-  font-size: 8px;
 }
 
 .traverser-root-arrow {
@@ -1371,22 +1365,23 @@ html, body {
   position: fixed;
   z-index: 4000;
   pointer-events: none;
-  background-color: rgba(20, 20, 20, 0.95);
-  color: rgba(255, 255, 255, 0.95);
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
+  background-color: rgba(20, 20, 20, 0.92);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 500;
-  max-width: 250px;
+  max-width: 200px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
+}
+.node-hover-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Tooltip assignee avatar */

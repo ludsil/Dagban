@@ -558,16 +558,15 @@ export function useGraphInteractions({
   ]);
 
   const handleNodeHover = useCallback((node: GraphNodeData | null) => {
-    if (node) {
-      setHoverTooltip({
+    if (node && node.title) {
+      setHoverTooltip(prev => ({
+        ...prev,
         visible: true,
-        x: 0,
-        y: 0,
         title: node.title,
         nodeId: node.id,
         color: node.color,
         assignee: getAssigneeName(node.card.assignee) || null,
-      });
+      }));
     } else {
       setHoverTooltip(prev => ({ ...prev, visible: false, nodeId: null }));
     }

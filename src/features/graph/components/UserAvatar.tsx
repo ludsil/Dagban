@@ -8,7 +8,7 @@ import { User as UserIcon } from 'lucide-react';
 interface UserAvatarProps {
   user?: User | null;
   name?: string;
-  size?: 'sm' | 'default' | 'lg';
+  size?: 'xs' | 'sm' | 'default' | 'lg';
   className?: string;
   showPlaceholderIcon?: boolean;
 }
