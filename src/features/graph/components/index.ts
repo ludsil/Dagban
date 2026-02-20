@@ -15,6 +15,7 @@ export { FilterSidebar } from './FilterSidebar';
 export { UserHud } from './UserHud';
 export { UserAvatar } from './UserAvatar';
 export { UserManager } from './UserManager';
+export { CopyFormatPicker } from './CopyFormatPicker';
 
 // Re-export types
 export * from '../types';

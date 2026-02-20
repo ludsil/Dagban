@@ -21,6 +21,7 @@ import {
   KeyboardShortcutsHelp,
   CategoryManager,
   UserManager,
+  CopyFormatPicker,
   GraphCanvasLayer,
   GraphHudLeft,
   GraphHudRight,
@@ -38,6 +39,14 @@ import {
   ColorMode,
   ArrowMode,
 } from './components';
+import {
+  buildAnnotatedNodes,
+  generateIndentedTree,
+  generateTopologicalList,
+  generateMermaid,
+  generateAsciiBoxArt,
+  type AsciiFormatId,
+} from './ascii';
 
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
@@ -171,6 +180,9 @@ export default function DagbanGraph({
   // User manager dialog state
   const [showUserManager, setShowUserManager] = useState(false);
 
+  // Copy format picker dialog state
+  const [showCopyPicker, setShowCopyPicker] = useState(false);
+
   // Connection mode state (for creating edges between nodes)
   const [connectionMode, setConnectionMode] = useState<ConnectionModeState>({
     active: false,
@@ -264,6 +276,39 @@ export default function DagbanGraph({
   const hideToast = useCallback(() => {
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
+
+  // Copy graph as ASCII text
+  const handleCopyFormat = useCallback(async (formatId: AsciiFormatId) => {
+    const visibleNodes = graphDataView.nodes.filter(n => n.matchesFilter !== false);
+    const visibleIds = new Set(visibleNodes.map(n => n.id));
+    const visibleEdges = data.edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
+    const annotated = buildAnnotatedNodes(visibleNodes, visibleEdges, data.traversers ?? [], data.users ?? []);
+
+    let text: string;
+    switch (formatId) {
+      case 'indented-tree':
+        text = generateIndentedTree(annotated, visibleEdges);
+        break;
+      case 'topological-list':
+        text = generateTopologicalList(annotated, visibleEdges);
+        break;
+      case 'mermaid':
+        text = generateMermaid(annotated, visibleEdges);
+        break;
+      case 'ascii-box-art':
+        text = generateAsciiBoxArt(annotated, visibleEdges);
+        break;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard', 'success');
+    } catch {
+      showToast('Failed to copy', 'warning');
+    }
+
+    setShowCopyPicker(false);
+  }, [graphDataView.nodes, data.edges, data.traversers, data.users, showToast]);
 
   const handleDownloadGraph = useCallback(() => {
     try {
@@ -870,6 +915,15 @@ export default function DagbanGraph({
         onRedo?.();
       }
 
+      // Cmd/Ctrl+C — Copy graph as text (when no node selected/focused)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        if (!selectedNode && !focusedNodeId) {
+          e.preventDefault();
+          setShowCopyPicker(true);
+        }
+        return;
+      }
+
       // N - New root node
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
@@ -1242,6 +1296,12 @@ export default function DagbanGraph({
         onUserAdd={onUserAdd}
         onUserDelete={onUserDelete}
         onUserChange={onUserChange}
+      />
+
+      <CopyFormatPicker
+        visible={showCopyPicker}
+        onClose={() => setShowCopyPicker(false)}
+        onCopy={handleCopyFormat}
       />
 
     </div>
