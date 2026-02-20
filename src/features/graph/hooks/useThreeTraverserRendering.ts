@@ -130,9 +130,9 @@ export function useThreeTraverserRendering({
     return { sx: result.x, sy: result.y };
   }, [graphRef]);
 
-  /** Compute screen-space ring radius using the camera's right vector (view-plane-aligned). */
-  const getScreenRingRadius = useCallback((
-    nx: number, ny: number, nz: number, center: { sx: number; sy: number },
+  /** Compute screen-space radius for a given world-space radius using the camera's right vector. */
+  const getScreenRadiusForWorldRadius = useCallback((
+    nx: number, ny: number, nz: number, center: { sx: number; sy: number }, worldRadius: number,
   ): number | null => {
     const g = graphRef.current;
     if (!g) return null;
@@ -145,15 +145,21 @@ export function useThreeTraverserRendering({
     const rLen = Math.sqrt(rx * rx + ry * ry + rz * rz);
     if (rLen < 1e-6) return null;
 
-    // Offset in the camera's right direction by rootRingRadius
     const edge = toScreen(
-      nx + (rx / rLen) * rootRingRadius,
-      ny + (ry / rLen) * rootRingRadius,
-      nz + (rz / rLen) * rootRingRadius,
+      nx + (rx / rLen) * worldRadius,
+      ny + (ry / rLen) * worldRadius,
+      nz + (rz / rLen) * worldRadius,
     );
     if (!edge) return null;
     return Math.sqrt((edge.sx - center.sx) ** 2 + (edge.sy - center.sy) ** 2);
-  }, [graphRef, rootRingRadius, toScreen]);
+  }, [graphRef, toScreen]);
+
+  /** Compute screen-space ring radius (view-plane-aligned) for root traverser rings. */
+  const getScreenRingRadius = useCallback((
+    nx: number, ny: number, nz: number, center: { sx: number; sy: number },
+  ): number | null => {
+    return getScreenRadiusForWorldRadius(nx, ny, nz, center, rootRingRadius);
+  }, [getScreenRadiusForWorldRadius, rootRingRadius]);
 
   // --- Draw one frame ---
 
@@ -178,6 +184,38 @@ export function useThreeTraverserRendering({
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
+
+    // --- Draw holy node glow ---
+    const holyT = performance.now() / 3000;
+    const holyAngle = holyT * Math.PI * 2;
+    for (const node of graphDataView.nodes) {
+      if (!node.holy) continue;
+      if (node.x === undefined || node.y === undefined) continue;
+      const nx = node.x ?? 0, ny = node.y ?? 0, nz = node.z ?? 0;
+      const center = toScreen(nx, ny, nz);
+      if (!center) continue;
+      const screenRadius = getScreenRadiusForWorldRadius(nx, ny, nz, center, nodeRadius);
+      if (!screenRadius || screenRadius < 1) continue;
+
+      const grad = ctx.createConicGradient(holyAngle, center.sx, center.sy);
+      grad.addColorStop(0,    '#ff3366');
+      grad.addColorStop(0.17, '#ff9933');
+      grad.addColorStop(0.33, '#ffdd00');
+      grad.addColorStop(0.5,  '#33ff77');
+      grad.addColorStop(0.67, '#33bbff');
+      grad.addColorStop(0.83, '#aa44ff');
+      grad.addColorStop(1,    '#ff3366');
+
+      ctx.save();
+      ctx.filter = `blur(${Math.max(screenRadius * 0.4, 3)}px)`;
+      ctx.beginPath();
+      ctx.arc(center.sx, center.sy, screenRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = Math.max(screenRadius * 0.15, 1);
+      ctx.globalAlpha = 0.9;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // --- Draw drag highlighting (eligible edges + root rings) ---
     const isDragging = Boolean(draggingUserId) || Boolean(detachedDrag?.traverserId) || spaceHighlightRef.current;
@@ -399,6 +437,7 @@ export function useThreeTraverserRendering({
     fuseAnimationTime,
     graphTheme,
     toScreen,
+    getScreenRadiusForWorldRadius,
     getScreenRingRadius,
     fuseStops,
     draggingUserId,
