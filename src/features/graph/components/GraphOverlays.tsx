@@ -185,7 +185,10 @@ export function GraphOverlays({
             top: `${hoverTooltip.y + 12}px`,
           }}
         >
-          <span className="node-hover-label" style={{ color: hoverTooltip.color || 'inherit' }}>{hoverTooltip.title}</span>
+          <span
+            className="node-hover-label"
+            style={{ color: hoverTooltip.title === 'Untitled' ? 'rgba(255,255,255,0.35)' : (hoverTooltip.color || 'inherit'), fontStyle: hoverTooltip.title === 'Untitled' ? 'italic' : undefined }}
+          >{hoverTooltip.title}</span>
           {hoverTooltip.assignee && (
             <UserAvatar name={hoverTooltip.assignee} size="xs" />
           )}

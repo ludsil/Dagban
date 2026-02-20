@@ -896,11 +896,13 @@ export default function DagbanGraph({
         e.preventDefault();
         if (isTyping && document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
+          return;
         }
         if (pendingBurn) { cancelPendingBurn(); return; }
         if (previewBurn) { setPreviewBurn(null); return; }
         if (edgeStartPicker) { closeEdgeStartPicker(); return; }
         if (connectionMode.active) { cancelConnectionMode(); return; }
+        if (showCopySettings) { setShowCopySettings(false); return; }
         if (focusedNodeId || selectedNode) {
           setFocusedNodeId(null);
           setSelectedNode(null);
