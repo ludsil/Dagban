@@ -1,8 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import type { Card } from '@/lib/types';
 import type { GraphLinkData, GraphNodeData, ViewMode, DisplayMode, ArrowMode } from '../types';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -36,8 +34,6 @@ interface GraphCanvasLayerProps {
   nodeThreeObject?: (node: GraphNodeData) => unknown;
   getArrowRelPos: (link: GraphLinkData) => number;
   getArrowRelPosMiddle: (link: GraphLinkData) => number;
-  cardById?: Map<string, Card>;
-  BURNT_COLOR?: string;
 }
 
 export function GraphCanvasLayer({
@@ -53,22 +49,11 @@ export function GraphCanvasLayer({
   nodeThreeObject,
   getArrowRelPos,
   getArrowRelPosMiddle,
-  cardById,
-  BURNT_COLOR,
 }: GraphCanvasLayerProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG2D = ForceGraph2D as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FG3D = ForceGraph3D as any;
-
-  const get3DLinkColor = useCallback((link: GraphLinkData) => {
-    if (cardById && BURNT_COLOR) {
-      const sc = cardById.get(link.edge.source);
-      const tc = cardById.get(link.edge.target);
-      if (sc?.burntAt && tc?.burntAt) return BURNT_COLOR;
-    }
-    return 'rgba(255, 255, 255, 0.4)';
-  }, [cardById, BURNT_COLOR]);
 
   return (
     <div className="graph-canvas">
@@ -89,7 +74,7 @@ export function GraphCanvasLayer({
           nodeRelSize={nodeRadius}
           linkWidth={1}
           linkOpacity={0.6}
-          linkColor={get3DLinkColor}
+          linkColor={() => 'rgba(255, 255, 255, 0.4)'}
           linkDirectionalArrowLength={arrowMode !== 'none' ? Math.max(4, nodeRadius * 0.75) : 0}
           linkDirectionalArrowColor={() => 'rgba(255, 255, 255, 0.7)'}
           linkDirectionalArrowRelPos={arrowMode === 'end' ? getArrowRelPos : arrowMode === 'middle' ? getArrowRelPosMiddle : 0.5}

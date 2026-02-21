@@ -284,20 +284,8 @@ export function useGraphData({
       if (blockerCount < blockerThreshold) return false;
     }
 
-    // Burnt age filter: 0 hides all burnt, max shows all burnt
-    if (card.burntAt) {
-      if (burntAgeThreshold === 0) return false;
-      if (burntAgeThreshold < BURNT_AGE_MAX) {
-        const burntAt = Date.parse(card.burntAt);
-        if (!Number.isNaN(burntAt)) {
-          const ageDays = (Date.now() - burntAt) / (1000 * 60 * 60 * 24);
-          if (ageDays > burntAgeThreshold) return false;
-        }
-      }
-    }
-
     return true;
-  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts, burntAgeThreshold]);
+  }, [searchQuery, selectedCategories, selectedStatuses, selectedAssignees, blockerThreshold, blockerCounts]);
 
   // --- Label management functions ---
 
@@ -401,6 +389,25 @@ export function useGraphData({
       selectedCategories.size > 0 ||
       selectedStatuses.size > 0 ||
       searchQuery.length > 0;
+
+    // Compute hidden node IDs — burnt nodes outside the age threshold
+    // are removed from the graph entirely (not just dimmed).
+    const hiddenNodeIds = new Set<string>();
+    for (const card of data.cards) {
+      if (card.burntAt) {
+        if (burntAgeThreshold === 0) {
+          hiddenNodeIds.add(card.id);
+        } else if (burntAgeThreshold < BURNT_AGE_MAX) {
+          const burntAt = Date.parse(card.burntAt);
+          if (!Number.isNaN(burntAt)) {
+            const ageDays = (Date.now() - burntAt) / (1000 * 60 * 60 * 24);
+            if (ageDays > burntAgeThreshold) {
+              hiddenNodeIds.add(card.id);
+            }
+          }
+        }
+      }
+    }
 
     const seenNodeIds = new Set<string>();
 
@@ -574,10 +581,12 @@ export function useGraphData({
     }
 
     const nodes = data.cards
+      .filter(card => !hiddenNodeIds.has(card.id))
       .map(card => nodeById.get(card.id))
       .filter(Boolean) as GraphNodeData[];
 
     const links = data.edges
+      .filter(edge => !hiddenNodeIds.has(edge.source) && !hiddenNodeIds.has(edge.target))
       .map(edge => linkById.get(edge.id))
       .filter(Boolean) as GraphLinkData[];
 
@@ -620,6 +629,7 @@ export function useGraphData({
     selectedCategories,
     selectedStatuses,
     searchQuery,
+    burntAgeThreshold,
     displayMode,
     applyPendingGraphUpdates,
   ]);

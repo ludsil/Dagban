@@ -4,8 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { DagbanGraph as GraphData, Card, Traverser, User, Edge } from '@/lib/types';
 import type { GraphNodeData, GraphLinkData, ViewMode, DisplayMode, TraverserCoordinateProvider } from '../types';
 import { defaultTraverserTuning, type TraverserTuning } from '../traverserTuning';
-import { ROOT_TRAVERSER_PREFIX, BURN_FUSE_DURATION_MS } from '../traverserConstants';
-import type { BurnFuseAnimation } from '../traverserConstants';
+import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
 
 export type PendingBurnState = {
   traverserId: string | null;
@@ -53,7 +52,6 @@ export type UseTraverserLogicProps = {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
-  onBurnFuseStart?: (animation: BurnFuseAnimation) => void;
   suppressNextBackgroundClick: () => void;
   tuning?: Partial<TraverserTuning>;
 };
@@ -132,7 +130,6 @@ export function useTraverserLogic({
   onTraverserUpdate,
   onTraverserDelete,
   onCardChange,
-  onBurnFuseStart,
   suppressNextBackgroundClick,
   tuning: tuningOverrides,
 }: UseTraverserLogicProps) {
@@ -214,20 +211,6 @@ export function useTraverserLogic({
       }
     }
 
-    // Fire burn fuse animation on incoming edges (source → burntNode)
-    const incomingEdges = data.edges
-      .filter(edge => edge.target === pendingBurn.targetNodeId)
-      .map(edge => ({ id: edge.id, source: edge.source }));
-    if (incomingEdges.length > 0 && onBurnFuseStart) {
-      onBurnFuseStart({
-        id: `burn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        burntNodeId: pendingBurn.targetNodeId,
-        edges: incomingEdges,
-        startTime: performance.now(),
-        duration: BURN_FUSE_DURATION_MS,
-      });
-    }
-
     // Auto-spawn root traversers on downstream active nodes (outgoing edges)
     if (onTraverserCreate) {
       data.edges.forEach(edge => {
@@ -250,7 +233,6 @@ export function useTraverserLogic({
     onCardChange,
     onTraverserDelete,
     onTraverserCreate,
-    onBurnFuseStart,
     data.edges,
     traverserByEdgeId,
     rootActiveNodeIds,

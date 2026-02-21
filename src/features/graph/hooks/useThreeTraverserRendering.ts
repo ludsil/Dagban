@@ -19,7 +19,6 @@ import type { GraphNodeData, GraphLinkData, ViewMode } from '../types';
 import type { PendingBurnState, PreviewBurnState, DetachedDragState } from './useTraverserLogic';
 import { clamp } from './useTraverserLogic';
 import { ROOT_TRAVERSER_PREFIX, FUSE_ANIMATION_PHASE_SCALE, getShiftedGradientStops as shiftStops } from '../traverserConstants';
-import type { BurnFuseAnimation } from '../traverserConstants';
 import type { GraphTheme } from './useGraphCoordinates';
 
 // ---------------------------------------------------------------
@@ -52,7 +51,6 @@ export type UseThreeTraverserRenderingProps = {
   isBurntNodeId: (id: string) => boolean;
   cardById: Map<string, Card>;
   graphDataView: { nodes: GraphNodeData[]; links: GraphLinkData[] };
-  burnFuseAnimations: BurnFuseAnimation[];
 };
 
 // ---------------------------------------------------------------
@@ -62,7 +60,6 @@ export type UseThreeTraverserRenderingProps = {
 const ROOT_START_ANGLE = -Math.PI / 2;
 const BG_RING_STYLE = 'rgba(255, 255, 255, 0.12)';
 const HIGHLIGHT_COLOR = 'rgba(56, 189, 248, 0.7)';
-const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)';
 
 // ---------------------------------------------------------------
 // Hook
@@ -92,7 +89,6 @@ export function useThreeTraverserRendering({
   isBurntNodeId,
   cardById,
   graphDataView,
-  burnFuseAnimations,
 }: UseThreeTraverserRenderingProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -252,69 +248,6 @@ export function useThreeTraverserRendering({
     const phase = (fuseAnimationTime * FUSE_ANIMATION_PHASE_SCALE) % 1;
     const shiftedStops = shiftStops(fuseStops, phase);
 
-    // --- Burn fuse animations — flash bright, then fade to burnt ---
-    for (const anim of burnFuseAnimations) {
-      const burntNode = nodeByIdRef.current?.get(anim.burntNodeId);
-      if (!burntNode || burntNode.x === undefined || burntNode.y === undefined) continue;
-      const t = clamp((performance.now() - anim.startTime) / anim.duration, 0, 1);
-
-      for (const animEdge of anim.edges) {
-        const link = linkByIdRef.current?.get(animEdge.id);
-        if (!link) continue;
-        const srcNode = typeof link.source === 'string'
-          ? nodeByIdRef.current?.get(link.source)
-          : link.source;
-        if (!srcNode || srcNode.x === undefined || srcNode.y === undefined) continue;
-
-        const sx = srcNode.x ?? 0, sy = srcNode.y ?? 0, sz = srcNode.z ?? 0;
-        const bx = burntNode.x ?? 0, by = burntNode.y ?? 0, bz = burntNode.z ?? 0;
-        const screenStart = toScreen(sx, sy, sz);
-        const screenEnd = toScreen(bx, by, bz);
-        if (!screenStart || !screenEnd) continue;
-        const lineDist = Math.sqrt((screenEnd.sx - screenStart.sx) ** 2 + (screenEnd.sy - screenStart.sy) ** 2);
-        if (lineDist < 1) continue;
-
-        const flashEnd = 0.4;
-        if (t < flashEnd) {
-          // Flash phase — bright gradient over whole edge
-          const gradient = ctx.createLinearGradient(screenStart.sx, screenStart.sy, screenEnd.sx, screenEnd.sy);
-          shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
-          ctx.beginPath();
-          ctx.moveTo(screenStart.sx, screenStart.sy);
-          ctx.lineTo(screenEnd.sx, screenEnd.sy);
-          ctx.strokeStyle = gradient;
-          ctx.lineWidth = 3;
-          ctx.stroke();
-        } else {
-          // Fade phase — burnt underneath, glow fading on top
-          const fade = (t - flashEnd) / (1 - flashEnd);
-          ctx.beginPath();
-          ctx.moveTo(screenStart.sx, screenStart.sy);
-          ctx.lineTo(screenEnd.sx, screenEnd.sy);
-          ctx.strokeStyle = BURNT_COLOR;
-          ctx.lineWidth = 1.6 + 1.4 * (1 - fade);
-          ctx.globalAlpha = 0.9 * fade;
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-
-          const alpha = 1 - fade;
-          if (alpha > 0.01) {
-            const gradient = ctx.createLinearGradient(screenStart.sx, screenStart.sy, screenEnd.sx, screenEnd.sy);
-            shiftedStops.forEach(({ stop, color }) => gradient.addColorStop(stop, color));
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            ctx.beginPath();
-            ctx.moveTo(screenStart.sx, screenStart.sy);
-            ctx.lineTo(screenEnd.sx, screenEnd.sy);
-            ctx.strokeStyle = gradient;
-            ctx.lineWidth = 3 * (1 - fade * 0.4);
-            ctx.stroke();
-            ctx.restore();
-          }
-        }
-      }
-    }
-
     // Collect root rings to draw (deduplicate by nodeId)
     const rootRingsToDraw = new Map<string, { cx: number; cy: number; screenRadius: number; progress: number }>();
 
@@ -352,7 +285,7 @@ export function useThreeTraverserRendering({
       }
     }
 
-    if (!rootRingsToDraw.size && !burnFuseAnimations.length) return;
+    if (!rootRingsToDraw.size) return;
 
     // --- Draw root rings ---
     for (const [, ring] of rootRingsToDraw) {
@@ -415,7 +348,6 @@ export function useThreeTraverserRendering({
     traverserByEdgeId,
     isBurntNodeId,
     graphDataView,
-    burnFuseAnimations,
   ]);
 
   // Continuously redraw via rAF in 3D mode (camera orbit/pan doesn't trigger renderTick)

@@ -34,7 +34,6 @@ export function useGraphCoordinates({
   const ROOT_RING_RADIUS = NODE_RADIUS + 10;
   const ROOT_START_ANGLE = -Math.PI / 2;
   const BURNT_COLOR = 'rgba(17, 24, 39, 0.9)';
-  const PENDING_RING_COLOR = 'rgba(148, 163, 184, 0.8)';
   const FUSE_COLOR = graphTheme.fuseOrange;
 
   const FUSE_GRADIENT_STOPS = useMemo(() => ([
@@ -234,7 +233,6 @@ export function useGraphCoordinates({
     ROOT_RING_RADIUS,
     ROOT_START_ANGLE,
     BURNT_COLOR,
-    PENDING_RING_COLOR,
     FUSE_COLOR,
     FUSE_GRADIENT_STOPS,
     fuseGradientPhase,

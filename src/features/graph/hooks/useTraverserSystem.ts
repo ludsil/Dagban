@@ -5,7 +5,6 @@ import type { DagbanGraph as GraphData, Card, Traverser, User, Edge } from '@/li
 import type { GraphNodeData, GraphLinkData, ViewMode, DisplayMode } from '../types';
 import type { TraverserTuning } from '../traverserTuning';
 import { ROOT_TRAVERSER_PREFIX } from '../traverserConstants';
-import type { BurnFuseAnimation } from '../traverserConstants';
 import { useTraverserLogic, clamp } from './useTraverserLogic';
 
 export type { PendingBurnState, PreviewBurnState, DetachedDragState } from './useTraverserLogic';
@@ -52,7 +51,6 @@ export type UseTraverserSystemProps = {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onCardChange?: (cardId: string, updates: Partial<Card>) => void;
-  onBurnFuseStart?: (animation: BurnFuseAnimation) => void;
   suppressNextBackgroundClick: () => void;
   tuning?: Partial<TraverserTuning>;
 };
@@ -86,7 +84,6 @@ export function useTraverserSystem({
   onTraverserUpdate,
   onTraverserDelete,
   onCardChange,
-  onBurnFuseStart,
   suppressNextBackgroundClick,
   tuning: tuningOverrides,
 }: UseTraverserSystemProps) {
@@ -123,7 +120,6 @@ export function useTraverserSystem({
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    onBurnFuseStart,
     suppressNextBackgroundClick,
     tuning: tuningOverrides,
   });

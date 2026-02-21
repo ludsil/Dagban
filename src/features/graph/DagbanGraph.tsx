@@ -12,8 +12,7 @@ import { useGraphCoordinates } from './hooks/useGraphCoordinates';
 import { useCanvasRendering, type DragConnectState } from './hooks/useCanvasRendering';
 import { useGraphInteractions } from './hooks/useGraphInteractions';
 import type { TraverserTuning } from './traverserTuning';
-import { ROOT_TRAVERSER_PREFIX, BURN_FUSE_DURATION_MS } from './traverserConstants';
-import type { BurnFuseAnimation } from './traverserConstants';
+import { ROOT_TRAVERSER_PREFIX } from './traverserConstants';
 
 // Import extracted components
 import {
@@ -213,9 +212,6 @@ export default function DagbanGraph({
     progress: 0,
     startTime: null,
   });
-
-  // Burn fuse animation state
-  const [burnFuseAnimations, setBurnFuseAnimations] = useState<BurnFuseAnimation[]>([]);
 
   const [edgeContextMenu, setEdgeContextMenu] = useState<EdgeContextMenuState>({
     visible: false,
@@ -440,10 +436,8 @@ export default function DagbanGraph({
     getTraverserRenderPoint,
     getRootTraverserPoint,
     getRootPositionFromCoords,
-    getFuseGradient,
     getFuseRingGradient,
     BURNT_COLOR: _BURNT_COLOR,
-    PENDING_RING_COLOR: _PENDING_RING_COLOR,
     FUSE_COLOR: _FUSE_COLOR,
   } = useGraphCoordinates({
     graphRef,
@@ -464,10 +458,6 @@ export default function DagbanGraph({
     requestAnimationFrame(() => {
       suppressBackgroundClickRef.current = false;
     });
-  }, []);
-
-  const handleBurnFuseStart = useCallback((animation: BurnFuseAnimation) => {
-    setBurnFuseAnimations(prev => [...prev, animation]);
   }, []);
 
   const createTraverserForRoot = useCallback((nodeId: string, userId: string, position: number) => {
@@ -514,7 +504,6 @@ export default function DagbanGraph({
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    onBurnFuseStart: handleBurnFuseStart,
     suppressNextBackgroundClick,
     tuning: traverserTuning,
   });
@@ -543,7 +532,6 @@ export default function DagbanGraph({
     onTraverserUpdate,
     onTraverserDelete,
     onCardChange,
-    onBurnFuseStart: handleBurnFuseStart,
     suppressNextBackgroundClick,
     tuning: traverserTuning,
   });
@@ -603,7 +591,6 @@ export default function DagbanGraph({
     isBurntNodeId,
     cardById,
     graphDataView,
-    burnFuseAnimations,
   });
 
   // ============================================================
@@ -711,8 +698,7 @@ export default function DagbanGraph({
 
   const hasActiveFuses = useMemo(() => (data.traversers?.length ?? 0) > 0, [data.traversers]);
   const hasHolyNodes = useMemo(() => data.cards.some(c => c.title.trimEnd().endsWith('!!!')), [data.cards]);
-  const hasBurnFuse = burnFuseAnimations.length > 0;
-  const needsAnimation = hasActiveFuses || hasHolyNodes || hasBurnFuse;
+  const needsAnimation = hasActiveFuses || hasHolyNodes;
 
   useEffect(() => {
     if (!needsAnimation) {
@@ -736,24 +722,6 @@ export default function DagbanGraph({
       }
     };
   }, [needsAnimation]);
-
-  // Burn fuse animation completion — remove finished animations from state
-  useEffect(() => {
-    if (burnFuseAnimations.length === 0) return;
-
-    let rafId: number;
-    const tick = () => {
-      const now = performance.now();
-      const remaining = burnFuseAnimations.filter(anim => now - anim.startTime < anim.duration);
-      if (remaining.length < burnFuseAnimations.length) {
-        setBurnFuseAnimations(remaining);
-      } else {
-        rafId = requestAnimationFrame(tick);
-      }
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [burnFuseAnimations]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1040,14 +1008,11 @@ export default function DagbanGraph({
     NODE_RADIUS,
     ROOT_RING_RADIUS,
     BURNT_COLOR: _BURNT_COLOR,
-    PENDING_RING_COLOR: _PENDING_RING_COLOR,
     FUSE_COLOR: _FUSE_COLOR,
     getTraverserRenderPoint,
-    getFuseGradient,
     getFuseRingGradient,
     nodeBckgDimensionsRef,
     cycleEdgeIds,
-    burnFuseAnimations,
   });
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
@@ -1223,8 +1188,6 @@ export default function DagbanGraph({
         nodeThreeObject={nodeThreeObject}
         getArrowRelPos={getArrowRelPos}
         getArrowRelPosMiddle={getArrowRelPosMiddle}
-        cardById={cardById}
-        BURNT_COLOR={_BURNT_COLOR}
       />
 
       <GraphOverlays
