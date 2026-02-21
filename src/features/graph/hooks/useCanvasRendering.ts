@@ -73,7 +73,7 @@ export function useCanvasRendering({
 }: UseCanvasRenderingProps) {
   // Rotating conic-gradient holy glow — inspired by Aceternity glowing-effect
   // Uses canvas filter blur for a truly continuous glow (no discrete rings)
-  const drawHolyGlow = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, globalScale: number) => {
+  const drawHolyGlow = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, _globalScale: number) => {
     const t = performance.now() / 3000;
     const angle = t * Math.PI * 2;
 
@@ -86,15 +86,12 @@ export function useCanvasRendering({
     grad.addColorStop(0.83, '#aa44ff');
     grad.addColorStop(1,    '#ff3366');
 
-    const ringRadius = radius;
-    const blurPx = Math.max(8 / globalScale, 3);
-
     ctx.save();
-    ctx.filter = `blur(${blurPx}px)`;
+    ctx.filter = `blur(${Math.max(radius * 0.4, 3)}px)`;
     ctx.beginPath();
-    ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.strokeStyle = grad;
-    ctx.lineWidth = Math.max(1.5 / globalScale, 0.8);
+    ctx.lineWidth = Math.max(radius * 0.15, 1);
     ctx.globalAlpha = 0.9;
     ctx.stroke();
     ctx.restore();

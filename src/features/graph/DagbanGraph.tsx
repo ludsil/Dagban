@@ -857,9 +857,10 @@ export default function DagbanGraph({
 
       // --- Global keys: handled even when typing in inputs ---
 
-      // Escape — blurs input, then progressively cancels state
+      // Escape — close dialogs first, then blur input, then progressively cancel state
       if (e.key === 'Escape') {
         e.preventDefault();
+        if (showCopySettings) { setShowCopySettings(false); return; }
         if (isTyping && document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
           return;
@@ -867,7 +868,6 @@ export default function DagbanGraph({
         if (pendingBurn) { cancelPendingBurn(); return; }
         if (previewBurn) { setPreviewBurn(null); return; }
         if (connectionMode.active) { cancelConnectionMode(); return; }
-        if (showCopySettings) { setShowCopySettings(false); return; }
         if (focusedNodeId || selectedNode) {
           setFocusedNodeId(null);
           setSelectedNode(null);
