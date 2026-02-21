@@ -250,6 +250,53 @@ export function useCanvasRendering({
         }
       }
 
+      // Draw glow effect for connection source
+      if (isConnectionSource) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(74, 222, 128, 0.3)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 3, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // Draw spinning circle animation for drag-to-connect on target node
+      if (isDragConnectTarget && dragConnect.progress > 0) {
+        const animRadius = NODE_RADIUS + 8;
+        const progress = dragConnect.progress;
+        const rotation = performance.now() / 200;
+
+        ctx.beginPath();
+        ctx.arc(x, y, animRadius + 4, 0, 2 * Math.PI);
+        ctx.fillStyle = `rgba(74, 222, 128, ${0.2 * progress})`;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(x, y, animRadius, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.2)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(x, y, animRadius, rotation, rotation + progress * 2 * Math.PI);
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+
+      // Highlight source node during drag connect
+      if (isDragConnectSource) {
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 4, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
       // Holy glow effect (labels/full mode)
       if (node.holy) {
         drawHolyGlow(ctx, x, y, NODE_RADIUS, globalScale);
