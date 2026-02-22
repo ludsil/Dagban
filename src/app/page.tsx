@@ -255,6 +255,7 @@ function GraphHost({
       onGraphImport={handleGraphImport}
       onUndo={handleUndo}
       onRedo={handleRedo}
+      projectId={projectId}
       projectName={projectName}
       projects={projects}
       onProjectSwitch={onProjectSwitch}

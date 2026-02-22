@@ -47,6 +47,7 @@ import {
   generateAsciiBoxArt,
 } from './ascii';
 import * as settings from '@/lib/settings';
+import { getEmptyGraph } from '@/lib/projects';
 
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
@@ -73,12 +74,14 @@ interface Props {
   onGraphImport?: (graph: GraphData) => void;
   onUndo?: () => boolean;
   onRedo?: () => boolean;
+  projectId?: string;
   projectName?: string;
   projects?: { id: string; name: string }[];
   onProjectSwitch?: (projectId: string) => void;
   onProjectCreate?: (name: string) => void;
   onProjectDelete?: (projectId: string) => void;
   onProjectRename?: (projectId: string, name: string) => void;
+  onBackToProjects?: () => void;
   projectHud?: React.ReactNode;
   showSettingsProp?: boolean;
   triggerNewNode?: boolean;
@@ -114,12 +117,14 @@ export default function DagbanGraph({
   onGraphImport,
   onUndo,
   onRedo,
+  projectId,
   projectName,
   projects,
   onProjectSwitch,
   onProjectCreate,
   onProjectDelete,
   onProjectRename,
+  onBackToProjects,
   projectHud,
   showSettingsProp = true,
   triggerNewNode = false,
@@ -325,7 +330,8 @@ export default function DagbanGraph({
       const link = document.createElement('a');
       link.href = url;
       const stamp = new Date().toISOString().slice(0, 10);
-      link.download = `dagban-${stamp}.json`;
+      const fileStem = projectName?.trim() ? projectName.trim().toLowerCase().replace(/\s+/g, '-') : 'dagban';
+      link.download = `${fileStem}-${stamp}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -334,7 +340,7 @@ export default function DagbanGraph({
       console.error('Failed to download graph JSON', error);
       showToast('Failed to download graph JSON', 'warning');
     }
-  }, [data, showToast]);
+  }, [data, projectName, showToast]);
 
   const handleUploadGraph = useCallback((file: File) => {
     if (!onGraphImport) {
@@ -1075,6 +1081,56 @@ export default function DagbanGraph({
     setShowCategoryManager(true);
   }, []);
 
+  const handleResetCanvas = useCallback(() => {
+    if (!onGraphImport) {
+      showToast('Reset not available in this view', 'warning');
+      return;
+    }
+
+    onGraphImport(getEmptyGraph());
+    setSelectedNode(null);
+    setFocusedNodeId(null);
+    setPendingSelectNodeId(null);
+    setConnectionMode({
+      active: false,
+      sourceNode: null,
+      direction: 'downstream',
+    });
+    setDragConnect({
+      active: false,
+      sourceNode: null,
+      targetNode: null,
+      progress: 0,
+      startTime: null,
+    });
+    setEdgeContextMenu({
+      visible: false,
+      x: 0,
+      y: 0,
+      containerX: 0,
+      containerY: 0,
+      edgeId: null,
+    });
+    setHoverTooltip({
+      visible: false,
+      x: 0,
+      y: 0,
+      title: '',
+      nodeId: null,
+      color: null,
+      assignee: null,
+    });
+    setSelectedAssignees(new Set());
+    setSelectedCategories(new Set());
+    setSelectedStatuses(new Set());
+    setSearchQuery('');
+    setBlockerThreshold(0);
+    setBurntAgeThreshold(BURNT_AGE_MAX);
+    cancelPendingBurn();
+    setPreviewBurn(null);
+    showToast('Canvas reset', 'success');
+  }, [onGraphImport, showToast, cancelPendingBurn, setPreviewBurn]);
+
   const handleDuplicateNode = useCallback((node: GraphNodeData) => {
     if (!onCardCreate) return;
     const card = node.card;
@@ -1096,13 +1152,31 @@ export default function DagbanGraph({
     onNewRootNode: openRootNodeCreation,
     onOpenCategoryManager: handleOpenCategoryManager,
     onOpenCopySettings: () => setShowCopySettings(true),
+    onOpenShortcuts: () => setShowShortcutsHelp(true),
+    onResetCanvas: handleResetCanvas,
+    onBackToProjects,
+    projectId,
     projectName,
     projects,
     onProjectSwitch,
     onProjectCreate,
     onProjectDelete,
     onProjectRename,
-  }), [handleDownloadGraph, handleUploadGraph, openRootNodeCreation, handleOpenCategoryManager, projectName, projects, onProjectSwitch, onProjectCreate, onProjectDelete, onProjectRename]);
+  }), [
+    handleDownloadGraph,
+    handleUploadGraph,
+    openRootNodeCreation,
+    handleOpenCategoryManager,
+    handleResetCanvas,
+    onBackToProjects,
+    projectId,
+    projectName,
+    projects,
+    onProjectSwitch,
+    onProjectCreate,
+    onProjectDelete,
+    onProjectRename,
+  ]);
 
   const userHudProps = useMemo(() => ({
     users: data.users,

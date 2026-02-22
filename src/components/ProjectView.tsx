@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import DagbanGraph from '@/components/DagbanGraph';
 import { getEmptyGraph, getProjects, Project } from '@/lib/projects';
@@ -8,150 +8,6 @@ import { saveGraph, usePersistedGraph } from '@/lib/storage';
 import { useGraphUndo, type GraphUpdateOptions } from '@/lib/graph-undo';
 import type { DagbanGraph as GraphData, Card, Traverser, User } from '@/lib/types';
 import { createUserId } from '@/lib/users';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-
-interface ProjectHeaderProps {
-  project: Project;
-  projects: Project[];
-  onProjectSelect: (projectId: string) => void;
-  onNewRootNode: () => void;
-  onDownloadGraph: () => void;
-  onUploadGraph: (file: File) => void;
-  onBackToProjects: () => void;
-}
-
-function ProjectHeader({
-  project,
-  projects,
-  onProjectSelect,
-  onNewRootNode,
-  onDownloadGraph,
-  onUploadGraph,
-  onBackToProjects,
-}: ProjectHeaderProps) {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setDropdownOpen(false);
-    if (dropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-    }
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, [dropdownOpen]);
-
-  return (
-    <div className="header-panel">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className="header-logo"
-            title="Project actions"
-          >
-            <div className="header-logo-ball" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onClick={onDownloadGraph}>Download JSON</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>Upload JSON</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/json,.json"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) {
-            onUploadGraph(file);
-            event.target.value = '';
-          }
-        }}
-        style={{ display: 'none' }}
-      />
-
-      <button
-        className="header-back-btn"
-        onClick={onBackToProjects}
-        title="Back to projects"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M3 3h7l2 3h9v12a2 2 0 01-2 2H5a2 2 0 01-2-2V3z" />
-        </svg>
-      </button>
-
-      <div className="header-project-switcher">
-        <button
-          className="header-project-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            setDropdownOpen(!dropdownOpen);
-          }}
-        >
-          <span className="header-project-name">{project.name}</span>
-          <svg
-            className={`header-chevron ${dropdownOpen ? 'open' : ''}`}
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-        {dropdownOpen && (
-          <div className="header-dropdown">
-            {projects.map(p => (
-              <button
-                key={p.id}
-                className={`header-dropdown-item ${p.id === project.id ? 'active' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onProjectSelect(p.id);
-                  setDropdownOpen(false);
-                }}
-              >
-                {p.name}
-              </button>
-            ))}
-            <div className="header-dropdown-divider" />
-            <button
-              className="header-dropdown-item"
-              onClick={(e) => {
-                e.stopPropagation();
-                onBackToProjects();
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 3h7l2 3h9v12a2 2 0 01-2 2H5a2 2 0 01-2-2V3z" />
-              </svg>
-              All Projects
-            </button>
-          </div>
-        )}
-      </div>
-
-      <button
-        className="new-root-btn"
-        onClick={onNewRootNode}
-        title="Create new root node"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        <span>New</span>
-      </button>
-    </div>
-  );
-}
 
 interface ProjectViewProps {
   projectId: string;
@@ -160,7 +16,6 @@ interface ProjectViewProps {
 export default function ProjectView({ projectId }: ProjectViewProps) {
   const router = useRouter();
   const [allProjects] = useState<Project[]>(() => getProjects());
-  const [triggerNewNode, setTriggerNewNode] = useState(false);
 
   // Derive current project from allProjects and projectId
   const project = useMemo(() => {
@@ -174,7 +29,7 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
     }
   }, [project, router]);
 
-  const emptyGraph = useMemo(() => getEmptyGraph(), [projectId]);
+  const emptyGraph = useMemo(() => getEmptyGraph(), []);
   // Use persisted graph with project-specific storage
   const [graph, setGraph] = usePersistedGraph(emptyGraph, projectId);
   const { applyGraphUpdate, handleUndo } = useGraphUndo(setGraph);
@@ -331,50 +186,6 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
     }));
   }, [applyGraphUpdate]);
 
-  const handleDownloadGraph = useCallback(() => {
-    try {
-      const json = JSON.stringify(graph, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const stamp = new Date().toISOString().slice(0, 10);
-      link.download = `${project?.name || 'dagban'}-${stamp}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to download graph JSON', error);
-    }
-  }, [graph, project?.name]);
-
-  const handleUploadGraph = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const text = typeof reader.result === 'string' ? reader.result : '';
-        const parsed = JSON.parse(text);
-        const isValid =
-          parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray(parsed.cards) &&
-          Array.isArray(parsed.edges) &&
-          Array.isArray(parsed.categories) &&
-          Array.isArray(parsed.users) &&
-          Array.isArray(parsed.traversers);
-        if (!isValid) {
-          console.warn('Invalid Dagban JSON format');
-          return;
-        }
-        applyGraphUpdate(() => parsed as GraphData);
-      } catch (error) {
-        console.error('Failed to import graph JSON', error);
-      }
-    };
-    reader.readAsText(file);
-  }, [applyGraphUpdate]);
-
   const handleGraphImport = useCallback((nextGraph: GraphData) => {
     applyGraphUpdate(() => nextGraph);
   }, [applyGraphUpdate]);
@@ -386,12 +197,6 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
   const handleBackToProjects = useCallback(() => {
     router.push('/');
   }, [router]);
-
-  const handleNewRootNode = useCallback(() => {
-    setTriggerNewNode(true);
-    // Reset trigger after a short delay
-    setTimeout(() => setTriggerNewNode(false), 100);
-  }, []);
 
   if (!project) {
     return (
@@ -416,18 +221,11 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         onTraverserUpdate={handleTraverserUpdate}
         onTraverserDelete={handleTraverserDelete}
         onUndo={handleUndo}
-        projectHud={
-          <ProjectHeader
-            project={project}
-            projects={allProjects}
-            onProjectSelect={handleProjectSelect}
-            onNewRootNode={handleNewRootNode}
-            onDownloadGraph={handleDownloadGraph}
-            onUploadGraph={handleUploadGraph}
-            onBackToProjects={handleBackToProjects}
-          />
-        }
-        triggerNewNode={triggerNewNode}
+        projectId={project.id}
+        projectName={project.name}
+        projects={allProjects}
+        onProjectSwitch={handleProjectSelect}
+        onBackToProjects={handleBackToProjects}
         onGraphImport={handleGraphImport}
       />
     </div>
