@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo, type CSSProperties } from 'react';
 import { Card, User, Category } from '@/lib/types';
 import { getContrastColors } from '@/lib/colors';
 import { SelectedNodeInfo, GraphNodeData } from '../types';
@@ -10,6 +10,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { UserAvatar } from './UserAvatar';
 import {
   Select,
@@ -18,8 +20,21 @@ import {
   SelectSeparator,
   SelectTrigger,
 } from '@/components/ui/select';
-import { ArrowDown, ArrowUp, Link, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Bot,
+  Check,
+  Link,
+  Play,
+  RotateCcw,
+  Square,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import { CategoryManager } from './CategoryManager';
+
+type AgentType = 'claude-code' | 'codex' | 'cline' | 'aider' | 'custom';
 
 interface CardDetailPanelProps {
   selectedNode: SelectedNodeInfo;
@@ -36,6 +51,24 @@ interface CardDetailPanelProps {
   onCategoryAdd?: (category: Category) => void;
   onCategoryDelete?: (categoryId: string) => void;
   onCategoryChange?: (categoryId: string, updates: Partial<Category>) => void;
+  onAssignAgent?: (cardId: string, agentConfig: NonNullable<Card['agentConfig']>) => void;
+  onClearAgent?: (cardId: string) => void;
+  onStartAgent?: (cardId: string) => void;
+  onStopAgent?: (cardId: string) => void;
+  onRequestAgentChanges?: (cardId: string, feedback: string) => void;
+  onApproveAgent?: (cardId: string) => void;
+  onRejectAgent?: (cardId: string, reason?: string) => void;
+  bridgeConnected?: boolean;
+}
+
+function formatAgentStatus(status?: Card['agentStatus']): string {
+  if (!status) return 'idle';
+  return status.replace('-', ' ');
+}
+
+function normalizeWorkerType(card: Card): 'human' | 'agent' {
+  if (card.workerType) return card.workerType;
+  return card.agentConfig ? 'agent' : 'human';
 }
 
 export function CardDetailPanel({
@@ -53,6 +86,14 @@ export function CardDetailPanel({
   onCategoryAdd,
   onCategoryDelete,
   onCategoryChange,
+  onAssignAgent,
+  onClearAgent,
+  onStartAgent,
+  onStopAgent,
+  onRequestAgentChanges,
+  onApproveAgent,
+  onRejectAgent,
+  bridgeConnected = false,
 }: CardDetailPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -60,20 +101,21 @@ export function CardDetailPanel({
   const { node, screenX, screenY } = selectedNode;
   const card = node.card;
 
-  // Local state for editing
-  // Note: Component is keyed by card.id in DagbanGraph, so state is reset on card change
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
   const [assignee, setAssignee] = useState(card.assignee || '');
   const [shiftHeld, setShiftHeld] = useState(false);
   const [localCategoryId, setLocalCategoryId] = useState(card.categoryId);
-
-  // Detect holy marker (current title ends with "!!!")
-  const isHoly = title.trimEnd().endsWith('!!!');
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [workerType, setWorkerType] = useState<'human' | 'agent'>(() => normalizeWorkerType(card));
+  const [agentType, setAgentType] = useState<AgentType>(() => card.agentConfig?.type ?? 'codex');
+  const [agentCommand, setAgentCommand] = useState(card.agentConfig?.command ?? '');
+  const [agentModel, setAgentModel] = useState(card.agentConfig?.model ?? '');
+  const [reviewFeedback, setReviewFeedback] = useState('');
+
+  const isHoly = title.trimEnd().endsWith('!!!');
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
 
-  // Resolve current color — use burnt color if card is burnt, otherwise category color
   const isBurnt = Boolean(card.burntAt);
   const BURNT_COLOR = '#111827';
   const currentColor = useMemo(() => {
@@ -83,7 +125,18 @@ export function CardDetailPanel({
   }, [isBurnt, localCategoryId, categories, node.color]);
   const colors = useMemo(() => getContrastColors(currentColor), [currentColor]);
 
-  // Track shift key state
+  const agentStatus = card.agentStatus ?? 'idle';
+
+  useEffect(() => {
+    setWorkerType(normalizeWorkerType(card));
+  }, [card.workerType, card.agentConfig]);
+
+  useEffect(() => {
+    setAgentType(card.agentConfig?.type ?? 'codex');
+    setAgentCommand(card.agentConfig?.command ?? '');
+    setAgentModel(card.agentConfig?.model ?? '');
+  }, [card.agentConfig]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Shift') setShiftHeld(true);
@@ -99,12 +152,10 @@ export function CardDetailPanel({
     };
   }, []);
 
-  // Refs to track latest values for unmount save (closures capture stale state)
   const stateRef = useRef({ title, description, assignee });
   const cardRef = useRef(card);
   const onCardChangeRef = useRef(onCardChange);
 
-  // Keep refs updated with latest values
   useEffect(() => {
     stateRef.current = { title, description, assignee };
   }, [title, description, assignee]);
@@ -117,7 +168,6 @@ export function CardDetailPanel({
     onCardChangeRef.current = onCardChange;
   }, [onCardChange]);
 
-  // Save changes helper
   const saveChanges = useCallback(() => {
     const titleChanged = title !== card.title;
     const descChanged = description !== (card.description || '');
@@ -131,7 +181,6 @@ export function CardDetailPanel({
     }
   }, [title, description, assignee, card.title, card.description, card.assignee, card.id, onCardChange]);
 
-  // Save changes when component unmounts (e.g., when clicking another card)
   useEffect(() => {
     return () => {
       const { title, description, assignee } = stateRef.current;
@@ -150,37 +199,35 @@ export function CardDetailPanel({
         });
       }
     };
-  }, []); // Empty deps - runs only on unmount
+  }, []);
 
-  // Focus on open: title if new/empty, description end if existing
   useEffect(() => {
     if (!card.title && titleRef.current) {
-      // New card - focus title
       titleRef.current.focus();
     } else if (descriptionRef.current) {
-      // Existing card - focus description and move cursor to end
       descriptionRef.current.focus();
       descriptionRef.current.setSelectionRange(
         descriptionRef.current.value.length,
         descriptionRef.current.value.length
       );
     }
-    // Auto-resize title textarea to fit existing multi-line content
+
     if (titleRef.current) {
       titleRef.current.style.height = 'auto';
       titleRef.current.style.height = titleRef.current.scrollHeight + 'px';
     }
   }, [card.title]);
 
-  // Handle Escape and Enter keys to close panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
       if (e.key === 'Escape') {
         saveChanges();
         onClose();
       }
-      // Enter closes panel (Shift+Enter for newlines is handled on textarea)
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isTyping) {
         e.preventDefault();
         saveChanges();
         onClose();
@@ -194,15 +241,11 @@ export function CardDetailPanel({
     };
   }, [onClose, saveChanges]);
 
-  // Single-click outside to dismiss — even when a Radix dropdown is open
   useEffect(() => {
     const handlePointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
-      // Inside the panel itself — ignore
       if (panelRef.current?.contains(target)) return;
-      // Inside a Radix portal (Select dropdown, Popover, Dialog, etc.) — ignore
       if (target.closest('[data-radix-popper-content-wrapper]') || target.closest('[data-radix-select-content]') || target.closest('[data-slot="dialog-overlay"]') || target.closest('[data-slot="dialog-content"]')) return;
-      // Outside everything — close panel
       saveChanges();
       onClose();
     };
@@ -211,33 +254,50 @@ export function CardDetailPanel({
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [saveChanges, onClose]);
 
-  // Handle Add task button - creates new downstream, or links existing with shift
+  const buildAgentConfig = useCallback((nextType: AgentType = agentType, nextCommand: string = agentCommand, nextModel: string = agentModel) => {
+    return {
+      type: nextType,
+      command: nextType === 'custom' ? (nextCommand.trim() || undefined) : undefined,
+      model: nextModel.trim() || undefined,
+    };
+  }, [agentType, agentCommand, agentModel]);
+
+  const commitAgentConfig = useCallback((nextType?: AgentType, nextCommand?: string, nextModel?: string) => {
+    const config = buildAgentConfig(nextType, nextCommand, nextModel);
+    onAssignAgent?.(card.id, config);
+  }, [buildAgentConfig, card.id, onAssignAgent]);
+
+  const handleWorkerTypeChange = useCallback((value: string) => {
+    if (value === 'human') {
+      setWorkerType('human');
+      onClearAgent?.(card.id);
+      return;
+    }
+
+    setWorkerType('agent');
+    commitAgentConfig();
+  }, [card.id, commitAgentConfig, onClearAgent]);
+
   const handleAddTask = useCallback((e: React.MouseEvent) => {
     saveChanges();
     onClose();
     if (e.shiftKey && onLinkDownstream) {
-      // Shift+click: link to existing node as downstream
       onLinkDownstream(node);
     } else if (onCreateDownstream) {
-      // Normal click: create new downstream node
       onCreateDownstream(node);
     }
   }, [saveChanges, onClose, onCreateDownstream, onLinkDownstream, node]);
 
-  // Handle Add dep button - creates new upstream, or links existing with shift
   const handleAddDep = useCallback((e: React.MouseEvent) => {
     saveChanges();
     onClose();
     if (e.shiftKey && onLinkUpstream) {
-      // Shift+click: link to existing node as upstream
       onLinkUpstream(node);
     } else if (onCreateUpstream) {
-      // Normal click: create new upstream dependency node
       onCreateUpstream(node);
     }
   }, [saveChanges, onClose, onCreateUpstream, onLinkUpstream, node]);
 
-  // Handle Delete button
   const handleDelete = useCallback(() => {
     onClose();
     if (onDelete) {
@@ -245,35 +305,12 @@ export function CardDetailPanel({
     }
   }, [onClose, onDelete, node]);
 
-  // Calculate panel position - position to the right of the node, or left if near edge
-  const panelWidth = 260;
-  const panelHeight = 360;
-  const offset = 20;
-
-  let left = screenX + offset;
-  let top = screenY - panelHeight / 2;
-
-  // Adjust if panel would go off-screen
-  if (typeof window !== 'undefined') {
-    if (left + panelWidth > window.innerWidth - 20) {
-      left = screenX - panelWidth - offset;
-    }
-    if (top < 20) {
-      top = 20;
-    }
-    if (top + panelHeight > window.innerHeight - 20) {
-      top = window.innerHeight - panelHeight - 20;
-    }
-  }
-
-  // Auto-resize textarea
   const handleTitleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setTitle(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = e.target.scrollHeight + 'px';
   };
 
-  // Handle Enter key in title - save and close (no newlines allowed)
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -297,7 +334,49 @@ export function CardDetailPanel({
     onCardChange?.(card.id, { categoryId: value });
   }, [card.id, onCardChange]);
 
+  const handleStartAgent = useCallback(() => {
+    saveChanges();
+    onStartAgent?.(card.id);
+  }, [card.id, onStartAgent, saveChanges]);
+
+  const handleStopAgent = useCallback(() => {
+    onStopAgent?.(card.id);
+  }, [card.id, onStopAgent]);
+
+  const handleApproveAgent = useCallback(() => {
+    onApproveAgent?.(card.id);
+  }, [card.id, onApproveAgent]);
+
+  const handleRejectAgent = useCallback(() => {
+    onRejectAgent?.(card.id, reviewFeedback.trim() || undefined);
+  }, [card.id, onRejectAgent, reviewFeedback]);
+
+  const handleRequestChanges = useCallback(() => {
+    onRequestAgentChanges?.(card.id, reviewFeedback);
+  }, [card.id, onRequestAgentChanges, reviewFeedback]);
+
   const currentCategory = categories.find(c => c.id === localCategoryId);
+
+  const panelWidth = 300;
+  const panelHeight = workerType === 'agent'
+    ? (agentStatus === 'awaiting-review' ? 620 : 520)
+    : 420;
+  const offset = 20;
+
+  let left = screenX + offset;
+  let top = screenY - panelHeight / 2;
+
+  if (typeof window !== 'undefined') {
+    if (left + panelWidth > window.innerWidth - 20) {
+      left = screenX - panelWidth - offset;
+    }
+    if (top < 20) {
+      top = 20;
+    }
+    if (top + panelHeight > window.innerHeight - 20) {
+      top = window.innerHeight - panelHeight - 20;
+    }
+  }
 
   return (
     <>
@@ -307,6 +386,7 @@ export function CardDetailPanel({
         style={{
           left: `${left}px`,
           top: `${top}px`,
+          width: `${panelWidth}px`,
           backgroundColor: currentColor,
           '--postit-title': colors.title,
           '--postit-body': colors.body,
@@ -314,9 +394,8 @@ export function CardDetailPanel({
           '--postit-action-border': colors.actionBorder,
           '--postit-action-text': colors.actionText,
           '--postit-badge-bg': colors.badgeBg,
-        } as React.CSSProperties}
+        } as CSSProperties}
       >
-        {/* Assignee avatar in top right corner */}
         <div className="postit-assignee-corner">
           <Select
             value={assignee || '__unassigned__'}
@@ -349,10 +428,9 @@ export function CardDetailPanel({
           </Select>
         </div>
 
-        {/* Title - large, editable */}
-        <textarea
+        <Textarea
           ref={titleRef}
-          className={`postit-title${isHoly ? ' postit-title-holy' : ''}`}
+          className={`postit-title min-h-0 border-none shadow-none px-[14px] py-0 pt-[18px] pr-[56px] focus-visible:ring-0${isHoly ? ' postit-title-holy' : ''}`}
           value={title}
           onChange={handleTitleChange}
           onKeyDown={handleTitleKeyDown}
@@ -360,16 +438,161 @@ export function CardDetailPanel({
           rows={1}
         />
 
-        {/* Free text area */}
-        <textarea
+        <Textarea
           ref={descriptionRef}
-          className="postit-content"
+          className="postit-content min-h-[112px] border-none shadow-none px-[14px] py-0 pb-[10px] focus-visible:ring-0"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Add notes..."
         />
 
-        {/* Bottom action bar */}
+        <div className="postit-worker-section">
+          <div className="postit-worker-row">
+            <span className="postit-worker-label">Worker</span>
+            <Select value={workerType} onValueChange={handleWorkerTypeChange}>
+              <SelectTrigger size="sm" className="postit-worker-select">
+                <span className="flex items-center gap-1.5">
+                  <Bot className="size-3" />
+                  <span>{workerType === 'agent' ? 'Agent' : 'Human'}</span>
+                </span>
+              </SelectTrigger>
+              <SelectContent className="postit-select-content" align="end">
+                <SelectItem value="human">Human</SelectItem>
+                <SelectItem value="agent">Agent</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {workerType === 'agent' && (
+            <>
+              <div className="postit-worker-row">
+                <span className="postit-worker-label">Agent</span>
+                <Select
+                  value={agentType}
+                  onValueChange={(value) => {
+                    const nextType = value as AgentType;
+                    setAgentType(nextType);
+                    commitAgentConfig(nextType, agentCommand, agentModel);
+                  }}
+                >
+                  <SelectTrigger size="sm" className="postit-worker-select">
+                    <span>{agentType}</span>
+                  </SelectTrigger>
+                  <SelectContent className="postit-select-content" align="end">
+                    <SelectItem value="codex">codex</SelectItem>
+                    <SelectItem value="claude-code">claude-code</SelectItem>
+                    <SelectItem value="cline">cline</SelectItem>
+                    <SelectItem value="aider">aider</SelectItem>
+                    <SelectItem value="custom">custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {agentType === 'custom' && (
+                <Input
+                  value={agentCommand}
+                  onChange={(event) => setAgentCommand(event.target.value)}
+                  onBlur={() => commitAgentConfig(agentType, agentCommand, agentModel)}
+                  placeholder="Custom command"
+                  className="postit-worker-input"
+                />
+              )}
+
+              <Input
+                value={agentModel}
+                onChange={(event) => setAgentModel(event.target.value)}
+                onBlur={() => commitAgentConfig(agentType, agentCommand, agentModel)}
+                placeholder="Model (optional)"
+                className="postit-worker-input"
+              />
+
+              <div className="postit-agent-status-row">
+                <span className={`postit-agent-status ${agentStatus}`}>{formatAgentStatus(agentStatus)}</span>
+                <span className={`postit-bridge-pill ${bridgeConnected ? 'connected' : 'disconnected'}`}>
+                  {bridgeConnected ? 'bridge on' : 'bridge off'}
+                </span>
+              </div>
+
+              <div className="postit-agent-actions">
+                {(agentStatus === 'idle' || agentStatus === 'rejected') && (
+                  <Button
+                    variant="default"
+                    size="xs"
+                    className="postit-agent-btn"
+                    onClick={handleStartAgent}
+                  >
+                    <Play className="size-3" />
+                    <span>Start Agent</span>
+                  </Button>
+                )}
+
+                {agentStatus === 'running' && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="postit-agent-btn"
+                    onClick={handleStopAgent}
+                  >
+                    <Square className="size-3" />
+                    <span>Stop Agent</span>
+                  </Button>
+                )}
+
+                {agentStatus === 'awaiting-review' && (
+                  <>
+                    <Textarea
+                      value={reviewFeedback}
+                      onChange={(event) => setReviewFeedback(event.target.value)}
+                      placeholder="Review feedback"
+                      className="postit-review-feedback"
+                    />
+                    <div className="postit-review-actions">
+                      <Button
+                        variant="default"
+                        size="xs"
+                        className="postit-agent-btn"
+                        onClick={handleApproveAgent}
+                      >
+                        <Check className="size-3" />
+                        <span>Approve</span>
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="xs"
+                        className="postit-agent-btn"
+                        onClick={handleRequestChanges}
+                      >
+                        <RotateCcw className="size-3" />
+                        <span>Request Changes</span>
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="xs"
+                        className="postit-agent-btn"
+                        onClick={handleRejectAgent}
+                      >
+                        <XCircle className="size-3" />
+                        <span>Reject</span>
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {agentStatus === 'approved' && (
+                  <div className="postit-agent-approved">Approved and ready to burn.</div>
+                )}
+              </div>
+
+              {card.agentBranch && (
+                <div className="postit-agent-meta">Branch: {card.agentBranch}</div>
+              )}
+              {card.agentSessionId && (
+                <div className="postit-agent-meta">Session: {card.agentSessionId}</div>
+              )}
+            </>
+          )}
+        </div>
+
         <div className="postit-actions">
           <div className="postit-actions-left">
             <Tooltip delayDuration={100}>
@@ -430,7 +653,9 @@ export function CardDetailPanel({
                 <p>Delete node</p>
               </TooltipContent>
             </Tooltip>
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
               className="postit-category-trigger"
               aria-label="Change category"
               onClick={() => setShowCategoryManager(true)}
@@ -438,7 +663,7 @@ export function CardDetailPanel({
               <span className="postit-category-label">
                 {currentCategory?.name || 'Category'}
               </span>
-            </button>
+            </Button>
           </div>
         </div>
       </div>

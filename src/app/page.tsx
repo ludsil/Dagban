@@ -231,6 +231,52 @@ function GraphHost({
     }));
   }, [applyGraphUpdate]);
 
+  const handleAssignAgent = useCallback((cardId: string, agentConfig: NonNullable<Card['agentConfig']>) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
+        card.id === cardId
+          ? { ...card, workerType: 'agent' as const, agentConfig, agentStatus: 'idle' as const, updatedAt: new Date().toISOString() }
+          : card
+      ),
+    }));
+  }, [applyGraphUpdate]);
+
+  const handleUpdateAgentStatus = useCallback((
+    cardId: string,
+    agentStatus: NonNullable<Card['agentStatus']>,
+    extras?: { agentBranch?: string; agentSessionId?: string },
+    options?: GraphUpdateOptions
+  ) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
+        card.id === cardId
+          ? { ...card, agentStatus, ...extras, updatedAt: new Date().toISOString() }
+          : card
+      ),
+    }), { recordUndo: options?.recordUndo });
+  }, [applyGraphUpdate]);
+
+  const handleClearAgent = useCallback((cardId: string) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
+        card.id === cardId
+          ? {
+              ...card,
+              workerType: undefined,
+              agentConfig: undefined,
+              agentStatus: undefined,
+              agentBranch: undefined,
+              agentSessionId: undefined,
+              updatedAt: new Date().toISOString(),
+            }
+          : card
+      ),
+    }));
+  }, [applyGraphUpdate]);
+
   const handleGraphImport = useCallback((nextGraph: GraphData) => {
     applyGraphUpdate(() => nextGraph);
   }, [applyGraphUpdate]);
@@ -252,6 +298,9 @@ function GraphHost({
       onTraverserCreate={handleTraverserCreate}
       onTraverserUpdate={handleTraverserUpdate}
       onTraverserDelete={handleTraverserDelete}
+      onAssignAgent={handleAssignAgent}
+      onUpdateAgentStatus={handleUpdateAgentStatus}
+      onClearAgent={handleClearAgent}
       onGraphImport={handleGraphImport}
       onUndo={handleUndo}
       onRedo={handleRedo}

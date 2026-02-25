@@ -49,6 +49,15 @@ export interface Card {
   description?: string;
   categoryId: string;
   assignee?: string; // user id
+  workerType?: 'human' | 'agent';
+  agentConfig?: {
+    type: 'claude-code' | 'codex' | 'cline' | 'aider' | 'custom';
+    command?: string;
+    model?: string;
+  };
+  agentStatus?: 'idle' | 'running' | 'awaiting-review' | 'approved' | 'rejected';
+  agentBranch?: string;
+  agentSessionId?: string;
   createdAt: string;
   updatedAt: string;
   burntAt?: string;
@@ -77,6 +86,7 @@ export interface DagbanGraph {
   categories: Category[];
   users: User[];
   traversers: Traverser[];
+  schemaVersion?: number;
 }
 
 // Computed state for a card based on graph

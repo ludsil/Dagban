@@ -48,6 +48,10 @@ import {
 } from './ascii';
 import * as settings from '@/lib/settings';
 import { getEmptyGraph } from '@/lib/projects';
+import { useBridgeConnection } from '@/hooks/useBridgeConnection';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Eraser, TerminalSquare } from 'lucide-react';
 
 const INITIAL_3D_CAMERA_DISTANCE = 300;
 
@@ -72,6 +76,14 @@ interface Props {
   ) => void;
   onTraverserDelete?: (traverserId: string) => void;
   onGraphImport?: (graph: GraphData) => void;
+  onAssignAgent?: (cardId: string, agentConfig: NonNullable<Card['agentConfig']>) => void;
+  onUpdateAgentStatus?: (
+    cardId: string,
+    agentStatus: NonNullable<Card['agentStatus']>,
+    extras?: { agentBranch?: string; agentSessionId?: string },
+    options?: { recordUndo?: boolean }
+  ) => void;
+  onClearAgent?: (cardId: string) => void;
   onUndo?: () => boolean;
   onRedo?: () => boolean;
   projectId?: string;
@@ -98,6 +110,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function buildAgentPrompt(card: Card): string {
+  const title = card.title.trim() || 'Untitled task';
+  const description = card.description?.trim();
+  return description ? `${title}\n\n${description}` : title;
+}
+
 export default function DagbanGraph({
   data,
   onCardChange,
@@ -115,6 +133,9 @@ export default function DagbanGraph({
   onTraverserUpdate,
   onTraverserDelete,
   onGraphImport,
+  onAssignAgent,
+  onUpdateAgentStatus,
+  onClearAgent,
   onUndo,
   onRedo,
   projectId,
@@ -289,6 +310,148 @@ export default function DagbanGraph({
   const hideToast = useCallback(() => {
     setToast(prev => ({ ...prev, visible: false }));
   }, []);
+
+  const handleBridgeAgentStatus = useCallback((message: {
+    cardId: string;
+    status: NonNullable<Card['agentStatus']>;
+    branch?: string;
+    sessionId?: string;
+    detail?: string;
+  }) => {
+    onUpdateAgentStatus?.(
+      message.cardId,
+      message.status,
+      {
+        agentBranch: message.branch,
+        agentSessionId: message.sessionId,
+      },
+      { recordUndo: false }
+    );
+
+    if (message.status === 'approved') {
+      const card = cardById.get(message.cardId);
+      if (card && !card.burntAt) {
+        onCardChange?.(message.cardId, { burntAt: new Date().toISOString() });
+      }
+    }
+
+    if (message.detail) {
+      showToast(
+        message.detail,
+        message.status === 'rejected' ? 'warning' : 'info'
+      );
+    }
+  }, [cardById, onCardChange, onUpdateAgentStatus, showToast]);
+
+  const {
+    connected: bridgeConnected,
+    bridgeRepoPath,
+    outputsByCard,
+    startAgent,
+    stopAgent,
+    sendFeedback,
+    approveAgent,
+    rejectAgent,
+    clearOutputs,
+  } = useBridgeConnection({
+    onAgentStatus: handleBridgeAgentStatus,
+    onError: message => showToast(message, 'warning'),
+  });
+
+  const startAgentForCard = useCallback((cardId: string, source: 'manual' | 'auto' = 'manual'): boolean => {
+    const card = cardById.get(cardId);
+    if (!card?.agentConfig) return false;
+
+    if (!bridgeConnected) {
+      if (source === 'manual') {
+        showToast('Connect dagban-bridge to start agents.', 'warning');
+      }
+      return false;
+    }
+
+    try {
+      startAgent({
+        cardId,
+        prompt: buildAgentPrompt(card),
+        agentConfig: card.agentConfig,
+        repoPath: bridgeRepoPath || undefined,
+      });
+      onUpdateAgentStatus?.(cardId, 'running', undefined, { recordUndo: false });
+      if (source === 'auto') {
+        showToast(`Auto-started agent for "${card.title || 'Untitled'}"`, 'info');
+      }
+      return true;
+    } catch (error) {
+      if (source === 'manual') {
+        const message = error instanceof Error ? error.message : 'Failed to start agent.';
+        showToast(message, 'warning');
+      }
+      return false;
+    }
+  }, [bridgeConnected, bridgeRepoPath, cardById, onUpdateAgentStatus, showToast, startAgent]);
+
+  const stopAgentForCard = useCallback((cardId: string) => {
+    if (!bridgeConnected) {
+      showToast('Bridge not connected.', 'warning');
+      return;
+    }
+    try {
+      stopAgent(cardId);
+      onUpdateAgentStatus?.(cardId, 'idle', undefined, { recordUndo: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to stop agent.';
+      showToast(message, 'warning');
+    }
+  }, [bridgeConnected, onUpdateAgentStatus, showToast, stopAgent]);
+
+  const requestAgentChanges = useCallback((cardId: string, message: string) => {
+    const feedback = message.trim();
+    if (!feedback) {
+      showToast('Add review feedback before requesting changes.', 'warning');
+      return;
+    }
+    if (!bridgeConnected) {
+      showToast('Bridge not connected.', 'warning');
+      return;
+    }
+    try {
+      sendFeedback(cardId, feedback);
+      onUpdateAgentStatus?.(cardId, 'running', undefined, { recordUndo: false });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : 'Failed to send feedback.';
+      showToast(text, 'warning');
+    }
+  }, [bridgeConnected, onUpdateAgentStatus, sendFeedback, showToast]);
+
+  const approveCardAgent = useCallback((cardId: string) => {
+    const card = cardById.get(cardId);
+    if (!card) return;
+    if (!bridgeConnected) {
+      showToast('Bridge not connected.', 'warning');
+      return;
+    }
+
+    try {
+      approveAgent(cardId, card.agentBranch);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to approve agent changes.';
+      showToast(message, 'warning');
+    }
+  }, [approveAgent, bridgeConnected, cardById, showToast]);
+
+  const rejectCardAgent = useCallback((cardId: string, reason?: string) => {
+    if (!bridgeConnected) {
+      showToast('Bridge not connected.', 'warning');
+      return;
+    }
+    try {
+      rejectAgent(cardId, reason);
+      onUpdateAgentStatus?.(cardId, 'idle', undefined, { recordUndo: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to reject agent.';
+      showToast(message, 'warning');
+    }
+  }, [bridgeConnected, onUpdateAgentStatus, rejectAgent, showToast]);
 
   // Copy graph as ASCII text using the persisted format preference
   const copyGraphAsText = useCallback(async () => {
@@ -678,6 +841,38 @@ export default function DagbanGraph({
       openRootNodeCreation();
     }
   }, [triggerNewNode, openRootNodeCreation]);
+
+  const autoStartedCardIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!bridgeConnected) return;
+
+    const readyCardIds = new Set<string>();
+
+    for (const card of data.cards) {
+      if (card.workerType !== 'agent' || !card.agentConfig) continue;
+      if (card.agentStatus !== 'idle') continue;
+
+      const incomingEdges = data.edges.filter(edge => edge.target === card.id);
+      if (incomingEdges.length === 0) continue;
+
+      const dependenciesSatisfied = incomingEdges.every(edge => Boolean(cardById.get(edge.source)?.burntAt));
+      if (!dependenciesSatisfied) continue;
+
+      readyCardIds.add(card.id);
+
+      if (autoStartedCardIdsRef.current.has(card.id)) continue;
+      if (startAgentForCard(card.id, 'auto')) {
+        autoStartedCardIdsRef.current.add(card.id);
+      }
+    }
+
+    for (const cardId of [...autoStartedCardIdsRef.current]) {
+      if (!readyCardIds.has(cardId)) {
+        autoStartedCardIdsRef.current.delete(cardId);
+      }
+    }
+  }, [bridgeConnected, cardById, data.cards, data.edges, startAgentForCard]);
 
   // Auto-select newly created node once it appears in graph data
   useEffect(() => {
@@ -1146,6 +1341,14 @@ export default function DagbanGraph({
     onCardCreate(newCard);
   }, [onCardCreate]);
 
+  const handleAssignAgent = useCallback((cardId: string, agentConfig: NonNullable<Card['agentConfig']>) => {
+    onAssignAgent?.(cardId, agentConfig);
+  }, [onAssignAgent]);
+
+  const handleClearAgent = useCallback((cardId: string) => {
+    onClearAgent?.(cardId);
+  }, [onClearAgent]);
+
   const projectHudProps = useMemo(() => ({
     onDownloadGraph: handleDownloadGraph,
     onUploadGraph: handleUploadGraph,
@@ -1162,6 +1365,8 @@ export default function DagbanGraph({
     onProjectCreate,
     onProjectDelete,
     onProjectRename,
+    bridgeConnected,
+    bridgeRepoPath,
   }), [
     handleDownloadGraph,
     handleUploadGraph,
@@ -1176,6 +1381,8 @@ export default function DagbanGraph({
     onProjectCreate,
     onProjectDelete,
     onProjectRename,
+    bridgeConnected,
+    bridgeRepoPath,
   ]);
 
   const userHudProps = useMemo(() => ({
@@ -1231,6 +1438,7 @@ export default function DagbanGraph({
   ]);
 
   const draggingUser = draggingUserId ? userById.get(draggingUserId) ?? null : null;
+  const selectedAgentOutput = selectedNode ? (outputsByCard[selectedNode.node.id] ?? []) : [];
 
   return (
     <div
@@ -1303,7 +1511,49 @@ export default function DagbanGraph({
           onCategoryAdd={onCategoryAdd}
           onCategoryDelete={onCategoryDelete}
           onCategoryChange={onCategoryChange}
+          onAssignAgent={handleAssignAgent}
+          onClearAgent={handleClearAgent}
+          onStartAgent={startAgentForCard}
+          onStopAgent={stopAgentForCard}
+          onRequestAgentChanges={requestAgentChanges}
+          onApproveAgent={approveCardAgent}
+          onRejectAgent={rejectCardAgent}
+          bridgeConnected={bridgeConnected}
         />
+      )}
+
+      {selectedNode && selectedAgentOutput.length > 0 && (
+        <div className="agent-output-panel">
+          <div className="agent-output-header">
+            <div className="agent-output-title">
+              <TerminalSquare className="size-4" />
+              <span>Agent Output</span>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="agent-output-clear"
+                  onClick={() => clearOutputs(selectedNode.node.id)}
+                >
+                  <Eraser className="size-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Clear output</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="agent-output-body">
+            {selectedAgentOutput.map((line, index) => (
+              <pre
+                key={`${line.at}-${index}`}
+                className={`agent-output-line ${line.stream === 'stderr' ? 'stderr' : 'stdout'}`}
+              >
+                {line.text}
+              </pre>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Toast Notification */}

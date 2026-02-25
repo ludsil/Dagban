@@ -133,6 +133,7 @@ export function getEmptyGraph(): DagbanGraph {
   const cat1 = STANDARD_COLORS[idx1];
   const cat2 = STANDARD_COLORS[idx2];
   return {
+    schemaVersion: 2,
     users: [{ ...defaultUser }],
     traversers: [],
     categories: [

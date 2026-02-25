@@ -24,6 +24,9 @@ This document is the human-readable mirror of the registry and should stay in sy
 | `graph.project.undo` | `domain` | `project` | No | No | Restore latest graph snapshot from undo stack. |
 | `graph.node.create` | `domain` | `node` | Yes | Yes | Create a node, optionally linked upstream/downstream. |
 | `graph.node.update` | `domain` | `node` | Yes | Yes | Update card fields (title, description, assignee, etc.). |
+| `graph.node.assign_agent` | `domain` | `node` | Yes | Yes | Assign agent worker type/config to a node. |
+| `graph.node.update_agent_status` | `domain` | `node` | Yes | Yes | Update agent execution/review status for a node. |
+| `graph.node.clear_agent` | `domain` | `node` | Yes | Yes | Remove agent assignment and runtime metadata from a node. |
 | `graph.node.delete` | `domain` | `node` | Yes | Yes | Delete node and cascade cleanup of edges/traversers. |
 | `graph.edge.create` | `domain` | `edge` | Yes | Yes | Create directed edge between two nodes. |
 | `graph.edge.delete` | `domain` | `edge` | Yes | Yes | Delete edge and attached traverser if present. |

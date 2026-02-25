@@ -309,6 +309,18 @@ export function useGraphData({
     nodeEl.style.gap = '4px';
 
     const holyClass = node.holy ? ' node-label-holy' : '';
+    const hasAgent = node.card.workerType === 'agent' || Boolean(node.card.agentConfig);
+    const statusColors: Record<string, string> = {
+      idle: '#94a3b8',
+      running: '#22c55e',
+      'awaiting-review': '#f59e0b',
+      approved: '#38bdf8',
+      rejected: '#ef4444',
+    };
+    const status = node.card.agentStatus ?? 'idle';
+    const statusDot = hasAgent
+      ? `<span class=\"node-agent-status-dot\" style=\"background:${statusColors[status] || statusColors.idle}\"></span>`
+      : '';
 
     if (mode === 'labels') {
       if (!node.title) {
@@ -317,9 +329,9 @@ export function useGraphData({
         return entry;
       }
       if (node.holy) {
-        nodeEl.innerHTML = `<span class="node-label-holy">${node.title}</span>`;
+        nodeEl.innerHTML = `${statusDot}<span class=\"node-label-holy\">${node.title}</span>`;
       } else {
-        nodeEl.textContent = node.title;
+        nodeEl.innerHTML = `${statusDot}<span>${node.title}</span>`;
       }
       return entry;
     }
@@ -335,6 +347,7 @@ export function useGraphData({
       const avatarContent = getAvatarHTMLContent(getAssigneeName(node.card.assignee), 10);
       nodeEl.innerHTML = `
         <div style="display: flex; align-items: center; gap: 5px; flex-direction: row;">
+          ${statusDot}
           <span class="${holyClass}">${node.title}</span>
           <div style="${avatarStyles}">
             ${avatarContent}

@@ -28,6 +28,7 @@ import {
   Settings2,
   Shapes,
   Trash2,
+  Circle,
 } from 'lucide-react';
 
 interface ProjectHudProps {
@@ -46,6 +47,8 @@ interface ProjectHudProps {
   onProjectCreate?: (name: string) => void;
   onProjectDelete?: (projectId: string) => void;
   onProjectRename?: (projectId: string, name: string) => void;
+  bridgeConnected?: boolean;
+  bridgeRepoPath?: string | null;
 }
 
 export function ProjectHud({
@@ -64,6 +67,8 @@ export function ProjectHud({
   onProjectCreate,
   onProjectDelete,
   onProjectRename,
+  bridgeConnected = false,
+  bridgeRepoPath,
 }: ProjectHudProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -249,6 +254,23 @@ export function ProjectHud({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant={bridgeConnected ? 'default' : 'ghost'}
+            size="icon-xs"
+            className={`bridge-status-btn ${bridgeConnected ? 'connected' : 'disconnected'}`}
+            aria-label={bridgeConnected ? 'Bridge connected' : 'Bridge disconnected'}
+          >
+            <Circle className="size-2.5 fill-current" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="start">
+          {bridgeConnected
+            ? `dagban-bridge connected${bridgeRepoPath ? ` (${bridgeRepoPath})` : ''}`
+            : 'dagban-bridge disconnected'}
+        </TooltipContent>
+      </Tooltip>
       <input
         ref={fileInputRef}
         type="file"

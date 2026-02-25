@@ -186,6 +186,55 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
     }));
   }, [applyGraphUpdate]);
 
+  // Handle assigning an agent to a card
+  const handleAssignAgent = useCallback((cardId: string, agentConfig: NonNullable<Card['agentConfig']>) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
+        card.id === cardId
+          ? { ...card, workerType: 'agent' as const, agentConfig, agentStatus: 'idle' as const, updatedAt: new Date().toISOString() }
+          : card
+      ),
+    }));
+  }, [applyGraphUpdate]);
+
+  // Handle updating agent status on a card
+  const handleUpdateAgentStatus = useCallback((
+    cardId: string,
+    agentStatus: NonNullable<Card['agentStatus']>,
+    extras?: { agentBranch?: string; agentSessionId?: string },
+    options?: GraphUpdateOptions
+  ) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
+        card.id === cardId
+          ? { ...card, agentStatus, ...extras, updatedAt: new Date().toISOString() }
+          : card
+      ),
+    }), { recordUndo: options?.recordUndo });
+  }, [applyGraphUpdate]);
+
+  // Handle clearing agent assignment from a card
+  const handleClearAgent = useCallback((cardId: string) => {
+    applyGraphUpdate(prev => ({
+      ...prev,
+      cards: prev.cards.map(card =>
+        card.id === cardId
+          ? {
+              ...card,
+              workerType: undefined,
+              agentConfig: undefined,
+              agentStatus: undefined,
+              agentBranch: undefined,
+              agentSessionId: undefined,
+              updatedAt: new Date().toISOString(),
+            }
+          : card
+      ),
+    }));
+  }, [applyGraphUpdate]);
+
   const handleGraphImport = useCallback((nextGraph: GraphData) => {
     applyGraphUpdate(() => nextGraph);
   }, [applyGraphUpdate]);
@@ -227,6 +276,9 @@ export default function ProjectView({ projectId }: ProjectViewProps) {
         onProjectSwitch={handleProjectSelect}
         onBackToProjects={handleBackToProjects}
         onGraphImport={handleGraphImport}
+        onAssignAgent={handleAssignAgent}
+        onUpdateAgentStatus={handleUpdateAgentStatus}
+        onClearAgent={handleClearAgent}
       />
     </div>
   );

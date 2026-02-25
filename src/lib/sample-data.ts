@@ -2,6 +2,7 @@ import { DagbanGraph, placeholderUsers } from './types';
 
 // Sample data for development
 export const sampleGraph: DagbanGraph = {
+  schemaVersion: 2,
   users: placeholderUsers,
   traversers: [],
   categories: [

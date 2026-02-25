@@ -3,6 +3,7 @@ import { useSyncExternalStore, useCallback, useRef, useEffect, useMemo } from 'r
 import { DagbanGraph, defaultUser } from './types';
 
 const STORAGE_VERSION = 1;
+const GRAPH_SCHEMA_VERSION = 2;
 const DEFAULT_PROJECT_ID = 'default';
 const ROOT_TRAVERSER_PREFIX = 'root:';
 
@@ -10,6 +11,27 @@ interface StorageEnvelope {
   version: number;
   data: DagbanGraph;
   savedAt: string;
+}
+
+function isStorageEnvelope(value: unknown): value is StorageEnvelope {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'version' in value &&
+    'data' in value
+  );
+}
+
+function migrateGraph(graph: DagbanGraph): DagbanGraph {
+  const schemaVersion = typeof graph.schemaVersion === 'number' ? graph.schemaVersion : 1;
+  if (schemaVersion >= GRAPH_SCHEMA_VERSION) {
+    return graph;
+  }
+
+  return {
+    ...graph,
+    schemaVersion: GRAPH_SCHEMA_VERSION,
+  };
 }
 
 function slugifyId(value: string): string {
@@ -20,7 +42,8 @@ function slugifyId(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function normalizeGraph(graph: DagbanGraph): DagbanGraph {
+function normalizeGraph(inputGraph: DagbanGraph): DagbanGraph {
+  const graph = migrateGraph(inputGraph);
   const users = Array.isArray(graph.users) ? [...graph.users] : [];
   const traversers = Array.isArray(graph.traversers) ? [...graph.traversers] : [];
 
@@ -90,9 +113,10 @@ export function saveGraph(graph: DagbanGraph, projectId: string = DEFAULT_PROJEC
   if (typeof window === 'undefined') return false;
 
   try {
+    const migratedGraph = migrateGraph(graph);
     const envelope: StorageEnvelope = {
       version: STORAGE_VERSION,
-      data: graph,
+      data: migratedGraph,
       savedAt: new Date().toISOString(),
     };
     localStorage.setItem(getStorageKey(projectId), JSON.stringify(envelope));
@@ -116,15 +140,18 @@ export function loadGraph(projectId: string = DEFAULT_PROJECT_ID): DagbanGraph |
     const raw = localStorage.getItem(getStorageKey(projectId));
     if (!raw) return null;
 
-    const envelope: StorageEnvelope = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as StorageEnvelope | DagbanGraph;
+    const graph = isStorageEnvelope(parsed) ? parsed.data : parsed;
 
-    // Version check - could add migrations here in the future
-    if (envelope.version !== STORAGE_VERSION) {
-      console.warn(`Storage version mismatch: expected ${STORAGE_VERSION}, got ${envelope.version}`);
-      // For now, just return the data; add migrations as needed
+    if (isStorageEnvelope(parsed) && parsed.version !== STORAGE_VERSION) {
+      console.warn(`Storage version mismatch: expected ${STORAGE_VERSION}, got ${parsed.version}`);
     }
 
-    return envelope.data;
+    if (!graph || typeof graph !== 'object') {
+      return null;
+    }
+
+    return migrateGraph(graph);
   } catch (error) {
     console.error('Failed to load graph from localStorage:', error);
     return null;

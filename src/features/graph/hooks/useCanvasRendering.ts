@@ -71,6 +71,51 @@ export function useCanvasRendering({
   nodeBckgDimensionsRef,
   cycleEdgeIds,
 }: UseCanvasRenderingProps) {
+  const drawAgentStatusMarker = useCallback((
+    ctx: CanvasRenderingContext2D,
+    node: GraphNodeData,
+    x: number,
+    y: number,
+    scale: number
+  ) => {
+    if (node.card.workerType !== 'agent' && !node.card.agentConfig) return;
+
+    const status = node.card.agentStatus ?? 'idle';
+    const markerX = x + NODE_RADIUS * 0.82;
+    const markerY = y - NODE_RADIUS * 0.82;
+    const markerRadius = Math.max(3.2 / scale, 2.4);
+
+    const colors: Record<string, string> = {
+      idle: '#94a3b8',
+      running: '#22c55e',
+      'awaiting-review': '#f59e0b',
+      approved: '#38bdf8',
+      rejected: '#ef4444',
+    };
+    const color = colors[status] || colors.idle;
+
+    ctx.beginPath();
+    ctx.arc(markerX, markerY, markerRadius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(markerX, markerY, markerRadius + 1 / scale, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth = 1 / scale;
+    ctx.stroke();
+
+    if (status === 'running') {
+      const pulse = (Math.sin(performance.now() / 180) + 1) / 2;
+      const pulseRadius = markerRadius + 1.8 + pulse * 2.4;
+      ctx.beginPath();
+      ctx.arc(markerX, markerY, pulseRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(34, 197, 94, ${0.2 + pulse * 0.35})`;
+      ctx.lineWidth = Math.max(1 / scale, 0.7);
+      ctx.stroke();
+    }
+  }, [NODE_RADIUS]);
+
   // Rotating conic-gradient holy glow — inspired by Aceternity glowing-effect
   // Uses canvas filter blur for a truly continuous glow (no discrete rings)
   const drawHolyGlow = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, _globalScale: number) => {
@@ -207,6 +252,8 @@ export function useCanvasRendering({
         ctx.stroke();
       }
 
+      drawAgentStatusMarker(ctx, node, x, y, globalScale);
+
       // Store dimensions for pointer area
       nodeBckgDimensionsRef.current.set(node.id, [NODE_RADIUS * 2, NODE_RADIUS * 2]);
     } else {
@@ -340,6 +387,8 @@ export function useCanvasRendering({
         ctx.stroke();
       }
 
+      drawAgentStatusMarker(ctx, node, x, y, globalScale);
+
       // Store dimensions for pointer area
       nodeBckgDimensionsRef.current.set(node.id, bckgDimensions);
     }
@@ -367,6 +416,7 @@ export function useCanvasRendering({
     detachedDrag?.candidateRootNodeId,
     focusedNodeId,
     drawHolyGlow,
+    drawAgentStatusMarker,
   ]);
 
   // Custom link rendering for 2D
