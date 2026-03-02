@@ -40,6 +40,10 @@ export type UseCanvasRenderingProps = {
   getFuseRingGradient: (ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => string | CanvasGradient;
   // Cycle detection
   cycleEdgeIds: Set<string>;
+  // Indegree scaling
+  scaleByIndegree: boolean;
+  indegrees: Map<string, number>;
+  maxIndegree: number;
   // Refs
   nodeBckgDimensionsRef: React.RefObject<Map<string, [number, number]>>;
 };
@@ -70,6 +74,9 @@ export function useCanvasRendering({
   getFuseRingGradient,
   nodeBckgDimensionsRef,
   cycleEdgeIds,
+  scaleByIndegree,
+  indegrees,
+  maxIndegree,
 }: UseCanvasRenderingProps) {
   // Rotating conic-gradient holy glow — inspired by Aceternity glowing-effect
   // Uses canvas filter blur for a truly continuous glow (no discrete rings)
@@ -97,10 +104,23 @@ export function useCanvasRendering({
     ctx.restore();
   }, []);
 
+  // Compute per-node radius when scaling by indegree
+  const getNodeRadius = useCallback((nodeId: string) => {
+    if (!scaleByIndegree || maxIndegree <= 0) return NODE_RADIUS;
+    const degree = indegrees.get(nodeId) || 0;
+    // Nodes with 0 or 1 indegree stay at base size; scale up from indegree 2+
+    const effective = Math.max(0, degree - 1);
+    const effectiveMax = Math.max(1, maxIndegree - 1);
+    const scale = 1 + (effective / effectiveMax);
+    return NODE_RADIUS * scale;
+  }, [scaleByIndegree, indegrees, maxIndegree, NODE_RADIUS]);
+
   // Custom node rendering for 2D - matches text-nodes example exactly
   const nodeCanvasObject = useCallback((node: GraphNodeData, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const x = node.x ?? 0;
     const y = node.y ?? 0;
+    const R = getNodeRadius(node.id);
+    const ringR = R + 10;
     const rootTraverser = rootTraverserByNodeId.get(node.id);
     const rootAvailable = !rootTraverser || rootTraverser.id === detachedDrag?.traverserId;
     const isRootCandidate =
@@ -124,14 +144,14 @@ export function useCanvasRendering({
       if (rootTraverser && rootProgress !== null) {
         const startAngle = -Math.PI / 2;
         ctx.beginPath();
-        ctx.arc(x, y, ROOT_RING_RADIUS, 0, Math.PI * 2);
+        ctx.arc(x, y, ringR, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
         ctx.lineWidth = Math.max(1.2 / globalScale, 0.6);
         ctx.stroke();
 
         if (rootProgress > 0) {
           ctx.beginPath();
-          ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
+          ctx.arc(x, y, ringR, startAngle, startAngle + rootProgress * Math.PI * 2);
           ctx.strokeStyle = getFuseRingGradient(ctx, x, y);
           ctx.lineWidth = Math.max(2 / globalScale, 1);
           ctx.stroke();
@@ -141,11 +161,11 @@ export function useCanvasRendering({
       // Draw glow effect for connection source
       if (isConnectionSource) {
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.arc(x, y, R + 6, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(74, 222, 128, 0.3)';
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 3, 0, 2 * Math.PI);
+        ctx.arc(x, y, R + 3, 0, 2 * Math.PI);
         ctx.strokeStyle = '#4ade80';
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -153,7 +173,7 @@ export function useCanvasRendering({
 
       // Draw spinning circle animation for drag-to-connect on target node
       if (isDragConnectTarget && dragConnect.progress > 0) {
-        const animRadius = NODE_RADIUS + 8;
+        const animRadius = R + 8;
         const progress = dragConnect.progress;
         const rotation = performance.now() / 200; // Spinning speed
 
@@ -182,7 +202,7 @@ export function useCanvasRendering({
       // Highlight source node during drag connect
       if (isDragConnectSource) {
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 4, 0, 2 * Math.PI);
+        ctx.arc(x, y, R + 4, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -190,25 +210,25 @@ export function useCanvasRendering({
 
       // Holy glow effect (balls mode)
       if (node.holy) {
-        drawHolyGlow(ctx, x, y, NODE_RADIUS, globalScale);
+        drawHolyGlow(ctx, x, y, R, globalScale);
       }
 
       // Balls mode: just draw the colored ball
       ctx.beginPath();
-      ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+      ctx.arc(x, y, R, 0, 2 * Math.PI);
       ctx.fillStyle = drawColor;
       ctx.fill();
 
       if (isRootCandidate) {
         ctx.beginPath();
-        ctx.arc(x, y, ROOT_RING_RADIUS, 0, 2 * Math.PI);
+        ctx.arc(x, y, ringR, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
         ctx.lineWidth = 2 / globalScale;
         ctx.stroke();
       }
 
       // Store dimensions for pointer area
-      nodeBckgDimensionsRef.current.set(node.id, [NODE_RADIUS * 2, NODE_RADIUS * 2]);
+      nodeBckgDimensionsRef.current.set(node.id, [R * 2, R * 2]);
     } else {
       // Labels/Full mode: text IS the node (like text-nodes example)
       const label = node.title;
@@ -230,20 +250,20 @@ export function useCanvasRendering({
 
       const bckgDimensions: [number, number] = label
         ? [totalWidth + avatarConfig.padding * 2, textHeight + vertPad * 2]
-        : [NODE_RADIUS * 2, NODE_RADIUS * 2];
+        : [R * 2, R * 2];
 
       // Draw ball behind the label (matches 3D sphere + label)
       if (rootTraverser && rootProgress !== null) {
         const startAngle = -Math.PI / 2;
         ctx.beginPath();
-        ctx.arc(x, y, ROOT_RING_RADIUS, 0, Math.PI * 2);
+        ctx.arc(x, y, ringR, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
         ctx.lineWidth = Math.max(1.2 / globalScale, 0.6);
         ctx.stroke();
 
         if (rootProgress > 0) {
           ctx.beginPath();
-          ctx.arc(x, y, ROOT_RING_RADIUS, startAngle, startAngle + rootProgress * Math.PI * 2);
+          ctx.arc(x, y, ringR, startAngle, startAngle + rootProgress * Math.PI * 2);
           ctx.strokeStyle = getFuseRingGradient(ctx, x, y);
           ctx.lineWidth = Math.max(2 / globalScale, 1);
           ctx.stroke();
@@ -253,11 +273,11 @@ export function useCanvasRendering({
       // Draw glow effect for connection source
       if (isConnectionSource) {
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 6, 0, 2 * Math.PI);
+        ctx.arc(x, y, R + 6, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(74, 222, 128, 0.3)';
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 3, 0, 2 * Math.PI);
+        ctx.arc(x, y, R + 3, 0, 2 * Math.PI);
         ctx.strokeStyle = '#4ade80';
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -265,7 +285,7 @@ export function useCanvasRendering({
 
       // Draw spinning circle animation for drag-to-connect on target node
       if (isDragConnectTarget && dragConnect.progress > 0) {
-        const animRadius = NODE_RADIUS + 8;
+        const animRadius = R + 8;
         const progress = dragConnect.progress;
         const rotation = performance.now() / 200;
 
@@ -291,7 +311,7 @@ export function useCanvasRendering({
       // Highlight source node during drag connect
       if (isDragConnectSource) {
         ctx.beginPath();
-        ctx.arc(x, y, NODE_RADIUS + 4, 0, 2 * Math.PI);
+        ctx.arc(x, y, R + 4, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -299,11 +319,11 @@ export function useCanvasRendering({
 
       // Holy glow effect (labels/full mode)
       if (node.holy) {
-        drawHolyGlow(ctx, x, y, NODE_RADIUS, globalScale);
+        drawHolyGlow(ctx, x, y, R, globalScale);
       }
 
       ctx.beginPath();
-      ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+      ctx.arc(x, y, R, 0, 2 * Math.PI);
       ctx.fillStyle = drawColor;
       ctx.fill();
 
@@ -334,7 +354,7 @@ export function useCanvasRendering({
 
       if (isRootCandidate) {
         ctx.beginPath();
-        ctx.arc(x, y, ROOT_RING_RADIUS, 0, 2 * Math.PI);
+        ctx.arc(x, y, ringR, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
         ctx.lineWidth = 2 / globalScale;
         ctx.stroke();
@@ -367,6 +387,7 @@ export function useCanvasRendering({
     detachedDrag?.candidateRootNodeId,
     focusedNodeId,
     drawHolyGlow,
+    getNodeRadius,
   ]);
 
   // Custom link rendering for 2D
@@ -455,10 +476,11 @@ export function useCanvasRendering({
     ctx.fillStyle = color;
     const x = node.x ?? 0;
     const y = node.y ?? 0;
+    const R = getNodeRadius(node.id);
 
     // Always include the node circle as a clickable area
     ctx.beginPath();
-    ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
+    ctx.arc(x, y, R, 0, 2 * Math.PI);
     ctx.fill();
 
     // Also include the label background if present
@@ -471,7 +493,7 @@ export function useCanvasRendering({
         bckgDimensions[1]
       );
     }
-  }, [NODE_RADIUS]);
+  }, [getNodeRadius]);
 
   const getArrowRelPos = useCallback((link: GraphLinkData) => {
     if (arrowMode !== 'end') return 0.5;

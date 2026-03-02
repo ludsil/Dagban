@@ -9,6 +9,7 @@ interface DagbanSettings {
   displayMode: DisplayMode;
   arrowMode: ArrowMode;
   nodeRadius: number;
+  scaleByIndegree: boolean;
 }
 
 const defaults: DagbanSettings = {
@@ -17,6 +18,7 @@ const defaults: DagbanSettings = {
   displayMode: 'balls',
   arrowMode: 'end',
   nodeRadius: 6,
+  scaleByIndegree: false,
 };
 
 function load(): DagbanSettings {
@@ -53,3 +55,6 @@ export function setArrowMode(mode: ArrowMode): void { update({ arrowMode: mode }
 
 export function getNodeRadius(): number { return load().nodeRadius; }
 export function setNodeRadius(radius: number): void { update({ nodeRadius: radius }); }
+
+export function getScaleByIndegree(): boolean { return load().scaleByIndegree; }
+export function setScaleByIndegree(enabled: boolean): void { update({ scaleByIndegree: enabled }); }

@@ -146,6 +146,7 @@ export default function DagbanGraph({
   const [nodeRadius, setNodeRadiusState] = useState(6);
   const [colorMode, setColorMode] = useState<ColorMode>('category');
   const [arrowMode, setArrowModeState] = useState<ArrowMode>('end');
+  const [scaleByIndegree, setScaleByIndegreeState] = useState(false);
 
   // Load persisted settings on mount
   useEffect(() => {
@@ -153,6 +154,7 @@ export default function DagbanGraph({
     setDisplayModeState(settings.getDisplayMode());
     setNodeRadiusState(settings.getNodeRadius());
     setArrowModeState(settings.getArrowMode());
+    setScaleByIndegreeState(settings.getScaleByIndegree());
   }, []);
 
   // Wrap setters to persist
@@ -160,6 +162,7 @@ export default function DagbanGraph({
   const setDisplayMode = useCallback((m: DisplayMode) => { setDisplayModeState(m); settings.setDisplayMode(m); }, []);
   const setNodeRadius = useCallback((r: number) => { setNodeRadiusState(r); settings.setNodeRadius(r); }, []);
   const setArrowMode = useCallback((m: ArrowMode) => { setArrowModeState(m); settings.setArrowMode(m); }, []);
+  const setScaleByIndegree = useCallback((enabled: boolean) => { setScaleByIndegreeState(enabled); settings.setScaleByIndegree(enabled); }, []);
   const showSettings = showSettingsProp;
 
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
@@ -261,6 +264,8 @@ export default function DagbanGraph({
     getAssigneeName,
     rootActiveNodeIds,
     updateNodeLabelElement,
+    indegrees,
+    maxIndegree,
   } = useGraphData({
     data,
     graphRef,
@@ -597,6 +602,9 @@ export default function DagbanGraph({
     isBurntNodeId,
     cardById,
     graphDataView,
+    scaleByIndegree,
+    indegrees,
+    maxIndegree,
   });
 
   // ============================================================
@@ -1019,6 +1027,9 @@ export default function DagbanGraph({
     getFuseRingGradient,
     nodeBckgDimensionsRef,
     cycleEdgeIds,
+    scaleByIndegree,
+    indegrees,
+    maxIndegree,
   });
 
   // Create 3D node object with HTML labels (replaces sphere in labels/full mode)
@@ -1033,6 +1044,17 @@ export default function DagbanGraph({
     }
     return entry.obj;
   }, [displayMode, updateNodeLabelElement, CSS2DObject]);
+
+  // 3D node size scaling by indegree
+  const nodeVal = useCallback((node: GraphNodeData) => {
+    if (!scaleByIndegree || maxIndegree <= 0) return 1;
+    const degree = indegrees.get(node.id) || 0;
+    // Nodes with 0 or 1 indegree stay at base size; scale up from indegree 2+
+    const effective = Math.max(0, degree - 1);
+    const effectiveMax = Math.max(1, maxIndegree - 1);
+    const scale = 1 + (effective / effectiveMax);
+    return scale * scale * scale;
+  }, [scaleByIndegree, indegrees, maxIndegree]);
 
   // ============================================================
   // Props assembly + JSX
@@ -1262,6 +1284,7 @@ export default function DagbanGraph({
         nodeThreeObject={nodeThreeObject}
         getArrowRelPos={getArrowRelPos}
         getArrowRelPosMiddle={getArrowRelPosMiddle}
+        nodeVal={nodeVal}
       />
 
       <GraphOverlays
@@ -1342,6 +1365,8 @@ export default function DagbanGraph({
         onNodeRadiusChange={setNodeRadius}
         arrowMode={arrowMode}
         onArrowModeChange={setArrowMode}
+        scaleByIndegree={scaleByIndegree}
+        onScaleByIndegreeChange={setScaleByIndegree}
         devDatasetMode={devDatasetMode}
         onDevDatasetModeChange={onDevDatasetModeChange}
       />

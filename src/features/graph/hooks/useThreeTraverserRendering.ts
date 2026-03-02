@@ -51,6 +51,10 @@ export type UseThreeTraverserRenderingProps = {
   isBurntNodeId: (id: string) => boolean;
   cardById: Map<string, Card>;
   graphDataView: { nodes: GraphNodeData[]; links: GraphLinkData[] };
+  // Indegree scaling
+  scaleByIndegree: boolean;
+  indegrees: Map<string, number>;
+  maxIndegree: number;
 };
 
 // ---------------------------------------------------------------
@@ -89,6 +93,9 @@ export function useThreeTraverserRendering({
   isBurntNodeId,
   cardById,
   graphDataView,
+  scaleByIndegree,
+  indegrees,
+  maxIndegree,
 }: UseThreeTraverserRenderingProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -154,12 +161,24 @@ export function useThreeTraverserRendering({
     return Math.sqrt((edge.sx - center.sx) ** 2 + (edge.sy - center.sy) ** 2);
   }, [graphRef, toScreen]);
 
+  // Compute per-node world radius matching react-force-graph-3d sphere sizing
+  const getNodeWorldRadius = useCallback((nodeId: string): number => {
+    if (!scaleByIndegree || maxIndegree <= 0) return nodeRadius;
+    const degree = indegrees.get(nodeId) || 0;
+    const effective = Math.max(0, degree - 1);
+    const effectiveMax = Math.max(1, maxIndegree - 1);
+    const scale = 1 + (effective / effectiveMax);
+    return nodeRadius * scale;
+  }, [scaleByIndegree, indegrees, maxIndegree, nodeRadius]);
+
   /** Compute screen-space ring radius (view-plane-aligned) for root traverser rings. */
   const getScreenRingRadius = useCallback((
-    nx: number, ny: number, nz: number, center: { sx: number; sy: number },
+    nx: number, ny: number, nz: number, center: { sx: number; sy: number }, nodeId: string,
   ): number | null => {
-    return getScreenRadiusForWorldRadius(nx, ny, nz, center, rootRingRadius);
-  }, [getScreenRadiusForWorldRadius, rootRingRadius]);
+    const worldNodeR = getNodeWorldRadius(nodeId);
+    const worldRingR = worldNodeR + (rootRingRadius - nodeRadius);
+    return getScreenRadiusForWorldRadius(nx, ny, nz, center, worldRingR);
+  }, [getScreenRadiusForWorldRadius, rootRingRadius, nodeRadius, getNodeWorldRadius]);
 
   // --- Draw one frame ---
 
@@ -194,7 +213,8 @@ export function useThreeTraverserRendering({
       const nx = node.x ?? 0, ny = node.y ?? 0, nz = node.z ?? 0;
       const center = toScreen(nx, ny, nz);
       if (!center) continue;
-      const screenRadius = getScreenRadiusForWorldRadius(nx, ny, nz, center, nodeRadius);
+      const worldR = getNodeWorldRadius(node.id);
+      const screenRadius = getScreenRadiusForWorldRadius(nx, ny, nz, center, worldR);
       if (!screenRadius || screenRadius < 1) continue;
 
       const grad = ctx.createConicGradient(holyAngle, center.sx, center.sy);
@@ -232,7 +252,7 @@ export function useThreeTraverserRendering({
         const nx = node.x ?? 0, ny = node.y ?? 0, nz = node.z ?? 0;
         const center = toScreen(nx, ny, nz);
         if (!center) continue;
-        const screenRadius = getScreenRingRadius(nx, ny, nz, center);
+        const screenRadius = getScreenRingRadius(nx, ny, nz, center, node.id);
         if (!screenRadius || screenRadius < 1) continue;
 
         ctx.beginPath();
@@ -268,7 +288,7 @@ export function useThreeTraverserRendering({
       if (!center) continue;
 
       // Compute screen-space ring radius using camera-right offset (stable under rotation)
-      const screenRadius = getScreenRingRadius(nx, ny, nz, center);
+      const screenRadius = getScreenRingRadius(nx, ny, nz, center, rootNodeId);
       if (!screenRadius || screenRadius < 1) continue;
 
       const pos = clamp(traverser.position, 0, 1);
@@ -347,6 +367,7 @@ export function useThreeTraverserRendering({
     rootTraverserByNodeId,
     traverserByEdgeId,
     isBurntNodeId,
+    getNodeWorldRadius,
     graphDataView,
   ]);
 
