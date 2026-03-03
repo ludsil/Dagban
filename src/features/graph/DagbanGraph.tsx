@@ -1175,6 +1175,7 @@ export default function DagbanGraph({
     onOpenCategoryManager: handleOpenCategoryManager,
     onOpenCopySettings: () => setShowCopySettings(true),
     onOpenShortcuts: () => setShowShortcutsHelp(true),
+    onOpenUserManager: () => setShowUserManager(true),
     onResetCanvas: handleResetCanvas,
     onBackToProjects,
     projectId,
