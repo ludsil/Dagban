@@ -14,6 +14,8 @@ interface SettingsDialogProps {
   onNodeRadiusChange: (radius: number) => void;
   arrowMode: ArrowMode;
   onArrowModeChange: (mode: ArrowMode) => void;
+  scaleByIndegree: boolean;
+  onScaleByIndegreeChange: (enabled: boolean) => void;
   devDatasetMode?: 'sample' | 'miserables';
   onDevDatasetModeChange?: (mode: 'sample' | 'miserables') => void;
 }
@@ -64,6 +66,8 @@ export function CopyFormatSettings({
   onNodeRadiusChange,
   arrowMode,
   onArrowModeChange,
+  scaleByIndegree,
+  onScaleByIndegreeChange,
   devDatasetMode,
   onDevDatasetModeChange,
 }: SettingsDialogProps) {
@@ -117,6 +121,19 @@ export function CopyFormatSettings({
               value={nodeRadius}
               onChange={(e) => onNodeRadiusChange(parseInt(e.target.value))}
             />
+          </div>
+
+          {/* Scale by indegree */}
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={scaleByIndegree}
+                onChange={(e) => onScaleByIndegreeChange(e.target.checked)}
+                className="accent-white/80"
+              />
+              <span className="text-xs text-white/50">Scale nodes by indegree</span>
+            </label>
           </div>
 
           {/* Arrow position */}

@@ -668,123 +668,84 @@ html, body {
   margin-top: 2px;
 }
 
-/* Header panel styling - top left corner */
-.header-panel {
-  background-color: rgba(20, 20, 20, 0.95);
-  border-radius: 6px;
-  padding: 6px 10px;
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.canvas-menu-shell {
-  background: transparent;
-  border: none;
-  min-height: auto;
-  padding: 0;
-  backdrop-filter: none;
-}
-
-.canvas-menu-trigger {
-  border-radius: 16px;
-  background: rgba(234, 233, 245, 0.95) !important;
-  color: rgba(34, 35, 45, 0.92) !important;
-  border: 1px solid rgba(214, 213, 231, 0.9) !important;
-  box-shadow: 0 10px 24px rgba(13, 14, 24, 0.22);
-}
-
-.canvas-menu-trigger:hover {
-  background: rgba(242, 241, 251, 0.98) !important;
-  color: rgba(24, 25, 33, 0.98) !important;
-  border-color: rgba(222, 221, 237, 0.95) !important;
-}
-
-.canvas-menu-trigger[data-state='open'] {
-  background: rgba(224, 223, 240, 0.98) !important;
-  border-color: rgba(201, 200, 221, 1) !important;
-}
-
-.canvas-menu-content {
-  z-index: 1300;
-  min-width: clamp(260px, 24vw, 340px);
-  padding: 8px;
-  border-radius: 16px;
-  border: 1px solid rgba(208, 208, 223, 0.95) !important;
-  background: rgba(246, 246, 250, 0.99) !important;
-  color: rgba(28, 30, 37, 0.96) !important;
-  box-shadow: 0 20px 48px rgba(12, 14, 26, 0.24);
-}
-
-.canvas-menu-subcontent {
-  min-width: 240px;
-}
-
-.canvas-menu-item {
-  min-height: 42px;
-  gap: 12px;
+/* Project HUD — top-left menu */
+.project-hud-trigger {
   border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 15px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.project-hud-trigger:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.project-hud-trigger[data-state='open'] {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.project-hud-content {
+  z-index: 1300;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(20, 20, 24, 0.96);
+  color: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.project-hud-project-name {
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.project-hud-label {
+  padding: 6px 8px 2px;
+  font-size: 11px;
   font-weight: 500;
-  color: rgba(29, 31, 39, 0.96) !important;
-  cursor: pointer !important;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.canvas-menu-item:hover,
-.canvas-menu-item:focus-visible,
-.canvas-menu-item[data-highlighted] {
-  background: rgba(223, 223, 236, 0.66) !important;
-  color: rgba(22, 24, 31, 0.98) !important;
-}
-
-.canvas-menu-subtrigger[data-state='open'] {
-  background: rgba(223, 223, 236, 0.66) !important;
-}
-
-.canvas-menu-icon {
-  width: 18px;
-  height: 18px;
-  color: rgba(84, 86, 104, 0.95);
-}
-
-.canvas-menu-icon-placeholder {
-  display: inline-block;
-}
-
-.canvas-menu-kbd {
-  margin-left: auto;
-  border-radius: 7px;
-  border: 1px solid rgba(208, 209, 226, 1);
-  background: rgba(232, 232, 243, 0.95);
-  color: rgba(98, 100, 131, 0.9);
-  font-size: 10px;
-  height: 19px;
-  padding: 0 6px;
-}
-
-.canvas-menu-subtrigger .canvas-menu-kbd {
-  margin-left: 8px;
-}
-
-.canvas-menu-separator {
-  margin: 6px 2px;
-  background: rgba(206, 207, 223, 0.88);
-}
-
-.header-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
+.project-hud-item {
+  gap: 8px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  padding: 2px;
-  border-radius: 3px;
-  transition: background-color 0.15s ease;
+}
+
+.project-hud-item:hover,
+.project-hud-item:focus-visible,
+.project-hud-item[data-highlighted] {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.project-hud-item [data-slot='kbd'] {
+  margin-left: auto;
+}
+
+.project-hud-item-danger {
+  color: rgba(239, 68, 68, 0.75);
+}
+
+.project-hud-item-danger:hover,
+.project-hud-item-danger:focus-visible,
+.project-hud-item-danger[data-highlighted] {
+  background: rgba(239, 68, 68, 0.12);
+  color: rgba(239, 68, 68, 0.9);
 }
 
 .header-logo:hover {

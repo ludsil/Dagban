@@ -8,26 +8,22 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  BadgeHelp,
   Check,
-  Copy,
   Download,
   FolderOpen,
-  FolderTree,
+  Keyboard,
   Menu,
   Pencil,
   Plus,
-  RotateCcw,
   Settings2,
   Shapes,
   Trash2,
+  Users,
 } from 'lucide-react';
 
 interface ProjectHudProps {
@@ -37,6 +33,7 @@ interface ProjectHudProps {
   onOpenCategoryManager?: () => void;
   onOpenCopySettings?: () => void;
   onOpenShortcuts?: () => void;
+  onOpenUserManager?: () => void;
   onResetCanvas?: () => void;
   onBackToProjects?: () => void;
   projectId?: string;
@@ -55,6 +52,7 @@ export function ProjectHud({
   onOpenCategoryManager,
   onOpenCopySettings,
   onOpenShortcuts,
+  onOpenUserManager,
   onResetCanvas,
   onBackToProjects,
   projectId,
@@ -117,8 +115,10 @@ export function ProjectHud({
     }
   };
 
+  const hasProjects = projects && projects.length > 0 && onProjectSwitch;
+
   return (
-    <div className="header-panel canvas-menu-shell">
+    <div className="project-hud">
       <DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -126,126 +126,124 @@ export function ProjectHud({
               <Button
                 variant="ghost"
                 size="icon-lg"
-                className="canvas-menu-trigger"
-                aria-label="Canvas menu"
+                className="project-hud-trigger"
+                aria-label="Menu"
               >
                 <Menu className="size-5" />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <TooltipContent side="right">Canvas menu</TooltipContent>
+          <TooltipContent side="right">Menu</TooltipContent>
         </Tooltip>
         <DropdownMenuContent
           align="start"
-          sideOffset={12}
-          className="canvas-menu-content"
+          sideOffset={8}
+          className="project-hud-content"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          <DropdownMenuItem className="canvas-menu-item" onClick={onNewRootNode}>
-            <Plus className="canvas-menu-icon" />
+          {/* Project name header */}
+          <DropdownMenuLabel className="project-hud-project-name">
+            {displayName}
+          </DropdownMenuLabel>
+
+          <DropdownMenuSeparator className="bg-white/10" />
+
+          {/* Graph actions */}
+          <DropdownMenuItem className="project-hud-item" onClick={onNewRootNode}>
+            <Plus className="size-4 opacity-60" />
             <span>New node</span>
-            <Kbd className="canvas-menu-kbd">N</Kbd>
+            <Kbd>N</Kbd>
           </DropdownMenuItem>
-          <DropdownMenuItem className="canvas-menu-item" onClick={handleUploadClick}>
-            <FolderOpen className="canvas-menu-icon" />
+          <DropdownMenuItem className="project-hud-item" onClick={handleUploadClick}>
+            <FolderOpen className="size-4 opacity-60" />
             <span>Open...</span>
-            <Kbd className="canvas-menu-kbd">Cmd+O</Kbd>
+            <Kbd>&#8984;O</Kbd>
           </DropdownMenuItem>
-          <DropdownMenuItem className="canvas-menu-item" onClick={onDownloadGraph}>
-            <Download className="canvas-menu-icon" />
+          <DropdownMenuItem className="project-hud-item" onClick={onDownloadGraph}>
+            <Download className="size-4 opacity-60" />
             <span>Save to...</span>
           </DropdownMenuItem>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="canvas-menu-item canvas-menu-subtrigger">
-              <Settings2 className="canvas-menu-icon" />
-              <span>Preferences</span>
-              <Kbd className="canvas-menu-kbd">Esc</Kbd>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="canvas-menu-content canvas-menu-subcontent">
-              {onOpenCategoryManager && (
-                <DropdownMenuItem className="canvas-menu-item" onClick={onOpenCategoryManager}>
-                  <Shapes className="canvas-menu-icon" />
-                  <span>Categories</span>
-                  <Kbd className="canvas-menu-kbd">C</Kbd>
-                </DropdownMenuItem>
-              )}
-              {onOpenCopySettings && (
-                <DropdownMenuItem className="canvas-menu-item" onClick={onOpenCopySettings}>
-                  <Copy className="canvas-menu-icon" />
-                  <span>Copy format</span>
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          {(projects && projects.length > 0 && onProjectSwitch) && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="canvas-menu-item canvas-menu-subtrigger">
-                <FolderTree className="canvas-menu-icon" />
-                <span>Projects</span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="canvas-menu-content canvas-menu-subcontent">
-                {projects.map((project) => (
-                  <DropdownMenuItem
-                    key={project.id}
-                    className="canvas-menu-item"
-                    onClick={() => onProjectSwitch(project.id)}
-                  >
-                    {project.id === currentProject?.id ? (
-                      <Check className="canvas-menu-icon" />
-                    ) : (
-                      <span className="canvas-menu-icon canvas-menu-icon-placeholder" aria-hidden="true" />
-                    )}
-                    <span>{project.name}</span>
-                  </DropdownMenuItem>
-                ))}
-                {(onProjectCreate || onProjectRename || onProjectDelete) && (
-                  <DropdownMenuSeparator className="canvas-menu-separator" />
-                )}
-                {onProjectCreate && (
-                  <DropdownMenuItem className="canvas-menu-item" onClick={handleNewProject}>
-                    <Plus className="canvas-menu-icon" />
-                    <span>New project</span>
-                  </DropdownMenuItem>
-                )}
-                {onProjectRename && currentProject && (
-                  <DropdownMenuItem className="canvas-menu-item" onClick={handleRenameCurrentProject}>
-                    <Pencil className="canvas-menu-icon" />
-                    <span>Rename current</span>
-                  </DropdownMenuItem>
-                )}
-                {onProjectDelete && currentProject && projectCount > 1 && (
-                  <DropdownMenuItem
-                    className="canvas-menu-item"
-                    onClick={handleDeleteCurrentProject}
-                  >
-                    <Trash2 className="canvas-menu-icon" />
-                    <span>Delete current</span>
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+
+          <DropdownMenuSeparator className="bg-white/10" />
+
+          {/* Settings */}
+          {onOpenCategoryManager && (
+            <DropdownMenuItem className="project-hud-item" onClick={onOpenCategoryManager}>
+              <Shapes className="size-4 opacity-60" />
+              <span>Categories</span>
+              <Kbd>C</Kbd>
+            </DropdownMenuItem>
           )}
-          {(onOpenShortcuts || onResetCanvas || onBackToProjects) && (
-            <DropdownMenuSeparator className="canvas-menu-separator" />
+          {onOpenUserManager && (
+            <DropdownMenuItem className="project-hud-item" onClick={onOpenUserManager}>
+              <Users className="size-4 opacity-60" />
+              <span>Users</span>
+              <Kbd>U</Kbd>
+            </DropdownMenuItem>
+          )}
+          {onOpenCopySettings && (
+            <DropdownMenuItem className="project-hud-item" onClick={onOpenCopySettings}>
+              <Settings2 className="size-4 opacity-60" />
+              <span>Settings</span>
+              <Kbd>Esc</Kbd>
+            </DropdownMenuItem>
           )}
           {onOpenShortcuts && (
-            <DropdownMenuItem className="canvas-menu-item" onClick={onOpenShortcuts}>
-              <BadgeHelp className="canvas-menu-icon" />
+            <DropdownMenuItem className="project-hud-item" onClick={onOpenShortcuts}>
+              <Keyboard className="size-4 opacity-60" />
               <span>Hotkeys</span>
-              <Kbd className="canvas-menu-kbd">M</Kbd>
+              <Kbd>M</Kbd>
             </DropdownMenuItem>
           )}
+
+          {/* Projects section */}
+          {hasProjects && (
+            <>
+              <DropdownMenuSeparator className="bg-white/10" />
+              <DropdownMenuLabel className="project-hud-label">Projects</DropdownMenuLabel>
+              {projects.map((project) => (
+                <DropdownMenuItem
+                  key={project.id}
+                  className="project-hud-item"
+                  onClick={() => onProjectSwitch(project.id)}
+                >
+                  {project.id === currentProject?.id ? (
+                    <Check className="size-3.5 text-white/70" />
+                  ) : (
+                    <span className="size-3.5" />
+                  )}
+                  <span className="truncate">{project.name}</span>
+                </DropdownMenuItem>
+              ))}
+              {onProjectCreate && (
+                <DropdownMenuItem className="project-hud-item" onClick={handleNewProject}>
+                  <Plus className="size-4 opacity-60" />
+                  <span>New project</span>
+                </DropdownMenuItem>
+              )}
+              {onProjectRename && currentProject && (
+                <DropdownMenuItem className="project-hud-item" onClick={handleRenameCurrentProject}>
+                  <Pencil className="size-4 opacity-60" />
+                  <span>Rename project</span>
+                </DropdownMenuItem>
+              )}
+              {onProjectDelete && currentProject && projectCount > 1 && (
+                <DropdownMenuItem className="project-hud-item project-hud-item-danger" onClick={handleDeleteCurrentProject}>
+                  <Trash2 className="size-4" />
+                  <span>Delete project</span>
+                </DropdownMenuItem>
+              )}
+            </>
+          )}
+
           {onBackToProjects && (
-            <DropdownMenuItem className="canvas-menu-item" onClick={onBackToProjects}>
-              <FolderOpen className="canvas-menu-icon" />
-              <span>All projects</span>
-            </DropdownMenuItem>
-          )}
-          {onResetCanvas && (
-            <DropdownMenuItem className="canvas-menu-item" onClick={onResetCanvas}>
-              <RotateCcw className="canvas-menu-icon" />
-              <span>Reset canvas</span>
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuSeparator className="bg-white/10" />
+              <DropdownMenuItem className="project-hud-item" onClick={onBackToProjects}>
+                <FolderOpen className="size-4 opacity-60" />
+                <span>All projects</span>
+              </DropdownMenuItem>
+            </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
