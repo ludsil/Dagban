@@ -1,16 +1,18 @@
 FROM node:22-alpine AS base
-RUN corepack enable
 
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
+RUN npm install -g pnpm@9
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
+RUN npm install -g pnpm@9
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN pnpm build
 
 FROM base AS runner
